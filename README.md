@@ -12,6 +12,7 @@ Firefox-first WebExtension prototype for inspecting WebAssembly memory used by e
 - Verifies writes after 75 ms so values restored by the game are reported instead of appearing successful.
 - Can freeze a selected address by rewriting it once per animation frame.
 - Retains every aligned candidate in a compact bitset and displays the first 200 in the panel.
+- Safely continues across `WebAssembly.Memory` growth by refreshing detached scan views between chunks.
 
 Raw writes are experimental. A wrong address can corrupt or crash the embedded player.
 
@@ -44,9 +45,12 @@ With the extension loaded, scan the captured memory as `Float64` for `12345.5`. 
 
 `/test/candidate-retention-harness.html` starts with more than 250,000 identical values, changes only the final one, and verifies that a next scan still finds that late-memory address.
 
+`/test/memory-growth-harness.html` grows the captured WASM memory during a scan and verifies that scanning continues without using the detached original buffer.
+
 ## Intentional limitations
 
 - This version scans aligned values only.
+- A scan covers the memory range that existed when it started; pages added during that scan are considered by the next first scan.
 - It does not yet implement unknown-initial-value, changed, increased, decreased, or freeze scans.
 - It captures instantiation through the two standard asynchronous WebAssembly APIs, not direct `new WebAssembly.Instance(...)` construction.
 - The Ruffle label is heuristic; the panel also exposes other captured WASM memories so detection failures do not hide the target.

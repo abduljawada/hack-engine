@@ -211,8 +211,7 @@
     }
 
     const value = parseValue(type, rawValue);
-    const buffer = record.memory.buffer;
-    const view = new DataView(buffer);
+    let view = new DataView(record.memory.buffer);
     const key = scanKey(record.id, type);
     const previous = refine ? scans.get(key) : null;
     const currentSlotCount = Math.floor(view.byteLength / spec.size);
@@ -245,6 +244,7 @@
           const inspected = Math.min((byteIndex + 1) * 8, slotCount);
           send({ kind: "scanProgress", requestId, inspected, total: slotCount });
           await yieldToPage();
+          view = new DataView(record.memory.buffer);
         }
       }
     } else {
@@ -258,6 +258,7 @@
         if (inspected % SCAN_CHUNK_SIZE === 0) {
           send({ kind: "scanProgress", requestId, inspected, total: slotCount });
           await yieldToPage();
+          view = new DataView(record.memory.buffer);
         }
       }
     }
