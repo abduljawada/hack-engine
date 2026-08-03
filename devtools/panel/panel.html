@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ruffle Memory Inspector</title>
+    <link rel="stylesheet" href="panel.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>Ruffle Memory</h1>
+          <p>Embedded WebAssembly memory inspector</p>
+        </div>
+        <button id="refresh" type="button">Refresh</button>
+      </header>
+
+      <section class="controls" aria-label="Scan controls">
+        <label class="wide">
+          Captured memory
+          <select id="instance"></select>
+        </label>
+        <label>
+          Type
+          <select id="type">
+            <option value="f64">Float64 · AVM1 number</option>
+            <option value="i32">Int32 · AVM2 integer</option>
+            <option value="u32">Uint32</option>
+            <option value="f32">Float32</option>
+          </select>
+        </label>
+        <label>
+          Exact value
+          <input id="scan-value" type="number" step="any" value="100" />
+        </label>
+        <div class="buttons wide">
+          <button id="first-scan" class="primary" type="button">First scan</button>
+          <button id="next-scan" type="button">Next scan</button>
+          <button id="reset-scan" type="button">Reset</button>
+        </div>
+      </section>
+
+      <section class="status-card" aria-live="polite">
+        <span id="status-dot"></span>
+        <span id="status">Waiting for an embedded Ruffle WASM instance…</span>
+      </section>
+
+      <section class="results">
+        <div class="results-heading">
+          <h2>Candidates</h2>
+          <span id="result-count">0</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Address</th><th>Current value</th></tr>
+            </thead>
+            <tbody id="candidates"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="write-controls" aria-label="Write value">
+        <label>
+          Address
+          <input id="write-address" type="text" placeholder="0x00000000" />
+        </label>
+        <label>
+          New value
+          <input id="write-value" type="number" step="any" />
+        </label>
+        <button id="write" class="danger" type="button">Write value</button>
+        <button id="freeze" type="button">Freeze value</button>
+      </section>
+    </main>
+    <script src="panel.js"></script>
+  </body>
+</html>

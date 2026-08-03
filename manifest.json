@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Ruffle Memory Inspector",
+  "version": "0.1.0",
+  "description": "Inspect and edit WebAssembly memory used by embedded Ruffle players.",
+  "permissions": [],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "devtools_page": "devtools/devtools.html",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["page-agent.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true,
+      "match_origin_as_fallback": true,
+      "world": "MAIN"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-bridge.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true,
+      "match_origin_as_fallback": true
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "ruffle-memory-inspector@example.local",
+      "strict_min_version": "128.0"
+    }
+  }
+}
