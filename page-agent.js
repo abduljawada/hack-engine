@@ -2,7 +2,6 @@
   "use strict";
 
   const CHANNEL = "ruffle-memory-inspector:v1";
-  const MAX_CANDIDATES = 250_000;
   const RESULT_PREVIEW_LIMIT = 200;
   const SCAN_CHUNK_SIZE = 100_000;
 
@@ -183,6 +182,24 @@
     return new Promise((resolve) => setTimeout(resolve, 0));
   }
 
+  function createCandidateSet(slotCount, type) {
+    return {
+      bits: new Uint8Array(Math.ceil(slotCount / 8)),
+      count: 0,
+      preview: [],
+      slotCount,
+      type,
+    };
+  }
+
+  function retainCandidate(candidateSet, slotIndex, address) {
+    candidateSet.bits[slotIndex >>> 3] |= 1 << (slotIndex & 7);
+    candidateSet.count += 1;
+    if (candidateSet.preview.length < RESULT_PREVIEW_LIMIT) {
+      candidateSet.preview.push(address);
+    }
+  }
+
   async function exactScan({ requestId, instanceId, type, rawValue, refine }) {
     const record = instances.get(String(instanceId));
     const spec = typeSpecs[type];
@@ -197,53 +214,62 @@
     const buffer = record.memory.buffer;
     const view = new DataView(buffer);
     const key = scanKey(record.id, type);
-    const previous = refine ? scans.get(key)?.candidates : null;
-    const candidates = [];
-    let truncated = false;
-    let inspected = 0;
-
-    const testOffset = (offset) => {
-      if (spec.read(view, offset) === value) {
-        if (candidates.length < MAX_CANDIDATES) {
-          candidates.push(offset);
-        } else {
-          truncated = true;
-        }
-      }
-    };
+    const previous = refine ? scans.get(key) : null;
+    const currentSlotCount = Math.floor(view.byteLength / spec.size);
+    const slotCount = previous
+      ? Math.min(previous.slotCount, currentSlotCount)
+      : currentSlotCount;
+    const candidates = createCandidateSet(slotCount, type);
 
     if (previous) {
-      for (let index = 0; index < previous.length; index += 1) {
-        const offset = previous[index];
-        if (offset + spec.size <= view.byteLength) {
-          testOffset(offset);
+      const bytesPerChunk = Math.max(1, Math.floor(SCAN_CHUNK_SIZE / 8));
+      for (let byteIndex = 0; byteIndex < candidates.bits.length; byteIndex += 1) {
+        const candidateByte = previous.bits[byteIndex];
+        if (candidateByte) {
+          for (let bitIndex = 0; bitIndex < 8; bitIndex += 1) {
+            if (!(candidateByte & (1 << bitIndex))) {
+              continue;
+            }
+            const slotIndex = byteIndex * 8 + bitIndex;
+            if (slotIndex >= slotCount) {
+              break;
+            }
+            const offset = slotIndex * spec.size;
+            if (spec.read(view, offset) === value) {
+              retainCandidate(candidates, slotIndex, offset);
+            }
+          }
         }
-        inspected += 1;
-        if (index > 0 && index % SCAN_CHUNK_SIZE === 0) {
-          send({ kind: "scanProgress", requestId, inspected, total: previous.length });
+
+        if ((byteIndex + 1) % bytesPerChunk === 0) {
+          const inspected = Math.min((byteIndex + 1) * 8, slotCount);
+          send({ kind: "scanProgress", requestId, inspected, total: slotCount });
           await yieldToPage();
         }
       }
     } else {
-      const total = Math.floor(view.byteLength / spec.size);
-      for (let index = 0; index < total; index += 1) {
-        testOffset(index * spec.size);
-        inspected += 1;
-        if (index > 0 && index % SCAN_CHUNK_SIZE === 0) {
-          send({ kind: "scanProgress", requestId, inspected, total });
+      for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
+        const offset = slotIndex * spec.size;
+        if (spec.read(view, offset) === value) {
+          retainCandidate(candidates, slotIndex, offset);
+        }
+
+        const inspected = slotIndex + 1;
+        if (inspected % SCAN_CHUNK_SIZE === 0) {
+          send({ kind: "scanProgress", requestId, inspected, total: slotCount });
           await yieldToPage();
         }
       }
     }
 
-    scans.set(key, { candidates, type });
-    sendScanResults(requestId, record, type, candidates, truncated);
+    scans.set(key, candidates);
+    sendScanResults(requestId, record, type, candidates);
   }
 
-  function sendScanResults(requestId, record, type, candidates, truncated = false) {
+  function sendScanResults(requestId, record, type, candidates) {
     const spec = typeSpecs[type];
     const view = new DataView(record.memory.buffer);
-    const preview = candidates.slice(0, RESULT_PREVIEW_LIMIT).map((address) => ({
+    const preview = candidates.preview.map((address) => ({
       address,
       value: address + spec.size <= view.byteLength ? spec.read(view, address) : null,
     }));
@@ -252,8 +278,7 @@
       requestId,
       instanceId: record.id,
       type,
-      total: candidates.length,
-      truncated,
+      total: candidates.count,
       preview,
       memoryBytes: record.memory.buffer.byteLength,
     });

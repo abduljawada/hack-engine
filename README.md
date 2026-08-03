@@ -11,7 +11,7 @@ Firefox-first WebExtension prototype for inspecting WebAssembly memory used by e
 - Displays candidate WASM byte offsets and permits direct writes.
 - Verifies writes after 75 ms so values restored by the game are reported instead of appearing successful.
 - Can freeze a selected address by rewriting it once per animation frame.
-- Caps retained candidates at 250,000 and displays the first 200 in the panel.
+- Retains every aligned candidate in a compact bitset and displays the first 200 in the panel.
 
 Raw writes are experimental. A wrong address can corrupt or crash the embedded player.
 
@@ -41,6 +41,8 @@ With the extension loaded, scan the captured memory as `Float64` for `12345.5`. 
 `/test/harness.html` runs the page agent directly and reports whether capture, exact scan, address discovery, and writing all succeed end-to-end.
 
 `/test/freeze-harness.html` simulates a game that restores a value every animation frame. It verifies that delayed write checking detects the reversion and that freezing holds the requested replacement.
+
+`/test/candidate-retention-harness.html` starts with more than 250,000 identical values, changes only the final one, and verifies that a next scan still finds that late-memory address.
 
 ## Intentional limitations
 

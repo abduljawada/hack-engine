@@ -201,8 +201,7 @@
       elements.candidates.append(row);
     }
 
-    const qualifier = payload.truncated ? "+ (capture limit reached)" : "";
-    elements.resultCount.textContent = `${payload.total.toLocaleString()} ${qualifier}`.trim();
+    elements.resultCount.textContent = payload.total.toLocaleString();
     clearScanWatchdog();
     setScanButtonsDisabled(false);
     setStatus(
