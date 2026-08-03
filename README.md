@@ -7,7 +7,9 @@ Firefox-first WebExtension prototype for inspecting WebAssembly memory used by e
 - Hooks `WebAssembly.instantiate` and `WebAssembly.instantiateStreaming` at `document_start` in the page's `MAIN` world.
 - Captures exported or imported `WebAssembly.Memory` objects in every permitted frame.
 - Adds a **Ruffle Memory** Firefox DevTools panel.
-- Supports exact first scans and exact next-scan filtering for `i32`, `u32`, `f32`, and `f64`.
+- Supports exact and unknown-value scans for `i32`, `u32`, `f32`, and `f64`.
+- Narrows unknown-value candidates by changed, unchanged, increased, or decreased comparisons.
+- Scans naturally aligned values by default, with an optional byte-by-byte mode for unaligned values.
 - Displays candidate WASM byte offsets and permits direct writes.
 - Verifies writes after 75 ms so values restored by the game are reported instead of appearing successful.
 - Can freeze a selected address by rewriting it once per animation frame.
@@ -15,6 +17,8 @@ Firefox-first WebExtension prototype for inspecting WebAssembly memory used by e
 - Safely continues across `WebAssembly.Memory` growth by refreshing detached scan views between chunks.
 
 Raw writes are experimental. A wrong address can corrupt or crash the embedded player.
+
+For values that do not appear in an exact naturally aligned scan, try **Any byte** alignment. If the representation is unknown, run an **Unknown initial value** first scan, change the value in the game, select **Changed**, **Increased**, or **Decreased**, and use **Next scan**. Keep the type and alignment unchanged until resetting the scan.
 
 ## Load in Firefox
 
@@ -47,10 +51,11 @@ With the extension loaded, scan the captured memory as `Float64` for `12345.5`. 
 
 `/test/memory-growth-harness.html` grows the captured WASM memory during a scan and verifies that scanning continues without using the detached original buffer.
 
+`/test/advanced-scan-harness.html` verifies byte-by-byte discovery of an unaligned value and unknown-value filtering by change direction.
+
 ## Intentional limitations
 
-- This version scans aligned values only.
+- Byte-by-byte and unknown-value scans can be significantly slower and unknown scans retain a memory snapshot of the scanned range.
 - A scan covers the memory range that existed when it started; pages added during that scan are considered by the next first scan.
-- It does not yet implement unknown-initial-value, changed, increased, decreased, or freeze scans.
 - It captures instantiation through the two standard asynchronous WebAssembly APIs, not direct `new WebAssembly.Instance(...)` construction.
 - The Ruffle label is heuristic; the panel also exposes other captured WASM memories so detection failures do not hide the target.

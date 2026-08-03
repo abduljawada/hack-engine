@@ -97,6 +97,7 @@ label {
 
 label input,
 label select { width: 100%; padding: 5px 8px; }
+label.disabled-label { opacity: 0.6; }
 .wide { grid-column: 1 / -1; }
 .buttons { gap: 8px; }
 

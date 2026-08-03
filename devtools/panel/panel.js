@@ -16,7 +16,10 @@
   const elements = {
     instance: document.querySelector("#instance"),
     type: document.querySelector("#type"),
+    alignment: document.querySelector("#alignment"),
+    condition: document.querySelector("#condition"),
     scanValue: document.querySelector("#scan-value"),
+    scanValueLabel: document.querySelector("#scan-value-label"),
     firstScan: document.querySelector("#first-scan"),
     nextScan: document.querySelector("#next-scan"),
     resetScan: document.querySelector("#reset-scan"),
@@ -154,25 +157,50 @@
       setStatus("No WebAssembly memory has been captured.", "error");
       return;
     }
+    const condition = elements.condition.value;
     const rawValue = elements.scanValue.value;
-    if (rawValue.trim() === "") {
+    if (condition === "exact" && rawValue.trim() === "") {
       setStatus("Enter a value to scan for.", "error");
       return;
     }
+    if (!refine && !["exact", "unknown"].includes(condition)) {
+      setStatus("A first scan must use Exact value or Unknown initial value.", "error");
+      return;
+    }
+    if (refine && condition === "unknown") {
+      setStatus("Unknown initial value is only available for a first scan.", "error");
+      return;
+    }
     const sent = send({
-      kind: "exactScan",
+      kind: "memoryScan",
       requestId: requestId(),
       instanceId: record.id,
       type: elements.type.value,
       rawValue,
+      condition,
+      alignment: elements.alignment.value,
       refine,
     }, record.frameId);
     if (!sent) {
       return;
     }
     setScanButtonsDisabled(true);
-    setStatus(refine ? "Filtering existing candidates…" : "Scanning WASM memory…");
+    setStatus(
+      condition === "unknown"
+        ? "Capturing an initial memory snapshot…"
+        : refine && condition !== "exact"
+          ? `Filtering candidates whose values ${condition}…`
+          : refine
+            ? "Filtering existing candidates…"
+            : "Scanning WASM memory…",
+    );
     armScanWatchdog();
+  }
+
+  function updateConditionControls() {
+    const needsValue = elements.condition.value === "exact";
+    elements.scanValue.disabled = !needsValue;
+    elements.scanValueLabel.classList.toggle("disabled-label", !needsValue);
   }
 
   function renderCandidates(payload) {
@@ -373,7 +401,9 @@
   });
   elements.instance.addEventListener("change", updateFreezeButton);
   elements.type.addEventListener("change", updateFreezeButton);
+  elements.condition.addEventListener("change", updateConditionControls);
 
   refreshInstanceSelect();
+  updateConditionControls();
   connectPanel();
 })();

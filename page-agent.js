@@ -4,6 +4,7 @@
   const CHANNEL = "ruffle-memory-inspector:v1";
   const RESULT_PREVIEW_LIMIT = 200;
   const SCAN_CHUNK_SIZE = 100_000;
+  const SNAPSHOT_CHUNK_SIZE = 1024 * 1024;
 
   if (window.__ruffleMemoryInspectorV1) {
     return;
@@ -182,13 +183,30 @@
     return new Promise((resolve) => setTimeout(resolve, 0));
   }
 
-  function createCandidateSet(slotCount, type) {
+  function createCandidateSet(slotCount, type, stride) {
     return {
       bits: new Uint8Array(Math.ceil(slotCount / 8)),
+      allCandidates: false,
       count: 0,
       preview: [],
       slotCount,
+      stride,
       type,
+      snapshot: null,
+    };
+  }
+
+  function createAllCandidateSet(slotCount, type, stride, snapshot) {
+    const previewLength = Math.min(slotCount, RESULT_PREVIEW_LIMIT);
+    return {
+      bits: null,
+      allCandidates: true,
+      count: slotCount,
+      preview: Array.from({ length: previewLength }, (_, index) => index * stride),
+      slotCount,
+      stride,
+      type,
+      snapshot,
     };
   }
 
@@ -200,29 +218,146 @@
     }
   }
 
-  async function exactScan({ requestId, instanceId, type, rawValue, refine }) {
-    const record = instances.get(String(instanceId));
-    const spec = typeSpecs[type];
-    if (!record) {
-      throw new Error("The selected WASM instance no longer exists.");
+  function scanStride(spec, alignment) {
+    if (alignment === "byte") {
+      return 1;
     }
-    if (!spec) {
-      throw new Error(`Unsupported value type: ${type}`);
+    if (alignment === "aligned" || alignment === undefined) {
+      return spec.size;
     }
+    throw new Error(`Unsupported scan alignment: ${alignment}`);
+  }
 
+  function slotCountFor(byteLength, spec, stride) {
+    if (byteLength < spec.size) {
+      return 0;
+    }
+    return Math.floor((byteLength - spec.size) / stride) + 1;
+  }
+
+  async function captureSnapshot(record, requestId, byteLength) {
+    const snapshot = new Uint8Array(byteLength);
+    for (let offset = 0; offset < byteLength; offset += SNAPSHOT_CHUNK_SIZE) {
+      const length = Math.min(SNAPSHOT_CHUNK_SIZE, byteLength - offset);
+      snapshot.set(new Uint8Array(record.memory.buffer, offset, length), offset);
+      const inspected = offset + length;
+      send({ kind: "scanProgress", requestId, inspected, total: byteLength });
+      if (inspected < byteLength) {
+        await yieldToPage();
+      }
+    }
+    return snapshot;
+  }
+
+  function comparisonMatches(condition, currentValue, previousValue) {
+    switch (condition) {
+      case "changed":
+        return !Object.is(currentValue, previousValue);
+      case "unchanged":
+        return Object.is(currentValue, previousValue);
+      case "increased":
+        return currentValue > previousValue;
+      case "decreased":
+        return currentValue < previousValue;
+      default:
+        throw new Error(`Unsupported comparison condition: ${condition}`);
+    }
+  }
+
+  async function firstExactScan({ requestId, record, type, spec, rawValue, stride }) {
     const value = parseValue(type, rawValue);
     let view = new DataView(record.memory.buffer);
-    const key = scanKey(record.id, type);
-    const previous = refine ? scans.get(key) : null;
-    const currentSlotCount = Math.floor(view.byteLength / spec.size);
-    const slotCount = previous
-      ? Math.min(previous.slotCount, currentSlotCount)
-      : currentSlotCount;
-    const candidates = createCandidateSet(slotCount, type);
+    const slotCount = slotCountFor(view.byteLength, spec, stride);
+    const candidates = createCandidateSet(slotCount, type, stride);
 
-    if (previous) {
+    for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
+      const offset = slotIndex * stride;
+      if (spec.read(view, offset) === value) {
+        retainCandidate(candidates, slotIndex, offset);
+      }
+
+      const inspected = slotIndex + 1;
+      if (inspected % SCAN_CHUNK_SIZE === 0) {
+        send({ kind: "scanProgress", requestId, inspected, total: slotCount });
+        await yieldToPage();
+        view = new DataView(record.memory.buffer);
+      }
+    }
+
+    return candidates;
+  }
+
+  async function firstUnknownScan({ requestId, record, type, spec, stride }) {
+    const byteLength = record.memory.buffer.byteLength;
+    const snapshot = await captureSnapshot(record, requestId, byteLength);
+    const slotCount = slotCountFor(byteLength, spec, stride);
+    return createAllCandidateSet(slotCount, type, stride, snapshot);
+  }
+
+  async function refineScan({
+    requestId,
+    record,
+    type,
+    spec,
+    rawValue,
+    condition,
+    stride,
+    previous,
+  }) {
+    if (previous.stride !== stride) {
+      throw new Error("Scan alignment changed. Reset before starting a new scan.");
+    }
+    if (condition !== "exact" && !previous.snapshot) {
+      throw new Error("Start with an unknown-value scan before using comparison filters.");
+    }
+
+    const currentByteLength = Math.min(
+      record.memory.buffer.byteLength,
+      previous.snapshot?.byteLength ?? record.memory.buffer.byteLength,
+    );
+    const currentSlotCount = slotCountFor(currentByteLength, spec, stride);
+    const slotCount = Math.min(previous.slotCount, currentSlotCount);
+    const candidates = createCandidateSet(slotCount, type, stride);
+    const currentSnapshot = previous.snapshot
+      ? await captureSnapshot(record, requestId, currentByteLength)
+      : null;
+    const value = condition === "exact" ? parseValue(type, rawValue) : null;
+    let currentView = new DataView(
+      currentSnapshot?.buffer ?? record.memory.buffer,
+      currentSnapshot?.byteOffset ?? 0,
+      currentSnapshot?.byteLength,
+    );
+    const previousView = previous.snapshot
+      ? new DataView(
+        previous.snapshot.buffer,
+        previous.snapshot.byteOffset,
+        previous.snapshot.byteLength,
+      )
+      : null;
+
+    const inspectCandidate = (slotIndex) => {
+      const offset = slotIndex * stride;
+      const currentValue = spec.read(currentView, offset);
+      const matches = condition === "exact"
+        ? currentValue === value
+        : comparisonMatches(condition, currentValue, spec.read(previousView, offset));
+      if (matches) {
+        retainCandidate(candidates, slotIndex, offset);
+      }
+    };
+
+    if (previous.allCandidates) {
+      for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
+        inspectCandidate(slotIndex);
+        const inspected = slotIndex + 1;
+        if (inspected % SCAN_CHUNK_SIZE === 0) {
+          send({ kind: "scanProgress", requestId, inspected, total: slotCount });
+          await yieldToPage();
+        }
+      }
+    } else {
       const bytesPerChunk = Math.max(1, Math.floor(SCAN_CHUNK_SIZE / 8));
-      for (let byteIndex = 0; byteIndex < candidates.bits.length; byteIndex += 1) {
+      for (let byteIndex = 0; byteIndex < previous.bits.length; byteIndex += 1) {
         const candidateByte = previous.bits[byteIndex];
         if (candidateByte) {
           for (let bitIndex = 0; bitIndex < 8; bitIndex += 1) {
@@ -233,10 +368,7 @@
             if (slotIndex >= slotCount) {
               break;
             }
-            const offset = slotIndex * spec.size;
-            if (spec.read(view, offset) === value) {
-              retainCandidate(candidates, slotIndex, offset);
-            }
+            inspectCandidate(slotIndex);
           }
         }
 
@@ -244,24 +376,63 @@
           const inspected = Math.min((byteIndex + 1) * 8, slotCount);
           send({ kind: "scanProgress", requestId, inspected, total: slotCount });
           await yieldToPage();
-          view = new DataView(record.memory.buffer);
-        }
-      }
-    } else {
-      for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
-        const offset = slotIndex * spec.size;
-        if (spec.read(view, offset) === value) {
-          retainCandidate(candidates, slotIndex, offset);
-        }
-
-        const inspected = slotIndex + 1;
-        if (inspected % SCAN_CHUNK_SIZE === 0) {
-          send({ kind: "scanProgress", requestId, inspected, total: slotCount });
-          await yieldToPage();
-          view = new DataView(record.memory.buffer);
+          if (!currentSnapshot) {
+            currentView = new DataView(record.memory.buffer);
+          }
         }
       }
     }
+
+    candidates.snapshot = currentSnapshot;
+    return candidates;
+  }
+
+  async function memoryScan({
+    requestId,
+    instanceId,
+    type,
+    rawValue,
+    condition = "exact",
+    alignment = "aligned",
+    refine,
+  }) {
+    const record = instances.get(String(instanceId));
+    const spec = typeSpecs[type];
+    if (!record) {
+      throw new Error("The selected WASM instance no longer exists.");
+    }
+    if (!spec) {
+      throw new Error(`Unsupported value type: ${type}`);
+    }
+
+    const key = scanKey(record.id, type);
+    const previous = refine ? scans.get(key) : null;
+    const stride = scanStride(spec, alignment);
+
+    if (refine && !previous) {
+      throw new Error("No previous scan exists. Run a first scan before filtering.");
+    }
+    if (!refine && condition !== "exact" && condition !== "unknown") {
+      throw new Error("First scans support exact or unknown initial values.");
+    }
+    if (refine && condition === "unknown") {
+      throw new Error("Unknown initial value is only available for a first scan.");
+    }
+
+    const candidates = refine
+      ? await refineScan({
+        requestId,
+        record,
+        type,
+        spec,
+        rawValue,
+        condition,
+        stride,
+        previous,
+      })
+      : condition === "unknown"
+        ? await firstUnknownScan({ requestId, record, type, spec, stride })
+        : await firstExactScan({ requestId, record, type, spec, rawValue, stride });
 
     scans.set(key, candidates);
     sendScanResults(requestId, record, type, candidates);
@@ -434,7 +605,13 @@
             });
             break;
           case "exactScan":
-            return exactScan(command);
+            return memoryScan({
+              ...command,
+              condition: "exact",
+              alignment: "aligned",
+            });
+          case "memoryScan":
+            return memoryScan(command);
           case "writeValue":
             writeValue(command);
             break;

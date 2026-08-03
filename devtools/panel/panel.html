@@ -31,7 +31,25 @@
           </select>
         </label>
         <label>
-          Exact value
+          Alignment
+          <select id="alignment">
+            <option value="aligned">Natural alignment · faster</option>
+            <option value="byte">Any byte · slower</option>
+          </select>
+        </label>
+        <label>
+          Condition
+          <select id="condition">
+            <option value="exact">Exact value</option>
+            <option value="unknown">Unknown initial value</option>
+            <option value="changed">Changed value</option>
+            <option value="unchanged">Unchanged value</option>
+            <option value="increased">Increased value</option>
+            <option value="decreased">Decreased value</option>
+          </select>
+        </label>
+        <label id="scan-value-label">
+          Value
           <input id="scan-value" type="number" step="any" value="100" />
         </label>
         <div class="buttons wide">
