@@ -175,6 +175,15 @@
     return `${instanceId}:${type}`;
   }
 
+  function clearInstanceScans(instanceId) {
+    const prefix = `${instanceId}:`;
+    for (const key of scans.keys()) {
+      if (key.startsWith(prefix)) {
+        scans.delete(key);
+      }
+    }
+  }
+
   function freezeKey(instanceId, type, address) {
     return `${instanceId}:${type}:${address}`;
   }
@@ -417,6 +426,14 @@
     }
     if (refine && condition === "unknown") {
       throw new Error("Unknown initial value is only available for a first scan.");
+    }
+
+    if (!refine) {
+      // A memory snapshot can be hundreds of MiB. Drop every older session for
+      // this WASM memory before allocating a replacement so stale snapshots do
+      // not double the peak memory usage or trigger a long final GC pause.
+      clearInstanceScans(record.id);
+      await yieldToPage();
     }
 
     const candidates = refine

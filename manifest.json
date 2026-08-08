@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Ruffle Memory Inspector",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Inspect and edit WebAssembly memory used by embedded Ruffle players.",
   "permissions": [],
   "host_permissions": ["<all_urls>"],

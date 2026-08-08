@@ -18,7 +18,7 @@ Firefox-first WebExtension prototype for inspecting WebAssembly memory used by e
 
 Raw writes are experimental. A wrong address can corrupt or crash the embedded player.
 
-For values that do not appear in an exact naturally aligned scan, try **Any byte** alignment. If the representation is unknown, run an **Unknown initial value** first scan, change the value in the game, select **Changed**, **Increased**, or **Decreased**, and use **Next scan**. Keep the type and alignment unchanged until resetting the scan.
+For values that do not appear in an exact naturally aligned scan, try **Any byte** alignment. If the representation is unknown, run an **Unknown initial value** first scan, change the value in the game, select **Changed**, **Increased**, or **Decreased**, and use **Next scan**. Keep the type and alignment unchanged until resetting the scan. Starting any new first scan replaces the previous session for that captured memory so large snapshots are released promptly.
 
 ## Load in Firefox
 

@@ -12,6 +12,7 @@
   let port = null;
   let reconnectTimer = null;
   let scanWatchdog = null;
+  const SCAN_WATCHDOG_MS = 15_000;
 
   const elements = {
     instance: document.querySelector("#instance"),
@@ -73,10 +74,10 @@
     scanWatchdog = setTimeout(() => {
       setScanButtonsDisabled(false);
       setStatus(
-        "The scan did not answer within 15 seconds. Reload the page and reopen DevTools if the extension was reloaded.",
+        "The scan stopped reporting progress for 15 seconds. Reload the page and reopen DevTools if the extension was reloaded.",
         "error",
       );
-    }, 15_000);
+    }, SCAN_WATCHDOG_MS);
   }
 
   function send(payload, frameId = selectedInstance()?.frameId) {

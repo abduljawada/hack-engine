@@ -92,11 +92,43 @@ window.addEventListener("message", (event) => {
     });
   } else if (payload?.kind === "scanResults" && payload.requestId === "increased-filter") {
     const retained = payload.total === 1 && payload.preview[0]?.address === increasedOffset;
-    advancedResultNode.textContent = retained
-      ? "PASS: found an unaligned value and narrowed unknown values by change direction."
-      : `FAIL: increased filter retained ${payload.total} candidates.`;
+    if (!retained) {
+      failAdvanced(`increased filter retained ${payload.total} candidates.`);
+      return;
+    }
+    sendAdvancedCommand({
+      kind: "memoryScan",
+      requestId: "replacement-first-scan",
+      instanceId: advancedInstanceId,
+      type: "f64",
+      rawValue: "0",
+      condition: "exact",
+      alignment: "aligned",
+      refine: false,
+    });
+  } else if (
+    payload?.kind === "scanResults" &&
+    payload.requestId === "replacement-first-scan"
+  ) {
+    sendAdvancedCommand({
+      kind: "memoryScan",
+      requestId: "cleared-session-check",
+      instanceId: advancedInstanceId,
+      type: "i32",
+      condition: "changed",
+      alignment: "aligned",
+      refine: true,
+    });
   } else if (payload?.kind === "error") {
-    failAdvanced(payload.message);
+    if (
+      payload.requestId === "cleared-session-check" &&
+      payload.message === "No previous scan exists. Run a first scan before filtering."
+    ) {
+      advancedResultNode.textContent =
+        "PASS: unaligned and comparison scans work, and replacement scans release stale sessions.";
+    } else {
+      failAdvanced(payload.message);
+    }
   }
 });
 
