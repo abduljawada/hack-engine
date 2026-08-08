@@ -244,16 +244,55 @@
     return Math.floor((byteLength - spec.size) / stride) + 1;
   }
 
-  async function captureSnapshot(record, requestId, byteLength) {
-    const snapshot = new Uint8Array(byteLength);
+  async function compressSnapshotBytes(bytes) {
+    if (
+      typeof CompressionStream !== "function" ||
+      typeof DecompressionStream !== "function"
+    ) {
+      throw new Error("This browser does not support compressed unknown-value snapshots.");
+    }
+    const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("gzip"));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+
+  async function decompressSnapshotChunk(chunk) {
+    const stream = new Blob([chunk.data])
+      .stream()
+      .pipeThrough(new DecompressionStream("gzip"));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+
+  function createSnapshot(byteLength) {
+    return {
+      byteLength,
+      chunkSize: SNAPSHOT_CHUNK_SIZE,
+      chunks: [],
+      compressedBytes: 0,
+    };
+  }
+
+  async function captureSnapshot(record, requestId, byteLength, spec) {
+    const snapshot = createSnapshot(byteLength);
     for (let offset = 0; offset < byteLength; offset += SNAPSHOT_CHUNK_SIZE) {
-      const length = Math.min(SNAPSHOT_CHUNK_SIZE, byteLength - offset);
-      snapshot.set(new Uint8Array(record.memory.buffer, offset, length), offset);
-      const inspected = offset + length;
-      send({ kind: "scanProgress", requestId, inspected, total: byteLength });
-      if (inspected < byteLength) {
-        await yieldToPage();
-      }
+      const uniqueLength = Math.min(SNAPSHOT_CHUNK_SIZE, byteLength - offset);
+      const byteLengthWithOverlap = Math.min(
+        uniqueLength + spec.size - 1,
+        byteLength - offset,
+      );
+      const bytes = new Uint8Array(
+        record.memory.buffer,
+        offset,
+        byteLengthWithOverlap,
+      ).slice();
+      const data = await compressSnapshotBytes(bytes);
+      snapshot.chunks.push({ data, byteLength: byteLengthWithOverlap, uniqueLength });
+      snapshot.compressedBytes += data.byteLength;
+      send({
+        kind: "scanProgress",
+        requestId,
+        inspected: offset + uniqueLength,
+        total: byteLength,
+      });
     }
     return snapshot;
   }
@@ -298,9 +337,168 @@
 
   async function firstUnknownScan({ requestId, record, type, spec, stride }) {
     const byteLength = record.memory.buffer.byteLength;
-    const snapshot = await captureSnapshot(record, requestId, byteLength);
+    const snapshot = await captureSnapshot(record, requestId, byteLength, spec);
     const slotCount = slotCountFor(byteLength, spec, stride);
     return createAllCandidateSet(slotCount, type, stride, snapshot);
+  }
+
+  function candidateIsRetained(candidateSet, slotIndex) {
+    return candidateSet.allCandidates || Boolean(
+      candidateSet.bits?.[slotIndex >>> 3] & (1 << (slotIndex & 7)),
+    );
+  }
+
+  function candidateRangeHasMatches(candidateSet, startSlot, endSlot) {
+    if (candidateSet.allCandidates) {
+      return startSlot < endSlot;
+    }
+    const startByte = startSlot >>> 3;
+    const endByte = Math.ceil(endSlot / 8);
+    for (let byteIndex = startByte; byteIndex < endByte; byteIndex += 1) {
+      if (candidateSet.bits[byteIndex]) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  async function refineLiveExact({
+    requestId,
+    record,
+    type,
+    spec,
+    rawValue,
+    stride,
+    previous,
+    slotCount,
+  }) {
+    const candidates = createCandidateSet(slotCount, type, stride);
+    const value = parseValue(type, rawValue);
+    let view = new DataView(record.memory.buffer);
+    const bytesPerChunk = Math.max(1, Math.floor(SCAN_CHUNK_SIZE / 8));
+
+    for (let byteIndex = 0; byteIndex < previous.bits.length; byteIndex += 1) {
+      const candidateByte = previous.bits[byteIndex];
+      if (candidateByte) {
+        for (let bitIndex = 0; bitIndex < 8; bitIndex += 1) {
+          if (!(candidateByte & (1 << bitIndex))) {
+            continue;
+          }
+          const slotIndex = byteIndex * 8 + bitIndex;
+          if (slotIndex >= slotCount) {
+            break;
+          }
+          const offset = slotIndex * stride;
+          if (spec.read(view, offset) === value) {
+            retainCandidate(candidates, slotIndex, offset);
+          }
+        }
+      }
+
+      if ((byteIndex + 1) % bytesPerChunk === 0) {
+        const inspected = Math.min((byteIndex + 1) * 8, slotCount);
+        send({ kind: "scanProgress", requestId, inspected, total: slotCount });
+        await yieldToPage();
+        view = new DataView(record.memory.buffer);
+      }
+    }
+    return candidates;
+  }
+
+  async function refineSnapshotScan({
+    requestId,
+    record,
+    type,
+    spec,
+    rawValue,
+    condition,
+    stride,
+    previous,
+    slotCount,
+    currentByteLength,
+  }) {
+    const candidates = createCandidateSet(slotCount, type, stride);
+    const currentSnapshot = createSnapshot(currentByteLength);
+    currentSnapshot.chunks = new Array(previous.snapshot.chunks.length).fill(null);
+    const value = condition === "exact" ? parseValue(type, rawValue) : null;
+
+    for (
+      let chunkIndex = 0;
+      chunkIndex < previous.snapshot.chunks.length;
+      chunkIndex += 1
+    ) {
+      const previousChunk = previous.snapshot.chunks[chunkIndex];
+      const chunkOffset = chunkIndex * previous.snapshot.chunkSize;
+      const uniqueLength = Math.min(
+        previous.snapshot.chunkSize,
+        currentByteLength - chunkOffset,
+      );
+      if (!previousChunk || uniqueLength <= 0) {
+        continue;
+      }
+
+      const startSlot = Math.ceil(chunkOffset / stride);
+      const endSlot = Math.min(
+        slotCount,
+        Math.ceil((chunkOffset + uniqueLength) / stride),
+      );
+      if (!candidateRangeHasMatches(previous, startSlot, endSlot)) {
+        send({ kind: "scanProgress", requestId, inspected: endSlot, total: slotCount });
+        continue;
+      }
+
+      const currentReadLength = Math.min(
+        uniqueLength + spec.size - 1,
+        currentByteLength - chunkOffset,
+      );
+      const currentBytes = new Uint8Array(
+        record.memory.buffer,
+        chunkOffset,
+        currentReadLength,
+      ).slice();
+      const previousBytes = await decompressSnapshotChunk(previousChunk);
+      const currentView = new DataView(
+        currentBytes.buffer,
+        currentBytes.byteOffset,
+        currentBytes.byteLength,
+      );
+      const previousView = new DataView(
+        previousBytes.buffer,
+        previousBytes.byteOffset,
+        previousBytes.byteLength,
+      );
+      let chunkRetained = false;
+
+      for (let slotIndex = startSlot; slotIndex < endSlot; slotIndex += 1) {
+        if (!candidateIsRetained(previous, slotIndex)) {
+          continue;
+        }
+        const address = slotIndex * stride;
+        const localOffset = address - chunkOffset;
+        const currentValue = spec.read(currentView, localOffset);
+        const matches = condition === "exact"
+          ? currentValue === value
+          : comparisonMatches(condition, currentValue, spec.read(previousView, localOffset));
+        if (matches) {
+          retainCandidate(candidates, slotIndex, address);
+          chunkRetained = true;
+        }
+      }
+
+      if (chunkRetained) {
+        const data = await compressSnapshotBytes(currentBytes);
+        currentSnapshot.chunks[chunkIndex] = {
+          data,
+          byteLength: currentReadLength,
+          uniqueLength,
+        };
+        currentSnapshot.compressedBytes += data.byteLength;
+      }
+      send({ kind: "scanProgress", requestId, inspected: endSlot, total: slotCount });
+    }
+
+    candidates.snapshot = currentSnapshot;
+    return candidates;
   }
 
   async function refineScan({
@@ -326,74 +524,30 @@
     );
     const currentSlotCount = slotCountFor(currentByteLength, spec, stride);
     const slotCount = Math.min(previous.slotCount, currentSlotCount);
-    const candidates = createCandidateSet(slotCount, type, stride);
-    const currentSnapshot = previous.snapshot
-      ? await captureSnapshot(record, requestId, currentByteLength)
-      : null;
-    const value = condition === "exact" ? parseValue(type, rawValue) : null;
-    let currentView = new DataView(
-      currentSnapshot?.buffer ?? record.memory.buffer,
-      currentSnapshot?.byteOffset ?? 0,
-      currentSnapshot?.byteLength,
-    );
-    const previousView = previous.snapshot
-      ? new DataView(
-        previous.snapshot.buffer,
-        previous.snapshot.byteOffset,
-        previous.snapshot.byteLength,
-      )
-      : null;
-
-    const inspectCandidate = (slotIndex) => {
-      const offset = slotIndex * stride;
-      const currentValue = spec.read(currentView, offset);
-      const matches = condition === "exact"
-        ? currentValue === value
-        : comparisonMatches(condition, currentValue, spec.read(previousView, offset));
-      if (matches) {
-        retainCandidate(candidates, slotIndex, offset);
-      }
-    };
-
-    if (previous.allCandidates) {
-      for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
-        inspectCandidate(slotIndex);
-        const inspected = slotIndex + 1;
-        if (inspected % SCAN_CHUNK_SIZE === 0) {
-          send({ kind: "scanProgress", requestId, inspected, total: slotCount });
-          await yieldToPage();
-        }
-      }
-    } else {
-      const bytesPerChunk = Math.max(1, Math.floor(SCAN_CHUNK_SIZE / 8));
-      for (let byteIndex = 0; byteIndex < previous.bits.length; byteIndex += 1) {
-        const candidateByte = previous.bits[byteIndex];
-        if (candidateByte) {
-          for (let bitIndex = 0; bitIndex < 8; bitIndex += 1) {
-            if (!(candidateByte & (1 << bitIndex))) {
-              continue;
-            }
-            const slotIndex = byteIndex * 8 + bitIndex;
-            if (slotIndex >= slotCount) {
-              break;
-            }
-            inspectCandidate(slotIndex);
-          }
-        }
-
-        if ((byteIndex + 1) % bytesPerChunk === 0) {
-          const inspected = Math.min((byteIndex + 1) * 8, slotCount);
-          send({ kind: "scanProgress", requestId, inspected, total: slotCount });
-          await yieldToPage();
-          if (!currentSnapshot) {
-            currentView = new DataView(record.memory.buffer);
-          }
-        }
-      }
+    if (!previous.snapshot) {
+      return refineLiveExact({
+        requestId,
+        record,
+        type,
+        spec,
+        rawValue,
+        stride,
+        previous,
+        slotCount,
+      });
     }
-
-    candidates.snapshot = currentSnapshot;
-    return candidates;
+    return refineSnapshotScan({
+      requestId,
+      record,
+      type,
+      spec,
+      rawValue,
+      condition,
+      stride,
+      previous,
+      slotCount,
+      currentByteLength,
+    });
   }
 
   async function memoryScan({
@@ -470,6 +624,7 @@
       total: candidates.count,
       preview,
       memoryBytes: record.memory.buffer.byteLength,
+      snapshotBytes: candidates.snapshot?.compressedBytes ?? null,
     });
   }
 

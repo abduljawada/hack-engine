@@ -233,10 +233,13 @@
     elements.resultCount.textContent = payload.total.toLocaleString();
     clearScanWatchdog();
     setScanButtonsDisabled(false);
+    const snapshotNote = payload.snapshotBytes == null
+      ? ""
+      : ` Compressed snapshot: ${formatBytes(payload.snapshotBytes)}.`;
     setStatus(
       payload.total === 0
-        ? "No matching values found. Reset before starting a new scan."
-        : `${payload.total.toLocaleString()} candidates remain; showing up to ${payload.preview.length}.`,
+        ? `No matching values found. Reset before starting a new scan.${snapshotNote}`
+        : `${payload.total.toLocaleString()} candidates remain; showing up to ${payload.preview.length}.${snapshotNote}`,
       "ready",
     );
   }

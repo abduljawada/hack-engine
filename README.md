@@ -53,9 +53,11 @@ With the extension loaded, scan the captured memory as `Float64` for `12345.5`. 
 
 `/test/advanced-scan-harness.html` verifies byte-by-byte discovery of an unaligned value and unknown-value filtering by change direction.
 
+`/test/large-unknown-harness.html` reproduces Ruffle's 225.5 MiB memory scale and verifies that an unknown scan completes with a chunk-compressed snapshot instead of duplicating the entire heap.
+
 ## Intentional limitations
 
-- Byte-by-byte and unknown-value scans can be significantly slower and unknown scans retain a memory snapshot of the scanned range.
+- Byte-by-byte and unknown-value scans can be significantly slower. Unknown scans retain independently compressed memory chunks and decompress only the chunks needed by each comparison pass.
 - A scan covers the memory range that existed when it started; pages added during that scan are considered by the next first scan.
 - It captures instantiation through the two standard asynchronous WebAssembly APIs, not direct `new WebAssembly.Instance(...)` construction.
 - The Ruffle label is heuristic; the panel also exposes other captured WASM memories so detection failures do not hide the target.
