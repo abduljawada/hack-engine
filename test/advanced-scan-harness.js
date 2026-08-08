@@ -29,6 +29,11 @@ window.addEventListener("message", (event) => {
   }
 
   const payload = message.payload;
+  if (payload?.kind !== "scanProgress") {
+    advancedResultNode.dataset.lastMessage = `${payload?.kind || "missing"}:${
+      payload?.requestId || "none"
+    }`;
+  }
   if (payload?.kind === "instanceCaptured") {
     advancedInstanceId = payload.instance.id;
     sendAdvancedCommand({

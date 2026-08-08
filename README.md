@@ -57,7 +57,7 @@ With the extension loaded, scan the captured memory as `Float64` for `12345.5`. 
 
 ## Intentional limitations
 
-- Byte-by-byte and unknown-value scans can be significantly slower. Unknown scans retain independently compressed memory chunks and decompress only the chunks needed by each comparison pass.
+- Byte-by-byte and unknown-value scans can be significantly slower. Unknown scans keep independently compressed chunks in browser storage and load only the chunk needed by each comparison pass, avoiding a second Ruffle-sized JavaScript heap allocation.
 - A scan covers the memory range that existed when it started; pages added during that scan are considered by the next first scan.
 - It captures instantiation through the two standard asynchronous WebAssembly APIs, not direct `new WebAssembly.Instance(...)` construction.
 - The Ruffle label is heuristic; the panel also exposes other captured WASM memories so detection failures do not hide the target.

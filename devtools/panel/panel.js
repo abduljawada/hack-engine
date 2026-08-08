@@ -272,7 +272,13 @@
         break;
       case "scanProgress":
         armScanWatchdog();
-        setStatus(`Scanning… ${payload.inspected.toLocaleString()} / ${payload.total.toLocaleString()}`);
+        setStatus(
+          `Scanning… ${payload.inspected.toLocaleString()} / ${payload.total.toLocaleString()}${
+            payload.snapshotBytes == null
+              ? ""
+              : ` · stored ${formatBytes(payload.snapshotBytes)}`
+          }`,
+        );
         break;
       case "scanResults":
         renderCandidates(payload);

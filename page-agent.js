@@ -5,6 +5,8 @@
   const RESULT_PREVIEW_LIMIT = 200;
   const SCAN_CHUNK_SIZE = 100_000;
   const SNAPSHOT_CHUNK_SIZE = 1024 * 1024;
+  const SNAPSHOT_DB_NAME = "ruffle-memory-inspector-snapshots-v1";
+  const SNAPSHOT_STORE_NAME = "chunks";
 
   if (window.__ruffleMemoryInspectorV1) {
     return;
@@ -14,7 +16,9 @@
   const scans = new Map();
   const freezes = new Map();
   let nextInstanceId = 1;
+  let nextSnapshotId = 1;
   let freezeFrameHandle = null;
+  let snapshotDatabasePromise = null;
 
   const typeSpecs = {
     i32: {
@@ -175,13 +179,16 @@
     return `${instanceId}:${type}`;
   }
 
-  function clearInstanceScans(instanceId) {
+  async function clearInstanceScans(instanceId) {
     const prefix = `${instanceId}:`;
+    const cleanup = [];
     for (const key of scans.keys()) {
       if (key.startsWith(prefix)) {
+        cleanup.push(deleteSnapshot(scans.get(key)?.snapshot));
         scans.delete(key);
       }
     }
+    await Promise.allSettled(cleanup);
   }
 
   function freezeKey(instanceId, type, address) {
@@ -262,8 +269,110 @@
     return new Uint8Array(await new Response(stream).arrayBuffer());
   }
 
+  function openSnapshotDatabase() {
+    if (snapshotDatabasePromise) {
+      return snapshotDatabasePromise;
+    }
+    if (typeof indexedDB === "undefined") {
+      throw new Error("This page does not provide snapshot storage.");
+    }
+    snapshotDatabasePromise = new Promise((resolve, reject) => {
+      const request = indexedDB.open(SNAPSHOT_DB_NAME, 1);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        if (!database.objectStoreNames.contains(SNAPSHOT_STORE_NAME)) {
+          database.createObjectStore(SNAPSHOT_STORE_NAME, {
+            keyPath: ["snapshotId", "chunkIndex"],
+          });
+        }
+      };
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction(SNAPSHOT_STORE_NAME, "readwrite");
+        transaction.objectStore(SNAPSHOT_STORE_NAME).clear();
+        transaction.oncomplete = () => resolve(database);
+        transaction.onerror = () => reject(
+          transaction.error || new Error("Unable to initialize snapshot storage."),
+        );
+        transaction.onabort = transaction.onerror;
+      };
+      request.onerror = () => reject(request.error || new Error("Unable to open snapshot storage."));
+      request.onblocked = () => reject(new Error("Snapshot storage is blocked by another page."));
+    });
+    snapshotDatabasePromise.catch(() => {
+      snapshotDatabasePromise = null;
+    });
+    return snapshotDatabasePromise;
+  }
+
+  function runSnapshotTransaction(mode, operation) {
+    return openSnapshotDatabase().then((database) => new Promise((resolve, reject) => {
+      const transaction = database.transaction(SNAPSHOT_STORE_NAME, mode);
+      const store = transaction.objectStore(SNAPSHOT_STORE_NAME);
+      let result;
+      try {
+        result = operation(store);
+      } catch (error) {
+        transaction.abort();
+        reject(error);
+        return;
+      }
+      transaction.oncomplete = () => resolve(result?.result);
+      transaction.onerror = () => reject(
+        transaction.error || new Error("Snapshot storage transaction failed."),
+      );
+      transaction.onabort = () => reject(
+        transaction.error || new Error("Snapshot storage transaction was aborted."),
+      );
+    }));
+  }
+
+  async function storeSnapshotChunk(snapshot, chunkIndex, data, metadata) {
+    try {
+      await runSnapshotTransaction("readwrite", (store) => store.put({
+        snapshotId: snapshot.id,
+        chunkIndex,
+        data,
+      }));
+    } catch (error) {
+      throw new Error(
+        `Unable to store the unknown-value snapshot: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+    snapshot.chunks[chunkIndex] = metadata;
+    snapshot.compressedBytes += data.byteLength;
+  }
+
+  async function loadSnapshotChunk(snapshot, chunkIndex) {
+    const row = await runSnapshotTransaction(
+      "readonly",
+      (store) => store.get([snapshot.id, chunkIndex]),
+    );
+    if (!row?.data) {
+      throw new Error(`Snapshot chunk ${chunkIndex} is missing.`);
+    }
+    const data = row.data instanceof Uint8Array ? row.data : new Uint8Array(row.data);
+    return decompressSnapshotChunk({ data });
+  }
+
+  async function deleteSnapshot(snapshot) {
+    if (!snapshot?.id) {
+      return;
+    }
+    const range = IDBKeyRange.bound(
+      [snapshot.id, 0],
+      [snapshot.id, Number.MAX_SAFE_INTEGER],
+    );
+    await runSnapshotTransaction("readwrite", (store) => store.delete(range));
+  }
+
   function createSnapshot(byteLength) {
     return {
+      id: typeof globalThis.crypto?.randomUUID === "function"
+        ? globalThis.crypto.randomUUID()
+        : `${Date.now().toString(36)}-${nextSnapshotId++}-${Math.random().toString(36).slice(2)}`,
       byteLength,
       chunkSize: SNAPSHOT_CHUNK_SIZE,
       chunks: [],
@@ -273,26 +382,35 @@
 
   async function captureSnapshot(record, requestId, byteLength, spec) {
     const snapshot = createSnapshot(byteLength);
-    for (let offset = 0; offset < byteLength; offset += SNAPSHOT_CHUNK_SIZE) {
-      const uniqueLength = Math.min(SNAPSHOT_CHUNK_SIZE, byteLength - offset);
-      const byteLengthWithOverlap = Math.min(
-        uniqueLength + spec.size - 1,
-        byteLength - offset,
-      );
-      const bytes = new Uint8Array(
-        record.memory.buffer,
-        offset,
-        byteLengthWithOverlap,
-      ).slice();
-      const data = await compressSnapshotBytes(bytes);
-      snapshot.chunks.push({ data, byteLength: byteLengthWithOverlap, uniqueLength });
-      snapshot.compressedBytes += data.byteLength;
-      send({
-        kind: "scanProgress",
-        requestId,
-        inspected: offset + uniqueLength,
-        total: byteLength,
-      });
+    try {
+      for (let offset = 0; offset < byteLength; offset += SNAPSHOT_CHUNK_SIZE) {
+        const chunkIndex = Math.floor(offset / SNAPSHOT_CHUNK_SIZE);
+        const uniqueLength = Math.min(SNAPSHOT_CHUNK_SIZE, byteLength - offset);
+        const byteLengthWithOverlap = Math.min(
+          uniqueLength + spec.size - 1,
+          byteLength - offset,
+        );
+        const bytes = new Uint8Array(
+          record.memory.buffer,
+          offset,
+          byteLengthWithOverlap,
+        ).slice();
+        const data = await compressSnapshotBytes(bytes);
+        await storeSnapshotChunk(snapshot, chunkIndex, data, {
+          byteLength: byteLengthWithOverlap,
+          uniqueLength,
+        });
+        send({
+          kind: "scanProgress",
+          requestId,
+          inspected: offset + uniqueLength,
+          total: byteLength,
+          snapshotBytes: snapshot.compressedBytes,
+        });
+      }
+    } catch (error) {
+      await deleteSnapshot(snapshot).catch(() => {});
+      throw error;
     }
     return snapshot;
   }
@@ -422,79 +540,88 @@
     currentSnapshot.chunks = new Array(previous.snapshot.chunks.length).fill(null);
     const value = condition === "exact" ? parseValue(type, rawValue) : null;
 
-    for (
-      let chunkIndex = 0;
-      chunkIndex < previous.snapshot.chunks.length;
-      chunkIndex += 1
-    ) {
-      const previousChunk = previous.snapshot.chunks[chunkIndex];
-      const chunkOffset = chunkIndex * previous.snapshot.chunkSize;
-      const uniqueLength = Math.min(
-        previous.snapshot.chunkSize,
-        currentByteLength - chunkOffset,
-      );
-      if (!previousChunk || uniqueLength <= 0) {
-        continue;
-      }
-
-      const startSlot = Math.ceil(chunkOffset / stride);
-      const endSlot = Math.min(
-        slotCount,
-        Math.ceil((chunkOffset + uniqueLength) / stride),
-      );
-      if (!candidateRangeHasMatches(previous, startSlot, endSlot)) {
-        send({ kind: "scanProgress", requestId, inspected: endSlot, total: slotCount });
-        continue;
-      }
-
-      const currentReadLength = Math.min(
-        uniqueLength + spec.size - 1,
-        currentByteLength - chunkOffset,
-      );
-      const currentBytes = new Uint8Array(
-        record.memory.buffer,
-        chunkOffset,
-        currentReadLength,
-      ).slice();
-      const previousBytes = await decompressSnapshotChunk(previousChunk);
-      const currentView = new DataView(
-        currentBytes.buffer,
-        currentBytes.byteOffset,
-        currentBytes.byteLength,
-      );
-      const previousView = new DataView(
-        previousBytes.buffer,
-        previousBytes.byteOffset,
-        previousBytes.byteLength,
-      );
-      let chunkRetained = false;
-
-      for (let slotIndex = startSlot; slotIndex < endSlot; slotIndex += 1) {
-        if (!candidateIsRetained(previous, slotIndex)) {
+    try {
+      for (
+        let chunkIndex = 0;
+        chunkIndex < previous.snapshot.chunks.length;
+        chunkIndex += 1
+      ) {
+        const previousChunk = previous.snapshot.chunks[chunkIndex];
+        const chunkOffset = chunkIndex * previous.snapshot.chunkSize;
+        const uniqueLength = Math.min(
+          previous.snapshot.chunkSize,
+          currentByteLength - chunkOffset,
+        );
+        if (!previousChunk || uniqueLength <= 0) {
           continue;
         }
-        const address = slotIndex * stride;
-        const localOffset = address - chunkOffset;
-        const currentValue = spec.read(currentView, localOffset);
-        const matches = condition === "exact"
-          ? currentValue === value
-          : comparisonMatches(condition, currentValue, spec.read(previousView, localOffset));
-        if (matches) {
-          retainCandidate(candidates, slotIndex, address);
-          chunkRetained = true;
-        }
-      }
 
-      if (chunkRetained) {
-        const data = await compressSnapshotBytes(currentBytes);
-        currentSnapshot.chunks[chunkIndex] = {
-          data,
-          byteLength: currentReadLength,
-          uniqueLength,
-        };
-        currentSnapshot.compressedBytes += data.byteLength;
+        const startSlot = Math.ceil(chunkOffset / stride);
+        const endSlot = Math.min(
+          slotCount,
+          Math.ceil((chunkOffset + uniqueLength) / stride),
+        );
+        if (!candidateRangeHasMatches(previous, startSlot, endSlot)) {
+          send({ kind: "scanProgress", requestId, inspected: endSlot, total: slotCount });
+          continue;
+        }
+
+        const currentReadLength = Math.min(
+          uniqueLength + spec.size - 1,
+          currentByteLength - chunkOffset,
+        );
+        const currentBytes = new Uint8Array(
+          record.memory.buffer,
+          chunkOffset,
+          currentReadLength,
+        ).slice();
+        const previousBytes = await loadSnapshotChunk(previous.snapshot, chunkIndex);
+        const currentView = new DataView(
+          currentBytes.buffer,
+          currentBytes.byteOffset,
+          currentBytes.byteLength,
+        );
+        const previousView = new DataView(
+          previousBytes.buffer,
+          previousBytes.byteOffset,
+          previousBytes.byteLength,
+        );
+        let chunkRetained = false;
+
+        for (let slotIndex = startSlot; slotIndex < endSlot; slotIndex += 1) {
+          if (!candidateIsRetained(previous, slotIndex)) {
+            continue;
+          }
+          const address = slotIndex * stride;
+          const localOffset = address - chunkOffset;
+          const currentValue = spec.read(currentView, localOffset);
+          const matches = condition === "exact"
+            ? currentValue === value
+            : comparisonMatches(condition, currentValue, spec.read(previousView, localOffset));
+          if (matches) {
+            retainCandidate(candidates, slotIndex, address);
+            chunkRetained = true;
+          }
+        }
+
+        if (chunkRetained) {
+          const data = await compressSnapshotBytes(currentBytes);
+          await storeSnapshotChunk(currentSnapshot, chunkIndex, data, {
+            byteLength: currentReadLength,
+            uniqueLength,
+          });
+        }
+        send({
+          kind: "scanProgress",
+          requestId,
+          inspected: endSlot,
+          total: slotCount,
+          snapshotBytes: currentSnapshot.compressedBytes,
+        });
       }
-      send({ kind: "scanProgress", requestId, inspected: endSlot, total: slotCount });
+    } catch (error) {
+      await deleteSnapshot(currentSnapshot).catch(() => {});
+      throw error;
     }
 
     candidates.snapshot = currentSnapshot;
@@ -586,7 +713,7 @@
       // A memory snapshot can be hundreds of MiB. Drop every older session for
       // this WASM memory before allocating a replacement so stale snapshots do
       // not double the peak memory usage or trigger a long final GC pause.
-      clearInstanceScans(record.id);
+      await clearInstanceScans(record.id);
       await yieldToPage();
     }
 
@@ -606,6 +733,9 @@
         : await firstExactScan({ requestId, record, type, spec, rawValue, stride });
 
     scans.set(key, candidates);
+    if (previous?.snapshot && previous.snapshot !== candidates.snapshot) {
+      deleteSnapshot(previous.snapshot).catch(() => {});
+    }
     sendScanResults(requestId, record, type, candidates);
   }
 
@@ -751,8 +881,11 @@
     }
   }
 
-  function resetScan({ requestId, instanceId, type }) {
-    scans.delete(scanKey(String(instanceId), type));
+  async function resetScan({ requestId, instanceId, type }) {
+    const key = scanKey(String(instanceId), type);
+    const previous = scans.get(key);
+    scans.delete(key);
+    await deleteSnapshot(previous?.snapshot).catch(() => {});
     send({ kind: "scanReset", requestId, instanceId: String(instanceId), type });
   }
 
