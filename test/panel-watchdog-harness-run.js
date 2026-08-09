@@ -49,6 +49,47 @@ emitPanelPayload({
   allCandidates: false,
 });
 
+document.querySelector("#type").value = "auto";
+document.querySelector("#type").dispatchEvent(new Event("change"));
+document.querySelector("#condition").value = "exact";
+document.querySelector("#condition").dispatchEvent(new Event("change"));
+document.querySelector("#scan-value").value = "100";
+document.querySelector("#multiplier").value = "8";
+document.querySelector("#first-scan").click();
+const autoRequest = latestScanCommand();
+emitPanelPayload({
+  kind: "scanResults",
+  requestId: autoRequest?.requestId,
+  instanceId: "1",
+  type: "auto",
+  multiplier: 8,
+  total: 1,
+  preview: [{
+    address: 4096,
+    type: "i16",
+    multiplier: 8,
+    value: 800,
+    displayValue: 100,
+  }],
+  allCandidates: false,
+});
+document.querySelector("#candidates tr").click();
+document.querySelector("#write-value").value = "125";
+document.querySelector("#write").click();
+const scaledWrite = panelHarnessState.commands
+  .map((message) => message?.payload)
+  .findLast((payload) => payload?.kind === "writeValue");
+const autoControlsWork =
+  autoRequest?.type === "auto" &&
+  autoRequest?.multiplier === 8 &&
+  document.querySelector("#candidates").textContent.includes("i16 ×8") &&
+  scaledWrite?.type === "i16" &&
+  scaledWrite?.multiplier === 8 &&
+  scaledWrite?.rawValue === "125";
+
+document.querySelector("#type").value = "f64";
+document.querySelector("#type").dispatchEvent(new Event("change"));
+document.querySelector("#multiplier").value = "1";
 document.querySelector("#condition").value = "unknown";
 document.querySelector("#condition").dispatchEvent(new Event("change"));
 document.querySelector("#first-scan").click();
@@ -147,6 +188,6 @@ const diagnosed =
   document.querySelector("#watches").textContent.includes("Game restored it") &&
   document.querySelector("#status").textContent.includes("game restored");
 
-panelHarnessResult.textContent = rangeControlsWork && malformedHandled && validHandled && watched && diagnosed
-  ? "PASS: panel range controls, watchdog, initial unknown results, live watches, and write diagnostics work."
+panelHarnessResult.textContent = rangeControlsWork && autoControlsWork && malformedHandled && validHandled && watched && diagnosed
+  ? "PASS: panel range and auto-type controls, watchdog, live watches, and write diagnostics work."
   : "FAIL: panel request lifecycle did not complete as expected.";
