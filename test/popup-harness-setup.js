@@ -1,5 +1,10 @@
 const popupHarnessState = {
   createdTabs: [],
+  createdWindows: [],
+  updatedWindows: [],
+  popupWindows: [],
+  queriedTabs: 0,
+  retrievedTabs: [],
   reloadedTabs: [],
   commands: [],
   closed: false,
@@ -121,7 +126,12 @@ globalThis.browser = {
   },
   tabs: {
     async query() {
-      return [{ id: 77, url: "https://bubblebox.com/civilizations-wars" }];
+      popupHarnessState.queriedTabs += 1;
+      return [{ id: 77, windowId: 10, url: "https://bubblebox.com/civilizations-wars" }];
+    },
+    async get(tabId) {
+      popupHarnessState.retrievedTabs.push(tabId);
+      return { id: tabId, windowId: 10, url: "https://bubblebox.com/civilizations-wars" };
     },
     async create(options) {
       popupHarnessState.createdTabs.push(options);
@@ -129,6 +139,25 @@ globalThis.browser = {
     },
     async reload(tabId) {
       popupHarnessState.reloadedTabs.push(tabId);
+    },
+  },
+  windows: {
+    async getAll() {
+      return popupHarnessState.popupWindows;
+    },
+    async create(options) {
+      const browserWindow = {
+        id: 91,
+        type: options.type,
+        tabs: [{ id: 92, url: options.url }],
+      };
+      popupHarnessState.createdWindows.push(options);
+      popupHarnessState.popupWindows.push(browserWindow);
+      return browserWindow;
+    },
+    async update(windowId, options) {
+      popupHarnessState.updatedWindows.push({ windowId, options });
+      return popupHarnessState.popupWindows.find(({ id }) => id === windowId);
     },
   },
 };

@@ -10,7 +10,7 @@ window.RUFFLE_MEMORY_STATUS = {
     },
     {
       title: "Type-free quick scan",
-      description: "Use Ruffle movie metadata to guide a simple toolbar scan, with a safe all-format fallback.",
+      description: "Use a compact toolbar scan with Ruffle-guided formats, or pin it while interacting with the game.",
     },
     {
       title: "Comparison refinement",

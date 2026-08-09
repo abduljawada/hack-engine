@@ -24,17 +24,38 @@ body {
   color: var(--text);
   font-size: 14px;
 }
+body.pinned-window { width: 100%; min-width: 360px; min-height: 100vh; max-height: none; }
 button { font: inherit; }
 main { padding: 16px 18px; }
-.brand-row { display: flex; align-items: center; gap: 13px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
-.brand-row > img { width: 44px; height: 44px; border-radius: 10px; }
+.popup-header {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
 h1, h2, p { margin: 0; }
 h1 { font-size: 21px; line-height: 1.1; letter-spacing: -0.025em; }
-.brand-row p { margin-top: 4px; color: var(--muted); font-size: 12px; }
-.tab-context { display: grid; grid-template-columns: 24px 1fr; align-items: center; gap: 10px; padding: 16px 2px; border-bottom: 1px solid var(--line); }
-.tab-context div { min-width: 0; display: grid; gap: 3px; }
 .context-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em; }
-#hostname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.pin-action {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.pin-action img { width: 20px; height: 20px; filter: invert(72%) sepia(9%) saturate(481%) hue-rotate(179deg) brightness(91%); }
+.pin-action:hover { border-color: var(--line); background: var(--surface-hover); color: var(--text); }
+.pin-action.active { border-color: rgb(130 247 197 / 28%); background: rgb(130 247 197 / 8%); color: var(--accent); }
+.pin-action.active img { filter: invert(88%) sepia(36%) saturate(628%) hue-rotate(94deg) brightness(101%); }
+.pin-action:disabled { cursor: not-allowed; opacity: 0.42; }
 .connection-state { display: grid; grid-template-columns: 32px 1fr; gap: 10px; align-items: center; padding: 14px 2px; border-bottom: 1px solid var(--line); }
 .connection-state h2 { color: var(--accent); font-size: 17px; line-height: 1.25; }
 .connection-state p { margin-top: 5px; color: var(--muted); font-size: 13px; line-height: 1.45; }
@@ -64,6 +85,7 @@ h1 { font-size: 21px; line-height: 1.1; letter-spacing: -0.025em; }
 .primary-action img { width: 20px; height: 20px; }
 .primary-action:hover { background: var(--accent-strong); }
 .primary-action:focus-visible,
+.pin-action:focus-visible,
 .compact-action:focus-visible,
 .inspector-action:focus-visible,
 .secondary-actions button:focus-visible,

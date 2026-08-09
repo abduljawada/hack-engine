@@ -2,6 +2,13 @@
   "use strict";
 
   const extensionApi = globalThis.browser ?? globalThis.chrome;
+  const popupParameters = new URLSearchParams(location.search);
+  const pinnedTabId = Number(popupParameters.get("tabId"));
+  const isPinnedWindow =
+    popupParameters.get("pinned") === "1" &&
+    popupParameters.has("tabId") &&
+    Number.isInteger(pinnedTabId) &&
+    pinnedTabId >= 0;
   const instances = new Map();
   const frozenCandidates = new Set();
   let activeTab = null;
@@ -12,7 +19,7 @@
   let selectedCandidate = null;
 
   const elements = {
-    hostname: document.querySelector("#hostname"),
+    pin: document.querySelector("#pin-popup"),
     statusDot: document.querySelector("#status-dot"),
     statusTitle: document.querySelector("#status-title"),
     statusDetail: document.querySelector("#status-detail"),
@@ -62,12 +69,10 @@
     return `0x${Number(address).toString(16).padStart(8, "0")}`;
   }
 
-  function hostnameFor(tab) {
-    try {
-      return new URL(tab.url).hostname || "Browser page";
-    } catch {
-      return "Browser page";
-    }
+  function newTabOptions(url) {
+    return Number.isInteger(activeTab?.windowId)
+      ? { url, windowId: activeTab.windowId }
+      : { url };
   }
 
   function candidateKey(candidate) {
@@ -389,9 +394,11 @@
   }
 
   async function initialize() {
-    const [tab] = await extensionApi.tabs.query({ active: true, currentWindow: true });
+    const tab = isPinnedWindow
+      ? await extensionApi.tabs.get(pinnedTabId)
+      : (await extensionApi.tabs.query({ active: true, currentWindow: true }))[0];
     activeTab = tab || null;
-    elements.hostname.textContent = activeTab ? hostnameFor(activeTab) : "No active browser tab";
+    elements.pin.disabled = !activeTab?.id;
     if (activeTab?.id) {
       port = extensionApi.runtime.connect({ name: `hack-popup:${activeTab.id}` });
       port.onMessage.addListener(handlePortMessage);
@@ -411,6 +418,43 @@
   }
 
   elements.condition.addEventListener("change", updateConditionControls);
+
+  elements.pin.addEventListener("click", async () => {
+    if (isPinnedWindow) {
+      window.close();
+      return;
+    }
+    if (!activeTab?.id || !extensionApi.windows) {
+      setQuickStatus("A persistent extension window is not available in this browser.", "error");
+      return;
+    }
+    const url = new URL(extensionApi.runtime.getURL("popup/popup.html"));
+    url.searchParams.set("pinned", "1");
+    url.searchParams.set("tabId", String(activeTab.id));
+    try {
+      const browserWindows = await extensionApi.windows.getAll({
+        populate: true,
+        windowTypes: ["popup"],
+      });
+      const existing = browserWindows.find((browserWindow) =>
+        browserWindow.tabs?.some((tab) => tab.url === url.href),
+      );
+      if (existing?.id !== undefined) {
+        await extensionApi.windows.update(existing.id, { focused: true });
+      } else {
+        await extensionApi.windows.create({
+          url: url.href,
+          type: "popup",
+          width: 400,
+          height: 680,
+          focused: true,
+        });
+      }
+      window.close();
+    } catch {
+      setQuickStatus("Hack Engine could not open the persistent window.", "error");
+    }
+  });
 
   elements.scan.addEventListener("click", () => {
     const refine = Boolean(quickSession?.canRefine);
@@ -562,8 +606,10 @@
     const url = new URL(extensionApi.runtime.getURL("devtools/panel/panel.html"));
     url.searchParams.set("standalone", "1");
     url.searchParams.set("tabId", String(activeTab.id));
-    await extensionApi.tabs.create({ url: url.href });
-    window.close();
+    await extensionApi.tabs.create(newTabOptions(url.href));
+    if (!isPinnedWindow) {
+      window.close();
+    }
   });
 
   elements.refreshConnection.addEventListener("click", async () => {
@@ -576,10 +622,12 @@
   });
 
   elements.howItWorks.addEventListener("click", async () => {
-    await extensionApi.tabs.create({
-      url: "https://abduljawada.github.io/hack-engine/#capabilities",
-    });
-    window.close();
+    await extensionApi.tabs.create(newTabOptions(
+      "https://abduljawada.github.io/hack-engine/#capabilities",
+    ));
+    if (!isPinnedWindow) {
+      window.close();
+    }
   });
 
   window.addEventListener("unload", () => {
@@ -589,8 +637,14 @@
 
   updateConditionControls();
   updateScanControls();
+  if (isPinnedWindow) {
+    document.body.classList.add("pinned-window");
+    elements.pin.classList.add("active");
+    elements.pin.setAttribute("aria-label", "Close pinned Hack Engine window");
+    elements.pin.title = "Close pinned window";
+  }
   initialize().catch(() => {
-    elements.hostname.textContent = "Unable to read the active tab";
+    elements.pin.disabled = true;
     renderSummary({ connected: false, instanceCount: 0, ruffleCount: 0, totalMemoryBytes: 0 });
   });
 })();

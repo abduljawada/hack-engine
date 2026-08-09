@@ -8,6 +8,7 @@ Firefox-first WebExtension prototype for inspecting WebAssembly memory used by e
 - Captures exported or imported `WebAssembly.Memory` objects in every permitted frame.
 - Adds a **Hack Engine** Firefox DevTools panel.
 - Adds a compact toolbar popup with a type-free quick scan, candidate writing, and freezing; the full inspector retains explicit numeric controls.
+- Provides a pin control that moves the popup into a persistent extension window bound to the original game tab, allowing page interaction without losing the controls.
 - Reads Ruffle's public movie metadata when available to distinguish ActionScript 1/2 from ActionScript 3 and prioritize the relevant numeric representations automatically.
 - Supports exact, inclusive range, and unknown-value scans for signed/unsigned 8-, 16-, and 32-bit integers plus `f32` and `f64`.
 - Provides an **All numeric types** discovery mode whose candidates retain their detected representation.
@@ -37,6 +38,8 @@ For approximate or rounded values, select **Value range** and enter inclusive mi
 Use **All numeric types** when the game representation is unknown. Results show the detected type per address. If the stored value is a scaled form of the displayed value, set **Stored-value multiplier** before scanning; candidate values, writes, freezes, and watches will continue to use the displayed value. Comparison conditions can follow exact, range, or unknown first scans. **Increased by** and **Decreased by** compare against the preceding scan after applying the same multiplier.
 
 For the shortest workflow, open **Hack Engine** from the Firefox toolbar and use **Quick scan**. It does not ask for a numeric type. For an ActionScript 1/2 movie it starts with `f64`; for ActionScript 3 it starts with `i32`, `u32`, and `f64` as appropriate. If Ruffle does not expose usable metadata, it safely falls back to all eight supported representations. Results retain their detected type internally, so selecting, writing, and freezing a candidate remains type-correct. **Search all number formats** is available after a guided exact or range scan when the first pass does not find the desired value.
+
+Browser action popups close when focus returns to the page. Use the pin in the popup header to open the same controls in a small persistent browser window. Reopening the toolbar popup focuses the existing pinned window for that tab instead of creating a duplicate. The persistent window is not an operating-system always-on-top window, but it remains open until closed or unpinned.
 
 ## Load in Firefox
 

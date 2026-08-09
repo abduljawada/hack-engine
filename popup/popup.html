@@ -8,21 +8,19 @@
   </head>
   <body>
     <main>
-      <header class="brand-row">
-        <img src="../assets/icons/icon-96.png" alt="" width="52" height="52" />
-        <div>
-          <h1>Hack Engine</h1>
-          <p>Ruffle memory tools</p>
-        </div>
+      <header class="popup-header">
+        <h1>Hack Engine</h1>
+        <button
+          id="pin-popup"
+          class="pin-action"
+          type="button"
+          aria-label="Keep Hack Engine open"
+          title="Keep open while using the page"
+          disabled
+        >
+          <img src="../assets/ui-icons/pin.svg" alt="" />
+        </button>
       </header>
-
-      <section class="tab-context" aria-label="Active tab">
-        <img class="ui-icon" src="../assets/ui-icons/globe-alt.svg" alt="" />
-        <div>
-          <span class="context-label">Active tab</span>
-          <strong id="hostname">Checking current tab…</strong>
-        </div>
-      </section>
 
       <section class="connection-state" aria-live="polite">
         <span id="status-dot" class="status-dot searching" aria-hidden="true"></span>

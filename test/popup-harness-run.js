@@ -5,8 +5,12 @@ function delay() {
 }
 
 setTimeout(async () => {
+  const pinnedMode = new URLSearchParams(location.search).get("pinned") === "1";
   const rendered =
-    document.querySelector("#hostname").textContent === "bubblebox.com" &&
+    document.querySelector(".popup-header h1").textContent === "Hack Engine" &&
+    !document.querySelector(".brand-row") &&
+    !document.querySelector(".tab-context") &&
+    !document.querySelector("#hostname") &&
     document.querySelector("#status-title").textContent === "Ruffle memory detected" &&
     document.querySelector("#memory-count").textContent === "1 captured memory" &&
     document.querySelector("#memory-size").textContent === "4.5 MiB available" &&
@@ -16,6 +20,54 @@ setTimeout(async () => {
     document.querySelector("#scan-strategy").textContent.includes("ActionScript 3") &&
     !document.querySelector("#open-inspector").disabled &&
     !document.querySelector("#type");
+
+  if (pinnedMode) {
+    const pin = document.querySelector("#pin-popup");
+    const boundToOriginalTab =
+      document.body.classList.contains("pinned-window") &&
+      pin.classList.contains("active") &&
+      pin.getAttribute("aria-label").includes("Close pinned") &&
+      popupHarnessState.retrievedTabs.length === 1 &&
+      popupHarnessState.retrievedTabs[0] === 77 &&
+      popupHarnessState.queriedTabs === 0;
+    document.querySelector("#open-inspector").click();
+    await delay();
+    const inspectorUrl = new URL(popupHarnessState.createdTabs[0]?.url || location.href);
+    const openedInOriginalWindow =
+      inspectorUrl.pathname.endsWith("/devtools/panel/panel.html") &&
+      popupHarnessState.createdTabs[0]?.windowId === 10 &&
+      !popupHarnessState.closed;
+    pin.click();
+    await delay();
+    popupHarnessResult.textContent = rendered && boundToOriginalTab && openedInOriginalWindow && popupHarnessState.closed
+      ? "PASS: pinned popup stays bound to its original inspected tab and exposes unpin behavior."
+      : "FAIL: pinned popup did not preserve its target tab or window state.";
+    return;
+  }
+
+  const pin = document.querySelector("#pin-popup");
+  pin.click();
+  await delay();
+  const pinnedUrl = new URL(popupHarnessState.createdWindows[0]?.url || location.href);
+  const firstPinOpened =
+    popupHarnessState.createdWindows.length === 1 &&
+    popupHarnessState.createdWindows[0].type === "popup" &&
+    popupHarnessState.createdWindows[0].width === 400 &&
+    popupHarnessState.createdWindows[0].height === 680 &&
+    pinnedUrl.pathname.endsWith("/popup/popup.html") &&
+    pinnedUrl.searchParams.get("pinned") === "1" &&
+    pinnedUrl.searchParams.get("tabId") === "77" &&
+    popupHarnessState.closed;
+
+  popupHarnessState.closed = false;
+  pin.click();
+  await delay();
+  const secondPinReused =
+    popupHarnessState.createdWindows.length === 1 &&
+    popupHarnessState.updatedWindows.length === 1 &&
+    popupHarnessState.updatedWindows[0].windowId === 91 &&
+    popupHarnessState.updatedWindows[0].options.focused === true;
+  popupHarnessState.closed = false;
 
   document.querySelector("#quick-value").value = "8";
   document.querySelector("#quick-scan").click();
@@ -51,6 +103,7 @@ setTimeout(async () => {
     inspectorUrl.pathname.endsWith("/devtools/panel/panel.html") &&
     inspectorUrl.searchParams.get("standalone") === "1" &&
     inspectorUrl.searchParams.get("tabId") === "77" &&
+    popupHarnessState.createdTabs[0]?.windowId === 10 &&
     popupHarnessState.closed;
 
   popupHarnessState.closed = false;
@@ -60,10 +113,12 @@ setTimeout(async () => {
 
   document.querySelector("#how-it-works").click();
   await delay();
-  const helpOpened = popupHarnessState.createdTabs.at(-1)?.url.includes("#capabilities");
+  const helpOpened =
+    popupHarnessState.createdTabs.at(-1)?.url.includes("#capabilities") &&
+    popupHarnessState.createdTabs.at(-1)?.windowId === 10;
 
   popupHarnessResult.textContent =
-    rendered && automaticScan && typedActions && inspectorOpened && refreshed && helpOpened
-      ? "PASS: type-free quick scan and its typed candidate actions work in the toolbar popup."
+    rendered && firstPinOpened && secondPinReused && automaticScan && typedActions && inspectorOpened && refreshed && helpOpened
+      ? "PASS: compact toolbar popup, persistent pinning, and typed quick-scan actions work."
       : "FAIL: toolbar quick-scan behavior did not match the active Ruffle state.";
 }, 80);
