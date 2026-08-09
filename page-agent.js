@@ -8,6 +8,7 @@
   const MAX_WATCH_VALUES = 256;
   const SNAPSHOT_DB_NAME = "ruffle-memory-inspector-snapshots-v1";
   const SNAPSHOT_STORE_NAME = "chunks";
+  const AUTO_TYPES = ["i8", "u8", "i16", "u16", "i32", "u32", "f32", "f64"];
 
   if (window.__ruffleMemoryInspectorV1) {
     return;
@@ -23,13 +24,51 @@
   let snapshotDatabasePromise = null;
 
   const typeSpecs = {
+    i8: {
+      size: 1,
+      integer: true,
+      minimum: -128,
+      maximum: 127,
+      read: (view, offset) => view.getInt8(offset),
+      write: (view, offset, value) => view.setInt8(offset, value),
+    },
+    u8: {
+      size: 1,
+      integer: true,
+      minimum: 0,
+      maximum: 255,
+      read: (view, offset) => view.getUint8(offset),
+      write: (view, offset, value) => view.setUint8(offset, value),
+    },
+    i16: {
+      size: 2,
+      integer: true,
+      minimum: -32768,
+      maximum: 32767,
+      read: (view, offset) => view.getInt16(offset, true),
+      write: (view, offset, value) => view.setInt16(offset, value, true),
+    },
+    u16: {
+      size: 2,
+      integer: true,
+      minimum: 0,
+      maximum: 65535,
+      read: (view, offset) => view.getUint16(offset, true),
+      write: (view, offset, value) => view.setUint16(offset, value, true),
+    },
     i32: {
       size: 4,
+      integer: true,
+      minimum: -2147483648,
+      maximum: 2147483647,
       read: (view, offset) => view.getInt32(offset, true),
       write: (view, offset, value) => view.setInt32(offset, value, true),
     },
     u32: {
       size: 4,
+      integer: true,
+      minimum: 0,
+      maximum: 4294967295,
       read: (view, offset) => view.getUint32(offset, true),
       write: (view, offset, value) => view.setUint32(offset, value, true),
     },
@@ -161,20 +200,34 @@
   }
 
   function parseValue(type, rawValue) {
+    const spec = typeSpecs[type];
     const value = Number(rawValue);
     if (!Number.isFinite(value)) {
       throw new Error("Value must be a finite number.");
     }
-    if ((type === "i32" || type === "u32") && !Number.isInteger(value)) {
+    if (spec?.integer && !Number.isInteger(value)) {
       throw new Error(`${type} values must be integers.`);
     }
-    if (type === "i32" && (value < -2147483648 || value > 2147483647)) {
-      throw new Error("i32 value is outside the signed 32-bit range.");
+    if (spec?.integer && (value < spec.minimum || value > spec.maximum)) {
+      throw new Error(`${type} value is outside its numeric range.`);
     }
-    if (type === "u32" && (value < 0 || value > 4294967295)) {
-      throw new Error("u32 value is outside the unsigned 32-bit range.");
+    return type === "f32" ? Math.fround(value) : value;
+  }
+
+  function parseMultiplier(rawMultiplier) {
+    const multiplier = rawMultiplier === undefined ? 1 : Number(rawMultiplier);
+    if (!Number.isFinite(multiplier) || multiplier <= 0) {
+      throw new Error("Stored-value multiplier must be a positive finite number.");
     }
-    return value;
+    return multiplier;
+  }
+
+  function parseDisplayValue(type, rawValue, multiplier) {
+    const displayed = Number(rawValue);
+    if (!Number.isFinite(displayed)) {
+      throw new Error("Value must be a finite number.");
+    }
+    return parseValue(type, displayed * multiplier);
   }
 
   function scanKey(instanceId, type) {
@@ -183,14 +236,17 @@
 
   async function clearInstanceScans(instanceId) {
     const prefix = `${instanceId}:`;
-    const cleanup = [];
+    const snapshots = new Set();
     for (const key of scans.keys()) {
       if (key.startsWith(prefix)) {
-        cleanup.push(deleteSnapshot(scans.get(key)?.snapshot));
+        const scan = scans.get(key);
+        if (scan?.snapshot) {
+          snapshots.add(scan.snapshot);
+        }
         scans.delete(key);
       }
     }
-    await Promise.allSettled(cleanup);
+    await Promise.allSettled([...snapshots].map(deleteSnapshot));
   }
 
   function freezeKey(instanceId, type, address) {
@@ -418,30 +474,30 @@
     return snapshot;
   }
 
-  function comparisonMatches(condition, currentValue, previousValue) {
+  function scanComparisonMatcher(type, condition, rawValue, multiplier) {
+    const delta = ["increasedBy", "decreasedBy"].includes(condition)
+      ? parseDisplayValue(type, rawValue, multiplier)
+      : null;
     switch (condition) {
-      case "changed":
-        return !Object.is(currentValue, previousValue);
-      case "unchanged":
-        return Object.is(currentValue, previousValue);
-      case "increased":
-        return currentValue > previousValue;
-      case "decreased":
-        return currentValue < previousValue;
-      default:
-        throw new Error(`Unsupported comparison condition: ${condition}`);
+      case "changed": return (current, previous) => !Object.is(current, previous);
+      case "unchanged": return (current, previous) => Object.is(current, previous);
+      case "increased": return (current, previous) => current > previous;
+      case "decreased": return (current, previous) => current < previous;
+      case "increasedBy": return (current, previous) => current - previous === delta;
+      case "decreasedBy": return (current, previous) => previous - current === delta;
+      default: throw new Error(`Unsupported comparison condition: ${condition}`);
     }
   }
 
-  function scanValueMatcher(type, condition, rawValue, rawMaxValue) {
-    const minimum = parseValue(type, rawValue);
+  function scanValueMatcher(type, condition, rawValue, rawMaxValue, multiplier) {
+    const minimum = parseDisplayValue(type, rawValue, multiplier);
     if (condition === "exact") {
       return (value) => value === minimum;
     }
     if (condition !== "range") {
       throw new Error(`Unsupported value condition: ${condition}`);
     }
-    const maximum = parseValue(type, rawMaxValue);
+    const maximum = parseDisplayValue(type, rawMaxValue, multiplier);
     if (minimum > maximum) {
       throw new Error("Range minimum cannot be greater than maximum.");
     }
@@ -455,10 +511,11 @@
     spec,
     rawValue,
     rawMaxValue,
+    multiplier,
     condition,
     stride,
   }) {
-    const matches = scanValueMatcher(type, condition, rawValue, rawMaxValue);
+    const matches = scanValueMatcher(type, condition, rawValue, rawMaxValue, multiplier);
     let view = new DataView(record.memory.buffer);
     const slotCount = slotCountFor(view.byteLength, spec, stride);
     const candidates = createCandidateSet(slotCount, type, stride);
@@ -514,13 +571,14 @@
     spec,
     rawValue,
     rawMaxValue,
+    multiplier,
     condition,
     stride,
     previous,
     slotCount,
   }) {
     const candidates = createCandidateSet(slotCount, type, stride);
-    const matches = scanValueMatcher(type, condition, rawValue, rawMaxValue);
+    const matches = scanValueMatcher(type, condition, rawValue, rawMaxValue, multiplier);
     let view = new DataView(record.memory.buffer);
     const bytesPerChunk = Math.max(1, Math.floor(SCAN_CHUNK_SIZE / 8));
 
@@ -559,6 +617,7 @@
     spec,
     rawValue,
     rawMaxValue,
+    multiplier,
     condition,
     stride,
     previous,
@@ -570,8 +629,11 @@
     currentSnapshot.chunks = new Array(previous.snapshot.chunks.length).fill(null);
     const valueCondition = condition === "exact" || condition === "range";
     const matchesValue = valueCondition
-      ? scanValueMatcher(type, condition, rawValue, rawMaxValue)
+      ? scanValueMatcher(type, condition, rawValue, rawMaxValue, multiplier)
       : null;
+    const matchesComparison = valueCondition
+      ? null
+      : scanComparisonMatcher(type, condition, rawValue, multiplier);
 
     try {
       for (
@@ -630,7 +692,7 @@
           const currentValue = spec.read(currentView, localOffset);
           const matches = valueCondition
             ? matchesValue(currentValue)
-            : comparisonMatches(condition, currentValue, spec.read(previousView, localOffset));
+            : matchesComparison(currentValue, spec.read(previousView, localOffset));
           if (matches) {
             retainCandidate(candidates, slotIndex, address);
             chunkRetained = true;
@@ -668,6 +730,7 @@
     spec,
     rawValue,
     rawMaxValue,
+    multiplier,
     condition,
     stride,
     previous,
@@ -693,6 +756,7 @@
         spec,
         rawValue,
         rawMaxValue,
+        multiplier,
         condition,
         stride,
         previous,
@@ -706,6 +770,7 @@
       spec,
       rawValue,
       rawMaxValue,
+      multiplier,
       condition,
       stride,
       previous,
@@ -714,18 +779,407 @@
     });
   }
 
+  function autoScanTypes() {
+    return AUTO_TYPES.map((type) => ({ type, spec: typeSpecs[type] }));
+  }
+
+  function emptyCandidatesFor(record, type, spec, alignment, byteLength) {
+    const stride = scanStride(spec, alignment);
+    return createCandidateSet(slotCountFor(byteLength, spec, stride), type, stride);
+  }
+
+  async function firstAutoScan({
+    requestId,
+    record,
+    rawValue,
+    rawMaxValue,
+    multiplier,
+    condition,
+    alignment,
+  }) {
+    const byteLength = record.memory.buffer.byteLength;
+    const sets = new Map();
+    if (condition === "unknown") {
+      const snapshot = await captureSnapshot(record, requestId, byteLength, typeSpecs.f64);
+      for (const { type, spec } of autoScanTypes()) {
+        const stride = scanStride(spec, alignment);
+        sets.set(
+          type,
+          createAllCandidateSet(slotCountFor(byteLength, spec, stride), type, stride, snapshot),
+        );
+      }
+      return { multi: true, sets, snapshot, multiplier };
+    }
+
+    for (const { type, spec } of autoScanTypes()) {
+      const stride = scanStride(spec, alignment);
+      try {
+        sets.set(type, await firstValueScan({
+          requestId,
+          record,
+          type,
+          spec,
+          rawValue,
+          rawMaxValue,
+          multiplier,
+          condition,
+          stride,
+        }));
+      } catch (error) {
+        if (!(error instanceof Error) || !/integer|numeric range/.test(error.message)) {
+          throw error;
+        }
+        sets.set(type, emptyCandidatesFor(record, type, spec, alignment, byteLength));
+      }
+    }
+    return { multi: true, sets, snapshot: null, multiplier };
+  }
+
+  async function refineAutoLiveScan({
+    requestId,
+    record,
+    previous,
+    rawValue,
+    rawMaxValue,
+    multiplier,
+    condition,
+    alignment,
+  }) {
+    if (!["exact", "range"].includes(condition)) {
+      throw new Error("Start with an unknown-value scan before using comparison filters.");
+    }
+    const sets = new Map();
+    const byteLength = record.memory.buffer.byteLength;
+    for (const { type, spec } of autoScanTypes()) {
+      const prior = previous.sets.get(type);
+      const stride = scanStride(spec, alignment);
+      if (!prior || prior.stride !== stride) {
+        throw new Error("Scan alignment changed. Reset before starting a new scan.");
+      }
+      const slotCount = Math.min(prior.slotCount, slotCountFor(byteLength, spec, stride));
+      try {
+        sets.set(type, await refineLiveValue({
+          requestId,
+          record,
+          type,
+          spec,
+          rawValue,
+          rawMaxValue,
+          multiplier,
+          condition,
+          stride,
+          previous: prior,
+          slotCount,
+        }));
+      } catch (error) {
+        if (!(error instanceof Error) || !/integer|numeric range/.test(error.message)) {
+          throw error;
+        }
+        sets.set(type, createCandidateSet(slotCount, type, stride));
+      }
+    }
+    return { multi: true, sets, snapshot: null, multiplier };
+  }
+
+  async function refineAutoSnapshotScan({
+    requestId,
+    record,
+    previous,
+    rawValue,
+    rawMaxValue,
+    multiplier,
+    condition,
+    alignment,
+  }) {
+    const previousSnapshot = previous.snapshot;
+    const currentByteLength = Math.min(
+      record.memory.buffer.byteLength,
+      previousSnapshot.byteLength,
+    );
+    const currentSnapshot = createSnapshot(currentByteLength);
+    currentSnapshot.chunks = new Array(previousSnapshot.chunks.length).fill(null);
+    const sets = new Map();
+    const configurations = [];
+    const valueCondition = condition === "exact" || condition === "range";
+
+    for (const { type, spec } of autoScanTypes()) {
+      const prior = previous.sets.get(type);
+      const stride = scanStride(spec, alignment);
+      if (!prior || prior.stride !== stride) {
+        throw new Error("Scan alignment changed. Reset before starting a new scan.");
+      }
+      const slotCount = Math.min(
+        prior.slotCount,
+        slotCountFor(currentByteLength, spec, stride),
+      );
+      const candidates = createCandidateSet(slotCount, type, stride);
+      sets.set(type, candidates);
+      try {
+        configurations.push({
+          type,
+          spec,
+          stride,
+          slotCount,
+          prior,
+          candidates,
+          matchesValue: valueCondition
+            ? scanValueMatcher(type, condition, rawValue, rawMaxValue, multiplier)
+            : null,
+          matchesComparison: valueCondition
+            ? null
+            : scanComparisonMatcher(type, condition, rawValue, multiplier),
+        });
+      } catch (error) {
+        if (!(error instanceof Error) || !/integer|numeric range/.test(error.message)) {
+          throw error;
+        }
+      }
+    }
+
+    try {
+      for (let chunkIndex = 0; chunkIndex < previousSnapshot.chunks.length; chunkIndex += 1) {
+        const previousChunk = previousSnapshot.chunks[chunkIndex];
+        const chunkOffset = chunkIndex * previousSnapshot.chunkSize;
+        const uniqueLength = Math.min(
+          previousSnapshot.chunkSize,
+          currentByteLength - chunkOffset,
+        );
+        if (!previousChunk || uniqueLength <= 0) {
+          continue;
+        }
+        const active = configurations.filter((config) => {
+          const startSlot = Math.ceil(chunkOffset / config.stride);
+          const endSlot = Math.min(
+            config.slotCount,
+            Math.ceil((chunkOffset + uniqueLength) / config.stride),
+          );
+          return candidateRangeHasMatches(config.prior, startSlot, endSlot);
+        });
+        if (active.length === 0) {
+          send({
+            kind: "scanProgress",
+            requestId,
+            inspected: chunkOffset + uniqueLength,
+            total: currentByteLength,
+          });
+          continue;
+        }
+        const currentReadLength = Math.min(
+          uniqueLength + typeSpecs.f64.size - 1,
+          currentByteLength - chunkOffset,
+        );
+        const currentBytes = new Uint8Array(
+          record.memory.buffer,
+          chunkOffset,
+          currentReadLength,
+        ).slice();
+        const previousBytes = await loadSnapshotChunk(previousSnapshot, chunkIndex);
+        const currentView = new DataView(currentBytes.buffer);
+        const previousView = new DataView(
+          previousBytes.buffer,
+          previousBytes.byteOffset,
+          previousBytes.byteLength,
+        );
+        let chunkRetained = false;
+
+        for (const config of active) {
+          const startSlot = Math.ceil(chunkOffset / config.stride);
+          const endSlot = Math.min(
+            config.slotCount,
+            Math.ceil((chunkOffset + uniqueLength) / config.stride),
+          );
+          for (let slotIndex = startSlot; slotIndex < endSlot; slotIndex += 1) {
+            if (!candidateIsRetained(config.prior, slotIndex)) {
+              continue;
+            }
+            const address = slotIndex * config.stride;
+            const localOffset = address - chunkOffset;
+            const currentValue = config.spec.read(currentView, localOffset);
+            const matches = valueCondition
+              ? config.matchesValue(currentValue)
+              : config.matchesComparison(
+                currentValue,
+                config.spec.read(previousView, localOffset),
+              );
+            if (matches) {
+              retainCandidate(config.candidates, slotIndex, address);
+              chunkRetained = true;
+            }
+          }
+        }
+
+        if (chunkRetained) {
+          const data = await compressSnapshotBytes(currentBytes);
+          await storeSnapshotChunk(currentSnapshot, chunkIndex, data, {
+            byteLength: currentReadLength,
+            uniqueLength,
+          });
+        }
+        send({
+          kind: "scanProgress",
+          requestId,
+          inspected: chunkOffset + uniqueLength,
+          total: currentByteLength,
+          snapshotBytes: currentSnapshot.compressedBytes,
+        });
+      }
+    } catch (error) {
+      await deleteSnapshot(currentSnapshot).catch(() => {});
+      throw error;
+    }
+
+    for (const candidates of sets.values()) {
+      candidates.snapshot = currentSnapshot;
+    }
+    return { multi: true, sets, snapshot: currentSnapshot, multiplier };
+  }
+
+  function sendAutoScanResults(requestId, record, group) {
+    const view = new DataView(record.memory.buffer);
+    const preview = [];
+    let total = 0;
+    let allCandidates = true;
+    for (const [type, candidates] of group.sets) {
+      total += candidates.count;
+      allCandidates &&= candidates.allCandidates;
+    }
+    for (let previewIndex = 0; preview.length < RESULT_PREVIEW_LIMIT; previewIndex += 1) {
+      let added = false;
+      for (const [type, candidates] of group.sets) {
+        const address = candidates.preview[previewIndex];
+        if (address === undefined) {
+          continue;
+        }
+        added = true;
+        const spec = typeSpecs[type];
+        const value = address + spec.size <= view.byteLength
+          ? spec.read(view, address)
+          : null;
+        preview.push({
+          address,
+          type,
+          multiplier: group.multiplier,
+          value: value === null ? null : wireNumber(value),
+          displayValue: value === null ? null : wireNumber(value / group.multiplier),
+        });
+        if (preview.length >= RESULT_PREVIEW_LIMIT) {
+          break;
+        }
+      }
+      if (!added) {
+        break;
+      }
+    }
+    send({
+      kind: "scanResults",
+      requestId,
+      instanceId: record.id,
+      type: "auto",
+      multiplier: group.multiplier,
+      total,
+      preview,
+      allCandidates,
+      memoryBytes: record.memory.buffer.byteLength,
+      snapshotBytes: group.snapshot?.compressedBytes ?? null,
+    });
+  }
+
+  async function autoMemoryScan(options) {
+    const {
+      requestId,
+      instanceId,
+      rawValue,
+      rawMaxValue,
+      multiplier: rawMultiplier = 1,
+      condition = "exact",
+      alignment = "aligned",
+      refine,
+    } = options;
+    const record = instances.get(String(instanceId));
+    if (!record) {
+      throw new Error("The selected WASM instance no longer exists.");
+    }
+    const multiplier = parseMultiplier(rawMultiplier);
+    const key = scanKey(record.id, "auto");
+    const previous = refine ? scans.get(key) : null;
+    if (refine && !previous) {
+      throw new Error("No previous scan exists. Run a first scan before filtering.");
+    }
+    if (!refine && !["exact", "range", "unknown"].includes(condition)) {
+      throw new Error("First scans support exact, range, or unknown initial values.");
+    }
+    if (refine && condition === "unknown") {
+      throw new Error("Unknown initial value is only available for a first scan.");
+    }
+    if (!refine) {
+      await clearInstanceScans(record.id);
+      await yieldToPage();
+    }
+    const group = refine
+      ? previous.snapshot
+        ? await refineAutoSnapshotScan({
+          requestId,
+          record,
+          previous,
+          rawValue,
+          rawMaxValue,
+          multiplier,
+          condition,
+          alignment,
+        })
+        : await refineAutoLiveScan({
+          requestId,
+          record,
+          previous,
+          rawValue,
+          rawMaxValue,
+          multiplier,
+          condition,
+          alignment,
+        })
+      : await firstAutoScan({
+        requestId,
+        record,
+        rawValue,
+        rawMaxValue,
+        multiplier,
+        condition,
+        alignment,
+      });
+    scans.set(key, group);
+    if (previous?.snapshot && previous.snapshot !== group.snapshot) {
+      deleteSnapshot(previous.snapshot).catch(() => {});
+    }
+    sendAutoScanResults(requestId, record, group);
+  }
+
   async function memoryScan({
     requestId,
     instanceId,
     type,
     rawValue,
     rawMaxValue,
+    multiplier: rawMultiplier = 1,
     condition = "exact",
     alignment = "aligned",
     refine,
   }) {
+    if (type === "auto") {
+      return autoMemoryScan({
+        requestId,
+        instanceId,
+        type,
+        rawValue,
+        rawMaxValue,
+        multiplier: rawMultiplier,
+        condition,
+        alignment,
+        refine,
+      });
+    }
     const record = instances.get(String(instanceId));
     const spec = typeSpecs[type];
+    const multiplier = parseMultiplier(rawMultiplier);
     if (!record) {
       throw new Error("The selected WASM instance no longer exists.");
     }
@@ -763,6 +1217,7 @@
         spec,
         rawValue,
         rawMaxValue,
+        multiplier,
         condition,
         stride,
         previous,
@@ -776,6 +1231,7 @@
           spec,
           rawValue,
           rawMaxValue,
+          multiplier,
           condition,
           stride,
         });
@@ -784,23 +1240,30 @@
     if (previous?.snapshot && previous.snapshot !== candidates.snapshot) {
       deleteSnapshot(previous.snapshot).catch(() => {});
     }
-    sendScanResults(requestId, record, type, candidates);
+    sendScanResults(requestId, record, type, candidates, multiplier);
   }
 
-  function sendScanResults(requestId, record, type, candidates) {
+  function sendScanResults(requestId, record, type, candidates, multiplier = 1) {
     const spec = typeSpecs[type];
     const view = new DataView(record.memory.buffer);
-    const preview = candidates.preview.map((address) => ({
-      address,
-      value: address + spec.size <= view.byteLength
-        ? wireNumber(spec.read(view, address))
-        : null,
-    }));
+    const preview = candidates.preview.map((address) => {
+      const value = address + spec.size <= view.byteLength
+        ? spec.read(view, address)
+        : null;
+      return {
+        address,
+        type,
+        multiplier,
+        value: value === null ? null : wireNumber(value),
+        displayValue: value === null ? null : wireNumber(value / multiplier),
+      };
+    });
     send({
       kind: "scanResults",
       requestId,
       instanceId: record.id,
       type,
+      multiplier,
       total: candidates.count,
       preview,
       allCandidates: candidates.allCandidates,
@@ -875,6 +1338,7 @@
     spec,
     address,
     requestedValue,
+    multiplier,
   }) {
     const diagnosticKey = freezeKey(record.id, type, address);
     const startedAt = performance.now();
@@ -931,6 +1395,7 @@
         address,
         requestedValue,
         actualValue: sample.value,
+        displayValue: typeof sample.value === "number" ? sample.value / multiplier : sample.value,
         persisted: sample.matches,
       });
     });
@@ -962,12 +1427,13 @@
       type,
       address,
       requestedValue,
+      multiplier,
       classification,
       samples,
     });
   }
 
-  function writeValue({ requestId, instanceId, type, address, rawValue }) {
+  function writeValue({ requestId, instanceId, type, address, rawValue, multiplier: rawMultiplier = 1 }) {
     const record = instances.get(String(instanceId));
     const spec = typeSpecs[type];
     if (!record || !spec) {
@@ -981,7 +1447,8 @@
     if (numericAddress + spec.size > view.byteLength) {
       throw new Error("Address is outside the current WASM memory.");
     }
-    const value = parseValue(type, rawValue);
+    const multiplier = parseMultiplier(rawMultiplier);
+    const value = parseDisplayValue(type, rawValue, multiplier);
     spec.write(view, numericAddress, value);
     const activeFreeze = freezes.get(freezeKey(record.id, type, numericAddress));
     if (activeFreeze) {
@@ -994,6 +1461,7 @@
       type,
       address: numericAddress,
       value: wireNumber(spec.read(view, numericAddress)),
+      displayValue: wireNumber(spec.read(view, numericAddress) / multiplier),
     });
     const diagnosticKey = freezeKey(record.id, type, numericAddress);
     activeWriteDiagnostics.set(diagnosticKey, requestId);
@@ -1004,6 +1472,7 @@
       spec,
       address: numericAddress,
       requestedValue: value,
+      multiplier,
     }).catch((error) => {
       if (activeWriteDiagnostics.get(diagnosticKey) === requestId) {
         activeWriteDiagnostics.delete(diagnosticKey);
@@ -1078,7 +1547,15 @@
     }
   }
 
-  function setFreeze({ requestId, instanceId, type, address, rawValue, enabled }) {
+  function setFreeze({
+    requestId,
+    instanceId,
+    type,
+    address,
+    rawValue,
+    multiplier: rawMultiplier = 1,
+    enabled,
+  }) {
     const record = instances.get(String(instanceId));
     const spec = typeSpecs[type];
     if (!record || !spec) {
@@ -1090,7 +1567,8 @@
     }
     const key = freezeKey(record.id, type, numericAddress);
     if (enabled) {
-      const value = parseValue(type, rawValue);
+      const multiplier = parseMultiplier(rawMultiplier);
+      const value = parseDisplayValue(type, rawValue, multiplier);
       const view = new DataView(record.memory.buffer);
       if (numericAddress + spec.size > view.byteLength) {
         throw new Error("Address is outside the current WASM memory.");
@@ -1105,6 +1583,7 @@
         type,
         address: numericAddress,
         value,
+        displayValue: value / multiplier,
         enabled: true,
       });
     } else {

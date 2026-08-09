@@ -25,9 +25,14 @@
           Type
           <select id="type">
             <option value="f64">Float64 · AVM1 number</option>
+            <option value="auto">All numeric types · discovery</option>
             <option value="i32">Int32 · AVM2 integer</option>
             <option value="u32">Uint32</option>
             <option value="f32">Float32</option>
+            <option value="i16">Int16</option>
+            <option value="u16">Uint16</option>
+            <option value="i8">Int8</option>
+            <option value="u8">Uint8</option>
           </select>
         </label>
         <label>
@@ -47,6 +52,8 @@
             <option value="unchanged">Unchanged value</option>
             <option value="increased">Increased value</option>
             <option value="decreased">Decreased value</option>
+            <option value="increasedBy">Increased by</option>
+            <option value="decreasedBy">Decreased by</option>
           </select>
         </label>
         <label id="scan-value-label">
@@ -56,6 +63,10 @@
         <label id="scan-max-value-label" hidden>
           Maximum value
           <input id="scan-max-value" type="number" step="any" value="200" />
+        </label>
+        <label id="multiplier-label">
+          Stored-value multiplier
+          <input id="multiplier" type="number" step="any" min="0" value="1" />
         </label>
         <div class="buttons wide">
           <button id="first-scan" class="primary" type="button">First scan</button>
@@ -77,7 +88,7 @@
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Address</th><th>Current value</th></tr>
+              <tr><th>Address</th><th>Type</th><th>Current value</th></tr>
             </thead>
             <tbody id="candidates"></tbody>
           </table>

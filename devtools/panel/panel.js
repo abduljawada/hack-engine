@@ -12,6 +12,8 @@
   let requestSequence = 1;
   let selectedCandidateRow = null;
   let selectedAddress = null;
+  let selectedValueType = null;
+  let selectedMultiplier = 1;
   let port = null;
   let reconnectTimer = null;
   let scanWatchdog = null;
@@ -31,6 +33,8 @@
     scanValueText: document.querySelector("#scan-value-text"),
     scanMaxValue: document.querySelector("#scan-max-value"),
     scanMaxValueLabel: document.querySelector("#scan-max-value-label"),
+    multiplier: document.querySelector("#multiplier"),
+    multiplierLabel: document.querySelector("#multiplier-label"),
     firstScan: document.querySelector("#first-scan"),
     nextScan: document.querySelector("#next-scan"),
     resetScan: document.querySelector("#reset-scan"),
@@ -86,10 +90,12 @@
 
   function updateFreezeButton() {
     const record = selectedInstance();
+    const type = selectedValueType ?? elements.type.value;
     const active = Boolean(
       record &&
       selectedAddress !== null &&
-      frozenAddresses.has(freezeIdentity(record, elements.type.value, selectedAddress)),
+      type !== "auto" &&
+      frozenAddresses.has(freezeIdentity(record, type, selectedAddress)),
     );
     elements.freeze.textContent = active ? "Unfreeze" : "Freeze value";
     elements.freeze.classList.toggle("freeze-active", active);
@@ -162,12 +168,28 @@
     return `${Math.round(bytes / 1024)} KiB`;
   }
 
+  function activeValueType() {
+    const type = selectedValueType ?? elements.type.value;
+    if (type === "auto") {
+      setStatus("Select a typed candidate before writing, watching, or freezing.", "error");
+      return null;
+    }
+    return type;
+  }
+
+  function decodedValue(value, multiplier) {
+    return typeof value === "number" && Number.isFinite(value)
+      ? value / multiplier
+      : value;
+  }
+
   function persistWatches() {
     try {
       const watches = [...watchedAddresses.values()].map((entry) => ({
         frameId: entry.frameId,
         instanceId: entry.instanceId,
         type: entry.type,
+        multiplier: entry.multiplier,
         address: entry.address,
         hint: entry.hint,
         url: entry.url,
@@ -192,7 +214,7 @@
       if (
         !Number.isInteger(value?.frameId) ||
         typeof value.instanceId !== "string" ||
-        !["i32", "u32", "f32", "f64"].includes(value.type) ||
+        !["i8", "u8", "i16", "u16", "i32", "u32", "f32", "f64"].includes(value.type) ||
         !Number.isSafeInteger(value.address) ||
         value.address < 0
       ) {
@@ -204,6 +226,9 @@
         frameId: value.frameId,
         instanceId: value.instanceId,
         type: value.type,
+        multiplier: Number.isFinite(value.multiplier) && value.multiplier > 0
+          ? value.multiplier
+          : 1,
         address: value.address,
         hint: typeof value.hint === "string" ? value.hint : "",
         url: typeof value.url === "string" ? value.url : "",
@@ -248,13 +273,16 @@
       elements.instance.value = instanceKey;
     }
     elements.type.value = entry.type;
+    elements.multiplier.value = String(entry.multiplier);
+    selectedValueType = entry.type;
+    selectedMultiplier = entry.multiplier;
     selectedCandidateRow?.classList.remove("selected");
     selectedCandidateRow = entry.row;
     selectedAddress = entry.address;
     entry.row?.classList.add("selected");
     elements.writeAddress.value = formatAddress(entry.address);
     const numericValue = typeof entry.value === "number" && Number.isFinite(entry.value)
-      ? entry.value
+      ? decodedValue(entry.value, entry.multiplier)
       : null;
     elements.writeValue.value = numericValue === null ? "" : String(numericValue);
     updateFreezeButton();
@@ -271,8 +299,12 @@
       const actions = document.createElement("td");
       const remove = document.createElement("button");
       address.textContent = formatAddress(entry.address);
-      type.textContent = entry.type;
-      value.textContent = entry.value === undefined ? "—" : String(entry.value);
+      type.textContent = entry.multiplier === 1
+        ? entry.type
+        : `${entry.type} ×${entry.multiplier}`;
+      value.textContent = entry.value === undefined
+        ? "—"
+        : String(decodedValue(entry.value, entry.multiplier));
       state.textContent = watchStateLabel(entry);
       state.title = entry.detail || "";
       state.className = `watch-state ${entry.state}`;
@@ -305,7 +337,7 @@
     if (value !== undefined) {
       entry.value = value;
       if (entry.valueCell) {
-        entry.valueCell.textContent = String(value);
+        entry.valueCell.textContent = String(decodedValue(value, entry.multiplier));
       }
     }
     entry.state = state;
@@ -317,14 +349,19 @@
     }
   }
 
-  function addWatch(record, type, address) {
+  function addWatch(record, type, address, multiplier = 1) {
+    multiplier = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
     if (!Number.isSafeInteger(address) || address < 0) {
       setStatus("Enter a valid non-negative address before adding a watch.", "error");
       return;
     }
     const key = watchIdentity(record.frameId, record.id, type, address);
     if (watchedAddresses.has(key)) {
-      selectWatch(watchedAddresses.get(key));
+      const existing = watchedAddresses.get(key);
+      existing.multiplier = multiplier;
+      persistWatches();
+      renderWatches();
+      selectWatch(existing);
       setStatus(`${formatAddress(address)} is already on the watch list.`, "ready");
       return;
     }
@@ -337,6 +374,7 @@
       frameId: record.frameId,
       instanceId: record.id,
       type,
+      multiplier,
       address,
       hint: record.hint || "",
       url: record.url || "",
@@ -447,8 +485,14 @@
     const condition = elements.condition.value;
     const rawValue = elements.scanValue.value;
     const rawMaxValue = elements.scanMaxValue.value;
-    if (["exact", "range"].includes(condition) && rawValue.trim() === "") {
+    const multiplier = Number(elements.multiplier.value);
+    const valueConditions = ["exact", "range", "increasedBy", "decreasedBy"];
+    if (valueConditions.includes(condition) && rawValue.trim() === "") {
       setStatus("Enter a value to scan for.", "error");
+      return;
+    }
+    if (!Number.isFinite(multiplier) || multiplier <= 0) {
+      setStatus("The stored-value multiplier must be a positive number.", "error");
       return;
     }
     if (condition === "range" && rawMaxValue.trim() === "") {
@@ -476,6 +520,7 @@
       type: elements.type.value,
       rawValue,
       rawMaxValue,
+      multiplier,
       condition,
       alignment: elements.alignment.value,
       refine,
@@ -492,6 +537,8 @@
           ? refine
             ? "Filtering candidates within the selected range…"
             : "Scanning WASM memory for values in the selected range…"
+        : refine && ["increasedBy", "decreasedBy"].includes(condition)
+          ? `Filtering candidates that ${condition === "increasedBy" ? "increased" : "decreased"} by ${rawValue}…`
         : refine && condition !== "exact"
           ? `Filtering candidates whose values ${condition}…`
           : refine
@@ -503,13 +550,19 @@
 
   function updateConditionControls() {
     const condition = elements.condition.value;
-    const needsValue = condition === "exact" || condition === "range";
+    const needsValue = ["exact", "range", "increasedBy", "decreasedBy"].includes(condition);
     const needsMaximum = condition === "range";
     elements.scanValue.disabled = !needsValue;
     elements.scanValueLabel.classList.toggle("disabled-label", !needsValue);
-    elements.scanValueText.textContent = needsMaximum ? "Minimum value" : "Value";
+    elements.scanValueText.textContent = needsMaximum
+      ? "Minimum value"
+      : ["increasedBy", "decreasedBy"].includes(condition)
+        ? "Change amount"
+        : "Value";
     elements.scanMaxValue.disabled = !needsMaximum;
     elements.scanMaxValueLabel.hidden = !needsMaximum;
+    elements.multiplier.disabled = false;
+    elements.multiplierLabel.classList.remove("disabled-label");
   }
 
   function renderCandidates(payload) {
@@ -518,22 +571,32 @@
     selectedCandidateRow?.classList.remove("selected");
     selectedCandidateRow = null;
     selectedAddress = null;
+    selectedValueType = null;
+    selectedMultiplier = Number(payload.multiplier) || 1;
     updateFreezeButton();
     for (const candidate of payload.preview) {
       const row = document.createElement("tr");
       const address = document.createElement("td");
+      const type = document.createElement("td");
       const value = document.createElement("td");
+      const candidateType = candidate.type || payload.type;
+      const candidateMultiplier = Number(candidate.multiplier ?? payload.multiplier) || 1;
       address.textContent = formatAddress(candidate.address);
-      value.textContent = String(candidate.value);
-      candidateValueCells.set(candidate.address, value);
-      row.append(address, value);
+      type.textContent = candidateMultiplier === 1
+        ? candidateType
+        : `${candidateType} ×${candidateMultiplier}`;
+      value.textContent = String(candidate.displayValue ?? candidate.value);
+      candidateValueCells.set(`${candidateType}:${candidate.address}`, value);
+      row.append(address, type, value);
       row.addEventListener("click", () => {
         selectedCandidateRow?.classList.remove("selected");
         selectedCandidateRow = row;
         selectedAddress = candidate.address;
+        selectedValueType = candidateType;
+        selectedMultiplier = candidateMultiplier;
         row.classList.add("selected");
         elements.writeAddress.value = address.textContent;
-        elements.writeValue.value = String(candidate.value);
+        elements.writeValue.value = String(candidate.displayValue ?? candidate.value);
         updateFreezeButton();
       });
       elements.candidates.append(row);
@@ -562,7 +625,8 @@
         !candidate ||
         !Number.isSafeInteger(candidate.address) ||
         candidate.address < 0 ||
-        !("value" in candidate)
+        !("value" in candidate) ||
+        (candidate.type !== undefined && typeof candidate.type !== "string")
       ))
     ) {
       throw new Error("The page returned an invalid scan result.");
@@ -584,7 +648,10 @@
       return mismatch.error;
     }
     if (mismatch) {
-      return `${mismatch.stage}: observed ${mismatch.value} after ${mismatch.elapsedMs} ms.`;
+      const observed = typeof mismatch.value === "number" && payload.multiplier
+        ? mismatch.value / payload.multiplier
+        : mismatch.value;
+      return `${mismatch.stage}: observed ${observed} after ${mismatch.elapsedMs} ms.`;
     }
     return "The write could not be classified.";
   }
@@ -701,9 +768,11 @@
         break;
       }
       case "writeComplete":
-        elements.writeValue.value = String(payload.value);
-        if (candidateValueCells.has(payload.address)) {
-          candidateValueCells.get(payload.address).textContent = String(payload.value);
+        elements.writeValue.value = String(payload.displayValue ?? payload.value);
+        if (candidateValueCells.has(`${payload.type}:${payload.address}`)) {
+          candidateValueCells.get(`${payload.type}:${payload.address}`).textContent = String(
+            payload.displayValue ?? payload.value,
+          );
         }
         {
           const entry = watchForPayload(message, payload);
@@ -718,11 +787,16 @@
             );
           }
         }
-        setStatus(`Wrote ${payload.value} at 0x${payload.address.toString(16)}.`, "ready");
+        setStatus(
+          `Wrote ${payload.displayValue ?? payload.value} at 0x${payload.address.toString(16)}.`,
+          "ready",
+        );
         break;
       case "writeVerified":
-        if (candidateValueCells.has(payload.address)) {
-          candidateValueCells.get(payload.address).textContent = String(payload.actualValue);
+        if (candidateValueCells.has(`${payload.type}:${payload.address}`)) {
+          candidateValueCells.get(`${payload.type}:${payload.address}`).textContent = String(
+            payload.displayValue ?? payload.actualValue,
+          );
         }
         {
           const entry = watchForPayload(message, payload);
@@ -740,7 +814,7 @@
         setStatus(
           payload.persisted
             ? `Write persisted at 0x${payload.address.toString(16)}.`
-            : `The game restored this address to ${payload.actualValue}. Freeze it or continue narrowing candidates.`,
+            : `The game restored this address to ${payload.displayValue ?? payload.actualValue}. Freeze it or continue narrowing candidates.`,
           payload.persisted ? "ready" : "error",
         );
         break;
@@ -774,10 +848,15 @@
           const key = freezeIdentity(record, payload.type, payload.address);
           if (payload.enabled) {
             frozenAddresses.add(key);
-            if (candidateValueCells.has(payload.address)) {
-              candidateValueCells.get(payload.address).textContent = String(payload.value);
+            if (candidateValueCells.has(`${payload.type}:${payload.address}`)) {
+              candidateValueCells.get(`${payload.type}:${payload.address}`).textContent = String(
+                payload.displayValue ?? payload.value,
+              );
             }
-            setStatus(`Freezing ${payload.value} at 0x${payload.address.toString(16)}.`, "ready");
+            setStatus(
+              `Freezing ${payload.displayValue ?? payload.value} at 0x${payload.address.toString(16)}.`,
+              "ready",
+            );
           } else {
             frozenAddresses.delete(key);
             setStatus(`Unfroze 0x${payload.address.toString(16)}.`, "ready");
@@ -872,13 +951,18 @@
       return;
     }
     const address = parseAddress(elements.writeAddress.value);
+    const type = activeValueType();
+    if (!type) {
+      return;
+    }
     send({
       kind: "writeValue",
       requestId: requestId(),
       instanceId: record.id,
-      type: elements.type.value,
+      type,
       address,
       rawValue: elements.writeValue.value,
+      multiplier: selectedValueType ? selectedMultiplier : Number(elements.multiplier.value),
     }, record.frameId);
   });
   elements.addWatch.addEventListener("click", () => {
@@ -887,7 +971,16 @@
       setStatus("No WebAssembly memory has been captured.", "error");
       return;
     }
-    addWatch(record, elements.type.value, parseAddress(elements.writeAddress.value));
+    const type = activeValueType();
+    if (!type) {
+      return;
+    }
+    addWatch(
+      record,
+      type,
+      parseAddress(elements.writeAddress.value),
+      selectedValueType ? selectedMultiplier : Number(elements.multiplier.value),
+    );
   });
   elements.freeze.addEventListener("click", () => {
     const record = selectedInstance();
@@ -895,20 +988,32 @@
       setStatus("Select a candidate before freezing it.", "error");
       return;
     }
-    const key = freezeIdentity(record, elements.type.value, selectedAddress);
+    const type = activeValueType();
+    if (!type) {
+      return;
+    }
+    const key = freezeIdentity(record, type, selectedAddress);
     const enabled = !frozenAddresses.has(key);
     send({
       kind: "setFreeze",
       requestId: requestId(),
       instanceId: record.id,
-      type: elements.type.value,
+      type,
       address: selectedAddress,
       rawValue: elements.writeValue.value,
+      multiplier: selectedValueType ? selectedMultiplier : Number(elements.multiplier.value),
       enabled,
     }, record.frameId);
   });
   elements.instance.addEventListener("change", updateFreezeButton);
-  elements.type.addEventListener("change", updateFreezeButton);
+  elements.type.addEventListener("change", () => {
+    selectedValueType = null;
+    selectedMultiplier = Number(elements.multiplier.value) || 1;
+    selectedAddress = null;
+    selectedCandidateRow?.classList.remove("selected");
+    selectedCandidateRow = null;
+    updateFreezeButton();
+  });
   elements.condition.addEventListener("change", updateConditionControls);
 
   restoreWatches();

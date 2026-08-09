@@ -7,8 +7,11 @@ Firefox-first WebExtension prototype for inspecting WebAssembly memory used by e
 - Hooks `WebAssembly.instantiate` and `WebAssembly.instantiateStreaming` at `document_start` in the page's `MAIN` world.
 - Captures exported or imported `WebAssembly.Memory` objects in every permitted frame.
 - Adds a **Ruffle Memory** Firefox DevTools panel.
-- Supports exact, inclusive range, and unknown-value scans for `i32`, `u32`, `f32`, and `f64`.
+- Supports exact, inclusive range, and unknown-value scans for signed/unsigned 8-, 16-, and 32-bit integers plus `f32` and `f64`.
+- Provides an **All numeric types** discovery mode whose candidates retain their detected representation.
+- Decodes configurable stored-value multipliers (for example, displayed value × 8) across scanning, watching, writing, and freezing.
 - Narrows unknown-value candidates by changed, unchanged, increased, or decreased comparisons.
+- Narrows unknown candidates by an exact displayed increase or decrease amount.
 - Scans naturally aligned values by default, with an optional byte-by-byte mode for unaligned values.
 - Displays candidate WASM byte offsets and permits direct writes.
 - Keeps a live watch list across scans for up to 256 typed addresses in the current DevTools session.
@@ -22,6 +25,8 @@ Firefox-first WebExtension prototype for inspecting WebAssembly memory used by e
 Raw writes are experimental. A wrong address can corrupt or crash the embedded player.
 
 For approximate or rounded values, select **Value range** and enter inclusive minimum and maximum values. Range scanning works for both first and next scans. For values that do not appear in a naturally aligned scan, try **Any byte** alignment. If the representation is unknown, run an **Unknown initial value** first scan, change the value in the game, select **Changed**, **Increased**, **Decreased**, or **Value range**, and use **Next scan**. Keep the type and alignment unchanged until resetting the scan. Starting any new first scan replaces the previous session for that captured memory so large snapshots are released promptly.
+
+Use **All numeric types** when the game representation is unknown. Results show the detected type per address. If the stored value is a scaled form of the displayed value, set **Stored-value multiplier** before scanning; candidate values, writes, freezes, and watches will continue to use the displayed value. **Increased by** and **Decreased by** compare against the previous unknown-scan snapshot after applying the same multiplier.
 
 ## Load in Firefox
 
@@ -52,6 +57,8 @@ With the extension loaded, scan the captured memory as `Float64` for `12345.5`. 
 
 `/test/watch-diagnostics-harness.html` verifies live multi-address reads and five-sample write classification for both game-restored and persistent values.
 
+`/test/representation-discovery-harness.html` verifies automatic numeric-type discovery, scaled-value decoding and writes, and exact-delta refinement from a shared multi-type snapshot.
+
 `/test/candidate-retention-harness.html` starts with more than 250,000 identical values, changes only the final one, and verifies that a next scan still finds that late-memory address.
 
 `/test/memory-growth-harness.html` grows the captured WASM memory during a scan and verifies that scanning continues without using the detached original buffer.
@@ -69,6 +76,7 @@ With the extension loaded, scan the captured memory as `Float64` for `12345.5`. 
 ## Intentional limitations
 
 - Byte-by-byte and unknown-value scans can be significantly slower. Unknown scans keep independently compressed chunks in browser storage and load only the chunk needed by each comparison pass, avoiding a second Ruffle-sized JavaScript heap allocation.
+- **All numeric types** performs up to eight interpretations and can be substantially slower than a typed scan. Its unknown mode shares one compressed snapshot across every interpretation instead of duplicating the Ruffle heap.
 - The initial unknown-value scan intentionally displays no rows because every address is a candidate until the first comparison pass. Change the game value and use **Next scan** to obtain actionable candidates.
 - A scan covers the memory range that existed when it started; pages added during that scan are considered by the next first scan.
 - It captures instantiation through the two standard asynchronous WebAssembly APIs, not direct `new WebAssembly.Instance(...)` construction.
