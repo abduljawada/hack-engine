@@ -38,7 +38,23 @@
     ) {
       return;
     }
-    port.postMessage({ kind: "pageMessage", payload: event.data.payload });
+    try {
+      // Firefox exposes page-world values to content scripts through Xray
+      // wrappers. Clone the payload into this content-script realm before it
+      // enters WebExtension messaging so nested candidate data remains intact.
+      const payload = globalThis.structuredClone(event.data.payload);
+      port.postMessage({ kind: "pageMessage", payload });
+    } catch (error) {
+      port.postMessage({
+        kind: "pageMessage",
+        payload: {
+          kind: "error",
+          message: `Unable to copy a page result into the extension: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        },
+      });
+    }
   });
 
   connect();

@@ -213,12 +213,13 @@
   }
 
   function createAllCandidateSet(slotCount, type, stride, snapshot) {
-    const previewLength = Math.min(slotCount, RESULT_PREVIEW_LIMIT);
     return {
       bits: null,
       allCandidates: true,
       count: slotCount,
-      preview: Array.from({ length: previewLength }, (_, index) => index * stride),
+      // Every address is a candidate until the first refinement. Rendering an
+      // arbitrary prefix is not actionable and needlessly crosses realms.
+      preview: [],
       slotCount,
       stride,
       type,
@@ -744,7 +745,9 @@
     const view = new DataView(record.memory.buffer);
     const preview = candidates.preview.map((address) => ({
       address,
-      value: address + spec.size <= view.byteLength ? spec.read(view, address) : null,
+      value: address + spec.size <= view.byteLength
+        ? wireNumber(spec.read(view, address))
+        : null,
     }));
     send({
       kind: "scanResults",
@@ -753,9 +756,20 @@
       type,
       total: candidates.count,
       preview,
+      allCandidates: candidates.allCandidates,
       memoryBytes: record.memory.buffer.byteLength,
       snapshotBytes: candidates.snapshot?.compressedBytes ?? null,
     });
+  }
+
+  function wireNumber(value) {
+    if (Number.isFinite(value)) {
+      return value;
+    }
+    if (Number.isNaN(value)) {
+      return "NaN";
+    }
+    return value > 0 ? "Infinity" : "-Infinity";
   }
 
   function writeValue({ requestId, instanceId, type, address, rawValue }) {

@@ -12,6 +12,7 @@
   let port = null;
   let reconnectTimer = null;
   let scanWatchdog = null;
+  let activeScanRequestId = null;
   const SCAN_WATCHDOG_MS = 15_000;
 
   const elements = {
@@ -69,15 +70,28 @@
     scanWatchdog = null;
   }
 
-  function armScanWatchdog() {
+  function armScanWatchdog(scanRequestId) {
     clearScanWatchdog();
     scanWatchdog = setTimeout(() => {
+      if (activeScanRequestId !== scanRequestId) {
+        return;
+      }
       setScanButtonsDisabled(false);
       setStatus(
         "The scan stopped reporting progress for 15 seconds. Reload the page and reopen DevTools if the extension was reloaded.",
         "error",
       );
     }, SCAN_WATCHDOG_MS);
+  }
+
+  function finishScanRequest(scanRequestId) {
+    if (scanRequestId !== activeScanRequestId) {
+      return false;
+    }
+    activeScanRequestId = null;
+    clearScanWatchdog();
+    setScanButtonsDisabled(false);
+    return true;
   }
 
   function send(payload, frameId = selectedInstance()?.frameId) {
@@ -172,9 +186,11 @@
       setStatus("Unknown initial value is only available for a first scan.", "error");
       return;
     }
+    const scanRequestId = requestId();
+    activeScanRequestId = scanRequestId;
     const sent = send({
       kind: "memoryScan",
-      requestId: requestId(),
+      requestId: scanRequestId,
       instanceId: record.id,
       type: elements.type.value,
       rawValue,
@@ -183,6 +199,7 @@
       refine,
     }, record.frameId);
     if (!sent) {
+      activeScanRequestId = null;
       return;
     }
     setScanButtonsDisabled(true);
@@ -195,7 +212,7 @@
             ? "Filtering existing candidates…"
             : "Scanning WASM memory…",
     );
-    armScanWatchdog();
+    armScanWatchdog(scanRequestId);
   }
 
   function updateConditionControls() {
@@ -231,17 +248,33 @@
     }
 
     elements.resultCount.textContent = payload.total.toLocaleString();
-    clearScanWatchdog();
-    setScanButtonsDisabled(false);
     const snapshotNote = payload.snapshotBytes == null
       ? ""
       : ` Compressed snapshot: ${formatBytes(payload.snapshotBytes)}.`;
     setStatus(
       payload.total === 0
         ? `No matching values found. Reset before starting a new scan.${snapshotNote}`
+        : payload.allCandidates
+          ? `${payload.total.toLocaleString()} initial candidates captured. Change the game value, choose a comparison condition, then use Next scan.${snapshotNote}`
         : `${payload.total.toLocaleString()} candidates remain; showing up to ${payload.preview.length}.${snapshotNote}`,
       "ready",
     );
+  }
+
+  function validateScanResults(payload) {
+    if (
+      !Number.isSafeInteger(payload?.total) ||
+      payload.total < 0 ||
+      !Array.isArray(payload.preview) ||
+      payload.preview.some((candidate) => (
+        !candidate ||
+        !Number.isSafeInteger(candidate.address) ||
+        candidate.address < 0 ||
+        !("value" in candidate)
+      ))
+    ) {
+      throw new Error("The page returned an invalid scan result.");
+    }
   }
 
   function handlePortMessage(message) {
@@ -271,7 +304,10 @@
         addInstances(message.frameId, message.url, payload.instances);
         break;
       case "scanProgress":
-        armScanWatchdog();
+        if (payload.requestId !== activeScanRequestId) {
+          break;
+        }
+        armScanWatchdog(payload.requestId);
         setStatus(
           `Scanning… ${payload.inspected.toLocaleString()} / ${payload.total.toLocaleString()}${
             payload.snapshotBytes == null
@@ -280,9 +316,23 @@
           }`,
         );
         break;
-      case "scanResults":
-        renderCandidates(payload);
+      case "scanResults": {
+        if (!finishScanRequest(payload.requestId)) {
+          break;
+        }
+        try {
+          validateScanResults(payload);
+          renderCandidates(payload);
+        } catch (error) {
+          setStatus(
+            `Unable to render scan results: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+            "error",
+          );
+        }
         break;
+      }
       case "writeComplete":
         elements.writeValue.value = String(payload.value);
         if (candidateValueCells.has(payload.address)) {
@@ -325,8 +375,11 @@
         setStatus("Scan state reset.", "ready");
         break;
       case "error":
-        clearScanWatchdog();
-        setScanButtonsDisabled(false);
+        if (payload.requestId === activeScanRequestId || !payload.requestId) {
+          activeScanRequestId = null;
+          clearScanWatchdog();
+          setScanButtonsDisabled(false);
+        }
         setStatus(payload.message, "error");
         break;
     }
@@ -343,6 +396,7 @@
           return;
         }
         port = null;
+        activeScanRequestId = null;
         clearScanWatchdog();
         setScanButtonsDisabled(false);
         setStatus(
