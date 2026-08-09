@@ -74,6 +74,9 @@ emitPanelPayload({
   allCandidates: false,
 });
 document.querySelector("#candidates tr").click();
+const automaticallyWatched =
+  document.querySelector("#watch-count").textContent === "1" &&
+  document.querySelector("#watches").textContent.includes("0x00001000");
 document.querySelector("#write-value").value = "125";
 document.querySelector("#write").click();
 const scaledWrite = panelHarnessState.commands
@@ -85,7 +88,8 @@ const autoControlsWork =
   document.querySelector("#candidates").textContent.includes("i16 ×8") &&
   scaledWrite?.type === "i16" &&
   scaledWrite?.multiplier === 8 &&
-  scaledWrite?.rawValue === "125";
+  scaledWrite?.rawValue === "125" &&
+  automaticallyWatched;
 
 document.querySelector("#type").value = "f64";
 document.querySelector("#type").dispatchEvent(new Event("change"));
@@ -130,6 +134,53 @@ const validHandled =
   document.querySelector("#result-count").textContent === (8192).toLocaleString() &&
   document.querySelector("#status").textContent.includes("initial candidates captured");
 
+document.querySelector("#first-scan").click();
+const cancelledRequest = latestScanCommand();
+document.querySelector("#cancel-scan").click();
+const cancelCommand = panelHarnessState.commands
+  .map((message) => message?.payload)
+  .findLast((payload) => payload?.kind === "cancelScan");
+emitPanelPayload({ kind: "scanCancelled", requestId: cancelledRequest?.requestId });
+const cancellationWorks =
+  cancelCommand?.targetRequestId === cancelledRequest?.requestId &&
+  !document.querySelector("#first-scan").disabled &&
+  document.querySelector("#status").textContent.includes("Scan cancelled") &&
+  document.querySelector("#scan-history").textContent.includes("cancelled");
+
+document.querySelector("#first-scan").click();
+const timedOutRequest = latestScanCommand();
+const watchdogCallback = [...panelHarnessState.watchdogs.values()].at(-1);
+watchdogCallback?.();
+const watchdogCancel = panelHarnessState.commands
+  .map((message) => message?.payload)
+  .findLast((payload) => payload?.kind === "cancelScan");
+const timeoutCancelsWork =
+  watchdogCancel?.targetRequestId === timedOutRequest?.requestId &&
+  document.querySelector("#status").textContent.includes("15 seconds") &&
+  document.querySelector("#scan-history").textContent.includes("timeout");
+
+document.querySelector("#condition").value = "exact";
+document.querySelector("#condition").dispatchEvent(new Event("change"));
+document.querySelector("#first-scan").click();
+const previewLimitRequest = latestScanCommand();
+emitPanelPayload({
+  kind: "scanResults",
+  requestId: previewLimitRequest?.requestId,
+  instanceId: "1",
+  type: "f64",
+  total: 205,
+  preview: Array.from({ length: 205 }, (_, index) => ({
+    address: index * 8,
+    value: index,
+    displayValue: index,
+  })),
+  allCandidates: false,
+});
+const previewLimitWorks =
+  document.querySelectorAll("#candidates tr").length === 200 &&
+  document.querySelector("#visible-count").textContent === "200" &&
+  document.querySelector("#result-count").textContent === "205";
+
 document.querySelector("#write-address").value = "0x00001000";
 document.querySelector("#add-watch").click();
 for (const refresh of panelHarnessState.intervals.values()) {
@@ -150,9 +201,9 @@ emitPanelPayload({
   }],
 });
 const watched =
-  document.querySelector("#watch-count").textContent === "1" &&
+  document.querySelector("#watch-count").textContent === "2" &&
   document.querySelector("#watches").textContent.includes("0x00001000") &&
-  document.querySelector("#watches").textContent.includes("33");
+  document.querySelector("#watches").textContent.includes("4.125");
 
 emitPanelPayload({
   kind: "writeDiagnostic",
@@ -188,6 +239,20 @@ const diagnosed =
   document.querySelector("#watches").textContent.includes("Game restored it") &&
   document.querySelector("#status").textContent.includes("game restored");
 
-panelHarnessResult.textContent = rangeControlsWork && autoControlsWork && malformedHandled && validHandled && watched && diagnosed
-  ? "PASS: panel range and auto-type controls, watchdog, live watches, and write diagnostics work."
-  : "FAIL: panel request lifecycle did not complete as expected.";
+const panelChecks = {
+  rangeControlsWork,
+  autoControlsWork,
+  malformedHandled,
+  validHandled,
+  cancellationWorks,
+  timeoutCancelsWork,
+  previewLimitWorks,
+  watched,
+  diagnosed,
+};
+panelHarnessResult.textContent = Object.values(panelChecks).every(Boolean)
+  ? "PASS: panel scanning, cancellation, auto-watch, live watches, and write diagnostics work."
+  : `FAIL: panel checks failed: ${Object.entries(panelChecks)
+    .filter(([, passed]) => !passed)
+    .map(([name]) => name)
+    .join(", ")}.`;

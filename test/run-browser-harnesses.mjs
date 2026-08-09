@@ -5,8 +5,9 @@ import { join } from "node:path";
 
 const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const baseUrl = process.argv[2] ?? "http://127.0.0.1:8765";
-const harnesses = [
+const allHarnesses = [
   ["exact scan", "/test/harness.html", 30_000],
+  ["scan cancellation", "/test/scan-cancellation-harness.html", 90_000],
   ["freeze", "/test/freeze-harness.html", 30_000],
   ["watch diagnostics", "/test/watch-diagnostics-harness.html", 30_000],
   ["representation discovery", "/test/representation-discovery-harness.html", 90_000],
@@ -17,6 +18,30 @@ const harnesses = [
   ["panel watchdog", "/test/panel-watchdog-harness.html", 30_000],
   ["large unknown scan", "/test/large-unknown-harness.html", 240_000],
 ];
+const requestedHarness = process.argv[3];
+const requestedHarnesses = new Set(requestedHarness?.split(",").map((name) => name.trim()));
+const harnesses = requestedHarness
+  ? allHarnesses.filter(([name]) => requestedHarnesses.has(name))
+  : allHarnesses;
+if (harnesses.length === 0) {
+  throw new Error(`Unknown harness: ${requestedHarness}`);
+}
+
+if (!requestedHarness) {
+  for (const [name] of allHarnesses) {
+    const exitCode = await new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [process.argv[1], baseUrl, name], {
+        stdio: "inherit",
+      });
+      child.once("error", reject);
+      child.once("exit", (code) => resolve(code ?? 1));
+    });
+    if (exitCode !== 0) {
+      process.exit(exitCode);
+    }
+  }
+  process.exit(0);
+}
 
 const profileDirectory = mkdtempSync(join(tmpdir(), "ruffle-memory-harness-"));
 const chrome = spawn(chromePath, [

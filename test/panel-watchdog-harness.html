@@ -26,11 +26,31 @@
     <label id="multiplier-label"><input id="multiplier" value="1" /></label>
     <button id="first-scan">First scan</button>
     <button id="next-scan">Next scan</button>
+    <button id="cancel-scan" disabled>Cancel scan</button>
     <button id="reset-scan">Reset</button>
     <button id="refresh">Refresh</button>
     <span id="status-dot"></span>
     <span id="status"></span>
     <span id="result-count">0</span>
+    <span id="visible-count">0</span>
+    <span id="selected-count">0</span>
+    <input id="candidate-filter" />
+    <select id="candidate-sort">
+      <option value="addressAsc">Address ascending</option>
+      <option value="addressDesc">Address descending</option>
+      <option value="typeAsc">Type</option>
+      <option value="valueAsc">Value ascending</option>
+      <option value="valueDesc">Value descending</option>
+    </select>
+    <button id="select-visible">Select visible</button>
+    <button id="clear-selection">Clear selection</button>
+    <input id="candidate-label" />
+    <input id="candidate-group" />
+    <button id="apply-metadata">Apply metadata</button>
+    <button id="batch-watch">Watch selected</button>
+    <button id="batch-write">Write selected</button>
+    <button id="batch-freeze">Freeze selected</button>
+    <button id="batch-unfreeze">Unfreeze selected</button>
     <table><tbody id="candidates"></tbody></table>
     <input id="write-address" />
     <input id="write-value" />
@@ -42,6 +62,13 @@
       <p id="watch-empty"></p>
       <table><tbody id="watches"></tbody></table>
     </section>
+    <section class="history-list">
+      <span id="history-empty"></span>
+      <table><tbody id="scan-history"></tbody></table>
+    </section>
+    <button id="export-workspace">Export workspace</button>
+    <button id="import-workspace">Import workspace</button>
+    <input id="workspace-file" type="file" />
 
     <script src="panel-watchdog-harness-setup.js"></script>
     <script src="../devtools/panel/panel.js"></script>
