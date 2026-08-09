@@ -4,6 +4,7 @@ const unalignedOffset = 4099;
 const unalignedValue = 12345.75;
 const rangeOffset = 8192;
 const outsideRangeOffset = 8200;
+const knownExactOffset = 12288;
 const increasedOffset = 1024;
 const decreasedOffset = 2048;
 let advancedInstance = null;
@@ -72,18 +73,46 @@ window.addEventListener("message", (event) => {
     new DataView(advancedInstance.exports.memory.buffer).setFloat64(rangeOffset, 78.25, true);
     sendAdvancedCommand({
       kind: "memoryScan",
-      requestId: "range-refinement",
+      requestId: "known-range-comparison",
       instanceId: advancedInstanceId,
       type: "f64",
-      rawValue: "78",
-      rawMaxValue: "79",
-      condition: "range",
+      condition: "increased",
       alignment: "aligned",
       refine: true,
     });
-  } else if (payload?.kind === "scanResults" && payload.requestId === "range-refinement") {
+  } else if (
+    payload?.kind === "scanResults" &&
+    payload.requestId === "known-range-comparison"
+  ) {
     if (payload.total !== 1 || payload.preview[0]?.address !== rangeOffset) {
-      failAdvanced(`range refinement retained ${payload.total} candidates.`);
+      failAdvanced(`known-range comparison retained ${payload.total} candidates.`);
+      return;
+    }
+    sendAdvancedCommand({
+      kind: "memoryScan",
+      requestId: "known-exact-initial",
+      instanceId: advancedInstanceId,
+      type: "i32",
+      rawValue: "40",
+      condition: "exact",
+      alignment: "aligned",
+      refine: false,
+    });
+  } else if (payload?.kind === "scanResults" && payload.requestId === "known-exact-initial") {
+    new DataView(advancedInstance.exports.memory.buffer).setInt32(knownExactOffset, 45, true);
+    sendAdvancedCommand({
+      kind: "memoryScan",
+      requestId: "known-exact-delta",
+      instanceId: advancedInstanceId,
+      type: "i32",
+      rawValue: "5",
+      condition: "increasedBy",
+      alignment: "aligned",
+      refine: true,
+    });
+  } else if (payload?.kind === "scanResults" && payload.requestId === "known-exact-delta") {
+    if (payload.total !== 1 || payload.preview[0]?.address !== knownExactOffset) {
+      failAdvanced(`known-exact comparison retained ${payload.total} candidates.`);
       return;
     }
     sendAdvancedCommand({
@@ -188,7 +217,7 @@ window.addEventListener("message", (event) => {
       payload.message === "No previous scan exists. Run a first scan before filtering."
     ) {
       advancedResultNode.textContent =
-        "PASS: unaligned, range, and comparison scans work, and replacement scans release stale sessions.";
+        "PASS: known and unknown baselines, ranges, and comparisons work, and replacement scans release stale sessions.";
     } else {
       failAdvanced(payload.message);
     }
@@ -208,6 +237,7 @@ WebAssembly.instantiate(advancedModuleBytes).then(({ instance }) => {
   view.setFloat64(unalignedOffset, unalignedValue, true);
   view.setFloat64(rangeOffset, 77.5, true);
   view.setFloat64(outsideRangeOffset, 88.5, true);
+  view.setInt32(knownExactOffset, 40, true);
   view.setInt32(increasedOffset, 10, true);
   view.setInt32(decreasedOffset, 20, true);
 });

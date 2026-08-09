@@ -71,6 +71,25 @@ window.addEventListener("message", (event) => {
     }
     representationCommand({
       kind: "memoryScan",
+      requestId: "auto-known-delta",
+      instanceId: representationInstanceId,
+      type: "auto",
+      rawValue: "25",
+      multiplier: 8,
+      condition: "increasedBy",
+      alignment: "aligned",
+      refine: true,
+    });
+  } else if (payload?.kind === "scanResults" && payload.requestId === "auto-known-delta") {
+    const retained = payload.preview.some((candidate) => (
+      candidate.address === scaledOffset && candidate.type === "i16"
+    ));
+    if (!retained) {
+      failRepresentation("auto comparison missed a candidate from a known exact scan.");
+      return;
+    }
+    representationCommand({
+      kind: "memoryScan",
       requestId: "auto-unknown",
       instanceId: representationInstanceId,
       type: "auto",
@@ -138,7 +157,7 @@ window.addEventListener("message", (event) => {
   ) {
     const retained = payload.preview.some((candidate) => candidate.address === float32Offset);
     representationResult.textContent = retained
-      ? "PASS: extra widths, auto types, Float32 normalization, scaled writes, and exact-delta refinement work."
+      ? "PASS: extra widths, auto types, known baselines, Float32 normalization, scaled writes, and exact-delta refinement work."
       : "FAIL: normalized Float32 scan missed its target.";
   } else if (payload?.kind === "error") {
     failRepresentation(payload.message);
