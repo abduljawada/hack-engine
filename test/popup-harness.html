@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Hack Engine popup harness</title>
+    <link rel="stylesheet" href="../popup/popup.css" />
+  </head>
+  <body>
+    <main>
+      <header class="brand-row">
+        <img src="../assets/icons/icon-96.png" alt="" width="52" height="52" />
+        <div><h1>Hack Engine</h1><p>Ruffle memory tools</p></div>
+      </header>
+      <section class="tab-context">
+        <img class="ui-icon" src="../assets/ui-icons/globe-alt.svg" alt="" />
+        <div><span class="context-label">Active tab</span><strong id="hostname">Checking current tab…</strong></div>
+      </section>
+      <section class="connection-state">
+        <span id="status-dot" class="status-dot searching"></span>
+        <div><h2 id="status-title">Looking for Ruffle memory…</h2><p id="status-detail"></p></div>
+      </section>
+      <section id="memory-summary" class="memory-summary" hidden>
+        <img src="../assets/icons/icon-48.png" alt="" width="36" height="36" />
+        <div><strong id="memory-count"></strong><span id="memory-size"></span></div>
+      </section>
+      <button id="open-inspector" class="primary-action" type="button" disabled>
+        <img src="../assets/ui-icons/magnifying-glass.svg" alt="" />Open inspector
+      </button>
+      <div class="secondary-actions">
+        <button id="refresh-connection" type="button">
+          <img class="ui-icon" src="../assets/ui-icons/arrow-path.svg" alt="" /><span>Refresh connection</span><img class="ui-icon chevron" src="../assets/ui-icons/chevron-right.svg" alt="" />
+        </button>
+        <button id="how-it-works" type="button">
+          <img class="ui-icon" src="../assets/ui-icons/question-mark-circle.svg" alt="" /><span>How it works</span><img class="ui-icon chevron" src="../assets/ui-icons/chevron-right.svg" alt="" />
+        </button>
+      </div>
+      <footer>v0.7</footer>
+    </main>
+    <p id="harness-result" hidden>Running…</p>
+    <script src="popup-harness-setup.js"></script>
+    <script src="../popup/popup.js"></script>
+    <script src="popup-harness-run.js"></script>
+  </body>
+</html>

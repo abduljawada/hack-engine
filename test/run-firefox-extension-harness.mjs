@@ -92,7 +92,7 @@ function connectBidi(url) {
 
 async function readResult(bidi, context) {
   const result = await bidi.call("script.evaluate", {
-    expression: "document.querySelector('#result')?.textContent ?? null",
+    expression: "document.querySelector('#result, #harness-result')?.textContent ?? null",
     target: { context },
     awaitPromise: false,
   });

@@ -16,6 +16,7 @@ const allHarnesses = [
   ["advanced scan", "/test/advanced-scan-harness.html", 90_000],
   ["bridge payload", "/test/bridge-payload-harness.html", 30_000],
   ["panel watchdog", "/test/panel-watchdog-harness.html", 30_000],
+  ["toolbar popup", "/test/popup-harness.html", 30_000],
   ["large unknown scan", "/test/large-unknown-harness.html", 240_000],
 ];
 const requestedHarness = process.argv[3];
