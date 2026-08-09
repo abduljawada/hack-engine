@@ -11,7 +11,8 @@ Firefox-first WebExtension prototype for inspecting WebAssembly memory used by e
 - Narrows unknown-value candidates by changed, unchanged, increased, or decreased comparisons.
 - Scans naturally aligned values by default, with an optional byte-by-byte mode for unaligned values.
 - Displays candidate WASM byte offsets and permits direct writes.
-- Verifies writes after 75 ms so values restored by the game are reported instead of appearing successful.
+- Keeps a live watch list across scans for up to 256 typed addresses in the current DevTools session.
+- Samples writes immediately, across two animation frames, after 75 ms, and after 250 ms so cached or game-restored values are distinguishable from persistent writes.
 - Can freeze a selected address by rewriting it once per animation frame.
 - Retains every aligned candidate in a compact bitset and displays the first 200 in the panel.
 - Safely continues across `WebAssembly.Memory` growth by refreshing detached scan views between chunks.
@@ -48,6 +49,8 @@ With the extension loaded, scan the captured memory as `Float64` for `12345.5`. 
 `/test/harness.html` runs the page agent directly and reports whether capture, exact scan, address discovery, and writing all succeed end-to-end.
 
 `/test/freeze-harness.html` simulates a game that restores a value every animation frame. It verifies that delayed write checking detects the reversion and that freezing holds the requested replacement.
+
+`/test/watch-diagnostics-harness.html` verifies live multi-address reads and five-sample write classification for both game-restored and persistent values.
 
 `/test/candidate-retention-harness.html` starts with more than 250,000 identical values, changes only the final one, and verifies that a next scan still finds that late-memory address.
 

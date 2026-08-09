@@ -5,6 +5,7 @@
   const RESULT_PREVIEW_LIMIT = 200;
   const SCAN_CHUNK_SIZE = 100_000;
   const SNAPSHOT_CHUNK_SIZE = 1024 * 1024;
+  const MAX_WATCH_VALUES = 256;
   const SNAPSHOT_DB_NAME = "ruffle-memory-inspector-snapshots-v1";
   const SNAPSHOT_STORE_NAME = "chunks";
 
@@ -15,6 +16,7 @@
   const instances = new Map();
   const scans = new Map();
   const freezes = new Map();
+  const activeWriteDiagnostics = new Map();
   let nextInstanceId = 1;
   let nextSnapshotId = 1;
   let freezeFrameHandle = null;
@@ -772,6 +774,154 @@
     return value > 0 ? "Infinity" : "-Infinity";
   }
 
+  function delay(milliseconds) {
+    return new Promise((resolve) => setTimeout(resolve, milliseconds));
+  }
+
+  function waitForAnimationFrames(count) {
+    return new Promise((resolve) => {
+      let remaining = count;
+      let fallbackTimer = null;
+      const finish = () => {
+        clearTimeout(fallbackTimer);
+        resolve();
+      };
+      const next = () => {
+        remaining -= 1;
+        if (remaining <= 0) {
+          finish();
+          return;
+        }
+        requestAnimationFrame(next);
+      };
+      fallbackTimer = setTimeout(finish, Math.max(50, count * 50));
+      requestAnimationFrame(next);
+    });
+  }
+
+  function sampleAddress(record, spec, address, requestedValue, stage, startedAt) {
+    try {
+      const view = new DataView(record.memory.buffer);
+      if (address + spec.size > view.byteLength) {
+        throw new Error("Address is outside the current WASM memory.");
+      }
+      const value = spec.read(view, address);
+      return {
+        stage,
+        elapsedMs: Math.max(0, Math.round(performance.now() - startedAt)),
+        value: wireNumber(value),
+        matches: Object.is(value, requestedValue),
+      };
+    } catch (error) {
+      return {
+        stage,
+        elapsedMs: Math.max(0, Math.round(performance.now() - startedAt)),
+        value: null,
+        matches: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  async function runWriteDiagnostics({
+    requestId,
+    record,
+    type,
+    spec,
+    address,
+    requestedValue,
+  }) {
+    const diagnosticKey = freezeKey(record.id, type, address);
+    const startedAt = performance.now();
+    const immediate = sampleAddress(
+      record,
+      spec,
+      address,
+      requestedValue,
+      "immediate",
+      startedAt,
+    );
+    const nextFramePromise = waitForAnimationFrames(1).then(() => sampleAddress(
+      record,
+      spec,
+      address,
+      requestedValue,
+      "next-frame",
+      startedAt,
+    ));
+    const secondFramePromise = waitForAnimationFrames(2).then(() => sampleAddress(
+      record,
+      spec,
+      address,
+      requestedValue,
+      "second-frame",
+      startedAt,
+    ));
+    const delayedVerificationPromise = delay(75).then(() => sampleAddress(
+      record,
+      spec,
+      address,
+      requestedValue,
+      "75ms",
+      startedAt,
+    ));
+    const settledPromise = delay(250).then(() => sampleAddress(
+      record,
+      spec,
+      address,
+      requestedValue,
+      "250ms",
+      startedAt,
+    ));
+
+    delayedVerificationPromise.then((sample) => {
+      if (activeWriteDiagnostics.get(diagnosticKey) !== requestId) {
+        return;
+      }
+      send({
+        kind: "writeVerified",
+        requestId,
+        instanceId: record.id,
+        type,
+        address,
+        requestedValue,
+        actualValue: sample.value,
+        persisted: sample.matches,
+      });
+    });
+
+    const samples = [
+      immediate,
+      ...await Promise.all([
+        nextFramePromise,
+        secondFramePromise,
+        delayedVerificationPromise,
+        settledPromise,
+      ]),
+    ];
+    if (activeWriteDiagnostics.get(diagnosticKey) !== requestId) {
+      return;
+    }
+    activeWriteDiagnostics.delete(diagnosticKey);
+    const classification = samples.some((sample) => sample.error)
+      ? "unavailable"
+      : samples.every((sample) => sample.matches)
+        ? "persistent"
+        : immediate.matches
+          ? "restored"
+          : "rejected";
+    send({
+      kind: "writeDiagnostic",
+      requestId,
+      instanceId: record.id,
+      type,
+      address,
+      requestedValue,
+      classification,
+      samples,
+    });
+  }
+
   function writeValue({ requestId, instanceId, type, address, rawValue }) {
     const record = instances.get(String(instanceId));
     const spec = typeSpecs[type];
@@ -798,34 +948,64 @@
       instanceId: record.id,
       type,
       address: numericAddress,
-      value: spec.read(view, numericAddress),
+      value: wireNumber(spec.read(view, numericAddress)),
     });
-
-    setTimeout(() => {
-      try {
-        const verificationView = new DataView(record.memory.buffer);
-        if (numericAddress + spec.size > verificationView.byteLength) {
-          throw new Error("Address is outside the current WASM memory.");
-        }
-        const actualValue = spec.read(verificationView, numericAddress);
-        send({
-          kind: "writeVerified",
-          requestId,
-          instanceId: record.id,
-          type,
-          address: numericAddress,
-          requestedValue: value,
-          actualValue,
-          persisted: Object.is(actualValue, value),
-        });
-      } catch (error) {
-        send({
-          kind: "error",
-          requestId,
-          message: error instanceof Error ? error.message : String(error),
-        });
+    const diagnosticKey = freezeKey(record.id, type, numericAddress);
+    activeWriteDiagnostics.set(diagnosticKey, requestId);
+    runWriteDiagnostics({
+      requestId,
+      record,
+      type,
+      spec,
+      address: numericAddress,
+      requestedValue: value,
+    }).catch((error) => {
+      if (activeWriteDiagnostics.get(diagnosticKey) === requestId) {
+        activeWriteDiagnostics.delete(diagnosticKey);
       }
-    }, 75);
+      send({
+        kind: "error",
+        requestId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
+
+  function readValues({ requestId, instanceId, entries }) {
+    const record = instances.get(String(instanceId));
+    if (!record) {
+      throw new Error("The selected WASM instance no longer exists.");
+    }
+    if (!Array.isArray(entries) || entries.length > MAX_WATCH_VALUES) {
+      throw new Error(`A watch refresh supports at most ${MAX_WATCH_VALUES} addresses.`);
+    }
+    const view = new DataView(record.memory.buffer);
+    const values = entries.map((entry) => {
+      const spec = typeSpecs[entry?.type];
+      const address = Number(entry?.address);
+      const id = String(entry?.id ?? "");
+      if (
+        !id ||
+        !spec ||
+        !Number.isSafeInteger(address) ||
+        address < 0 ||
+        address + spec.size > view.byteLength
+      ) {
+        return { id, type: entry?.type, address, error: "Address is unavailable." };
+      }
+      return {
+        id,
+        type: entry.type,
+        address,
+        value: wireNumber(spec.read(view, address)),
+      };
+    });
+    send({
+      kind: "watchValues",
+      requestId,
+      instanceId: record.id,
+      values,
+    });
   }
 
   function applyFreezes() {
@@ -933,6 +1113,9 @@
             return memoryScan(command);
           case "writeValue":
             writeValue(command);
+            break;
+          case "readValues":
+            readValues(command);
             break;
           case "setFreeze":
             setFreeze(command);

@@ -6,6 +6,9 @@
   const instances = new Map();
   const candidateValueCells = new Map();
   const frozenAddresses = new Set();
+  const watchedAddresses = new Map();
+  const watchReadRequests = new Map();
+  const pendingWatchInstances = new Set();
   let requestSequence = 1;
   let selectedCandidateRow = null;
   let selectedAddress = null;
@@ -14,6 +17,9 @@
   let scanWatchdog = null;
   let activeScanRequestId = null;
   const SCAN_WATCHDOG_MS = 15_000;
+  const WATCH_REFRESH_MS = 250;
+  const MAX_WATCH_ADDRESSES = 256;
+  const WATCH_STORAGE_KEY = `ruffle-memory-inspector:watches:${tabId}`;
 
   const elements = {
     instance: document.querySelector("#instance"),
@@ -33,7 +39,12 @@
     writeAddress: document.querySelector("#write-address"),
     writeValue: document.querySelector("#write-value"),
     write: document.querySelector("#write"),
+    addWatch: document.querySelector("#add-watch"),
     freeze: document.querySelector("#freeze"),
+    watchList: document.querySelector(".watch-list"),
+    watchCount: document.querySelector("#watch-count"),
+    watchEmpty: document.querySelector("#watch-empty"),
+    watches: document.querySelector("#watches"),
   };
 
   function requestId() {
@@ -46,6 +57,28 @@
 
   function freezeIdentity(record, type, address) {
     return `${record.frameId}:${record.id}:${type}:${address}`;
+  }
+
+  function watchIdentity(frameId, instanceId, type, address) {
+    return `${frameId}:${instanceId}:${type}:${address}`;
+  }
+
+  function instanceFor(frameId, instanceId) {
+    return instances.get(`${frameId}:${instanceId}`);
+  }
+
+  function parseAddress(rawAddress) {
+    const value = rawAddress.trim();
+    if (!value) {
+      return Number.NaN;
+    }
+    return value.toLowerCase().startsWith("0x")
+      ? Number.parseInt(value.slice(2), 16)
+      : Number.parseInt(value, 10);
+  }
+
+  function formatAddress(address) {
+    return `0x${address.toString(16).padStart(8, "0")}`;
   }
 
   function updateFreezeButton() {
@@ -126,6 +159,240 @@
     return `${Math.round(bytes / 1024)} KiB`;
   }
 
+  function persistWatches() {
+    try {
+      const watches = [...watchedAddresses.values()].map((entry) => ({
+        frameId: entry.frameId,
+        instanceId: entry.instanceId,
+        type: entry.type,
+        address: entry.address,
+        hint: entry.hint,
+        url: entry.url,
+      }));
+      sessionStorage.setItem(WATCH_STORAGE_KEY, JSON.stringify(watches));
+    } catch {
+      // A watch list still works for the current panel if storage is unavailable.
+    }
+  }
+
+  function restoreWatches() {
+    let stored;
+    try {
+      stored = JSON.parse(sessionStorage.getItem(WATCH_STORAGE_KEY) || "[]");
+    } catch {
+      stored = [];
+    }
+    if (!Array.isArray(stored)) {
+      return;
+    }
+    for (const value of stored.slice(0, MAX_WATCH_ADDRESSES)) {
+      if (
+        !Number.isInteger(value?.frameId) ||
+        typeof value.instanceId !== "string" ||
+        !["i32", "u32", "f32", "f64"].includes(value.type) ||
+        !Number.isSafeInteger(value.address) ||
+        value.address < 0
+      ) {
+        continue;
+      }
+      const key = watchIdentity(value.frameId, value.instanceId, value.type, value.address);
+      watchedAddresses.set(key, {
+        key,
+        frameId: value.frameId,
+        instanceId: value.instanceId,
+        type: value.type,
+        address: value.address,
+        hint: typeof value.hint === "string" ? value.hint : "",
+        url: typeof value.url === "string" ? value.url : "",
+        value: undefined,
+        state: "waiting",
+        detail: "Waiting for the captured memory.",
+        diagnosticState: null,
+        diagnosticDetail: "",
+      });
+    }
+  }
+
+  function watchRecord(entry) {
+    const record = instanceFor(entry.frameId, entry.instanceId);
+    if (!record) {
+      return null;
+    }
+    if (entry.hint && record.hint && entry.hint !== record.hint) {
+      return null;
+    }
+    return record;
+  }
+
+  function watchStateLabel(entry) {
+    switch (entry.state) {
+      case "live": return "Live";
+      case "stable": return "Stable";
+      case "changed": return "Changed";
+      case "checking": return "Checking write…";
+      case "persistent": return "Write persisted";
+      case "restored": return "Game restored it";
+      case "rejected": return "Write rejected";
+      case "frozen": return "Frozen";
+      case "unavailable": return "Unavailable";
+      default: return "Waiting";
+    }
+  }
+
+  function selectWatch(entry) {
+    const instanceKey = `${entry.frameId}:${entry.instanceId}`;
+    if (instances.has(instanceKey)) {
+      elements.instance.value = instanceKey;
+    }
+    elements.type.value = entry.type;
+    selectedCandidateRow?.classList.remove("selected");
+    selectedCandidateRow = entry.row;
+    selectedAddress = entry.address;
+    entry.row?.classList.add("selected");
+    elements.writeAddress.value = formatAddress(entry.address);
+    const numericValue = typeof entry.value === "number" && Number.isFinite(entry.value)
+      ? entry.value
+      : null;
+    elements.writeValue.value = numericValue === null ? "" : String(numericValue);
+    updateFreezeButton();
+  }
+
+  function renderWatches() {
+    elements.watches.replaceChildren();
+    for (const entry of watchedAddresses.values()) {
+      const row = document.createElement("tr");
+      const address = document.createElement("td");
+      const type = document.createElement("td");
+      const value = document.createElement("td");
+      const state = document.createElement("td");
+      const actions = document.createElement("td");
+      const remove = document.createElement("button");
+      address.textContent = formatAddress(entry.address);
+      type.textContent = entry.type;
+      value.textContent = entry.value === undefined ? "—" : String(entry.value);
+      state.textContent = watchStateLabel(entry);
+      state.title = entry.detail || "";
+      state.className = `watch-state ${entry.state}`;
+      remove.type = "button";
+      remove.className = "watch-remove";
+      remove.textContent = "Remove";
+      remove.addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (frozenAddresses.has(entry.key)) {
+          setStatus("Unfreeze this address before removing it from the watch list.", "error");
+          return;
+        }
+        watchedAddresses.delete(entry.key);
+        persistWatches();
+        renderWatches();
+      });
+      actions.append(remove);
+      row.append(address, type, value, state, actions);
+      row.addEventListener("click", () => selectWatch(entry));
+      entry.row = row;
+      entry.valueCell = value;
+      entry.stateCell = state;
+      elements.watches.append(row);
+    }
+    elements.watchCount.textContent = watchedAddresses.size.toLocaleString();
+    elements.watchList.classList.toggle("has-watches", watchedAddresses.size > 0);
+  }
+
+  function updateWatchEntry(entry, value, state, detail = "") {
+    if (value !== undefined) {
+      entry.value = value;
+      if (entry.valueCell) {
+        entry.valueCell.textContent = String(value);
+      }
+    }
+    entry.state = state;
+    entry.detail = detail;
+    if (entry.stateCell) {
+      entry.stateCell.textContent = watchStateLabel(entry);
+      entry.stateCell.className = `watch-state ${entry.state}`;
+      entry.stateCell.title = detail;
+    }
+  }
+
+  function addWatch(record, type, address) {
+    if (!Number.isSafeInteger(address) || address < 0) {
+      setStatus("Enter a valid non-negative address before adding a watch.", "error");
+      return;
+    }
+    const key = watchIdentity(record.frameId, record.id, type, address);
+    if (watchedAddresses.has(key)) {
+      selectWatch(watchedAddresses.get(key));
+      setStatus(`${formatAddress(address)} is already on the watch list.`, "ready");
+      return;
+    }
+    if (watchedAddresses.size >= MAX_WATCH_ADDRESSES) {
+      setStatus(`The watch list supports up to ${MAX_WATCH_ADDRESSES} addresses.`, "error");
+      return;
+    }
+    const entry = {
+      key,
+      frameId: record.frameId,
+      instanceId: record.id,
+      type,
+      address,
+      hint: record.hint || "",
+      url: record.url || "",
+      value: undefined,
+      state: "waiting",
+      detail: "Waiting for the first live refresh.",
+      diagnosticState: null,
+      diagnosticDetail: "",
+    };
+    watchedAddresses.set(key, entry);
+    persistWatches();
+    renderWatches();
+    selectWatch(entry);
+    refreshWatchValues();
+    setStatus(`Watching ${type} at ${formatAddress(address)}.`, "ready");
+  }
+
+  function refreshWatchValues() {
+    if (!port || watchedAddresses.size === 0) {
+      return;
+    }
+    const groups = new Map();
+    for (const entry of watchedAddresses.values()) {
+      const record = watchRecord(entry);
+      if (!record) {
+        updateWatchEntry(entry, undefined, "unavailable", "Captured memory is not connected.");
+        continue;
+      }
+      const instanceKey = `${entry.frameId}:${entry.instanceId}`;
+      if (!groups.has(instanceKey)) {
+        groups.set(instanceKey, { record, entries: [] });
+      }
+      groups.get(instanceKey).entries.push(entry);
+    }
+
+    for (const [instanceKey, group] of groups) {
+      if (pendingWatchInstances.has(instanceKey)) {
+        continue;
+      }
+      const watchRequestId = requestId();
+      pendingWatchInstances.add(instanceKey);
+      watchReadRequests.set(watchRequestId, instanceKey);
+      const sent = send({
+        kind: "readValues",
+        requestId: watchRequestId,
+        instanceId: group.record.id,
+        entries: group.entries.map((entry) => ({
+          id: entry.key,
+          type: entry.type,
+          address: entry.address,
+        })),
+      }, group.record.frameId);
+      if (!sent) {
+        pendingWatchInstances.delete(instanceKey);
+        watchReadRequests.delete(watchRequestId);
+      }
+    }
+  }
+
   function refreshInstanceSelect() {
     const previous = elements.instance.value;
     elements.instance.replaceChildren();
@@ -147,10 +414,12 @@
     setScanButtonsDisabled(false);
     elements.resetScan.disabled = !available;
     elements.write.disabled = !available;
+    elements.addWatch.disabled = !available;
     elements.freeze.disabled = !available;
     if (available) {
       setStatus(`${instances.size} WebAssembly memor${instances.size === 1 ? "y" : "ies"} captured.`, "ready");
     }
+    refreshWatchValues();
   }
 
   function listInstances() {
@@ -224,6 +493,7 @@
   function renderCandidates(payload) {
     elements.candidates.replaceChildren();
     candidateValueCells.clear();
+    selectedCandidateRow?.classList.remove("selected");
     selectedCandidateRow = null;
     selectedAddress = null;
     updateFreezeButton();
@@ -231,7 +501,7 @@
       const row = document.createElement("tr");
       const address = document.createElement("td");
       const value = document.createElement("td");
-      address.textContent = `0x${candidate.address.toString(16).padStart(8, "0")}`;
+      address.textContent = formatAddress(candidate.address);
       value.textContent = String(candidate.value);
       candidateValueCells.set(candidate.address, value);
       row.append(address, value);
@@ -277,6 +547,26 @@
     }
   }
 
+  function watchForPayload(message, payload) {
+    return watchedAddresses.get(
+      watchIdentity(message.frameId, String(payload.instanceId), payload.type, payload.address),
+    );
+  }
+
+  function diagnosticDetail(payload) {
+    const mismatch = payload.samples?.find((sample) => !sample.matches);
+    if (payload.classification === "persistent") {
+      return `Matched across ${payload.samples.length} samples through 250 ms.`;
+    }
+    if (mismatch?.error) {
+      return mismatch.error;
+    }
+    if (mismatch) {
+      return `${mismatch.stage}: observed ${mismatch.value} after ${mismatch.elapsedMs} ms.`;
+    }
+    return "The write could not be classified.";
+  }
+
   function handlePortMessage(message) {
     if (message?.kind === "frameConnected") {
       send({ kind: "listInstances", requestId: requestId() }, message.frameId);
@@ -286,6 +576,21 @@
       for (const [key, record] of instances) {
         if (record.frameId === message.frameId) {
           instances.delete(key);
+        }
+      }
+      for (const entry of watchedAddresses.values()) {
+        if (entry.frameId === message.frameId) {
+          updateWatchEntry(entry, undefined, "unavailable", "The frame disconnected.");
+        }
+      }
+      for (const instanceKey of pendingWatchInstances) {
+        if (instanceKey.startsWith(`${message.frameId}:`)) {
+          pendingWatchInstances.delete(instanceKey);
+        }
+      }
+      for (const [watchRequestId, instanceKey] of watchReadRequests) {
+        if (instanceKey.startsWith(`${message.frameId}:`)) {
+          watchReadRequests.delete(watchRequestId);
         }
       }
       refreshInstanceSelect();
@@ -333,16 +638,82 @@
         }
         break;
       }
+      case "watchValues": {
+        const instanceKey = watchReadRequests.get(payload.requestId);
+        if (!instanceKey) {
+          break;
+        }
+        watchReadRequests.delete(payload.requestId);
+        pendingWatchInstances.delete(instanceKey);
+        for (const value of Array.isArray(payload.values) ? payload.values : []) {
+          const entry = watchedAddresses.get(value.id);
+          if (!entry) {
+            continue;
+          }
+          if (value.error) {
+            updateWatchEntry(entry, undefined, "unavailable", value.error);
+            continue;
+          }
+          const previousValue = entry.value;
+          const frozen = frozenAddresses.has(entry.key);
+          let state;
+          let detail;
+          if (frozen) {
+            state = "frozen";
+            detail = "The value is being rewritten every animation frame.";
+          } else if (entry.diagnosticState) {
+            state = entry.diagnosticState;
+            detail = entry.diagnosticDetail;
+          } else if (previousValue === undefined) {
+            state = "live";
+            detail = "Live value refreshed.";
+          } else if (Object.is(previousValue, value.value)) {
+            state = "stable";
+            detail = "Live value refreshed.";
+          } else {
+            state = "changed";
+            detail = `Changed from ${previousValue} to ${value.value}.`;
+          }
+          updateWatchEntry(entry, value.value, state, detail);
+        }
+        break;
+      }
       case "writeComplete":
         elements.writeValue.value = String(payload.value);
         if (candidateValueCells.has(payload.address)) {
           candidateValueCells.get(payload.address).textContent = String(payload.value);
+        }
+        {
+          const entry = watchForPayload(message, payload);
+          if (entry) {
+            entry.diagnosticState = null;
+            entry.diagnosticDetail = "";
+            updateWatchEntry(
+              entry,
+              payload.value,
+              "checking",
+              "Sampling the address across animation frames and 250 ms.",
+            );
+          }
         }
         setStatus(`Wrote ${payload.value} at 0x${payload.address.toString(16)}.`, "ready");
         break;
       case "writeVerified":
         if (candidateValueCells.has(payload.address)) {
           candidateValueCells.get(payload.address).textContent = String(payload.actualValue);
+        }
+        {
+          const entry = watchForPayload(message, payload);
+          if (entry) {
+            updateWatchEntry(
+              entry,
+              payload.actualValue,
+              "checking",
+              payload.persisted
+                ? "The 75 ms sample matched; longer diagnostics are still running."
+                : `The 75 ms sample observed ${payload.actualValue}.`,
+            );
+          }
         }
         setStatus(
           payload.persisted
@@ -351,8 +722,32 @@
           payload.persisted ? "ready" : "error",
         );
         break;
+      case "writeDiagnostic": {
+        const entry = watchForPayload(message, payload);
+        const finalSample = payload.samples?.at(-1);
+        if (entry) {
+          entry.diagnosticState = payload.classification;
+          entry.diagnosticDetail = diagnosticDetail(payload);
+          updateWatchEntry(
+            entry,
+            finalSample?.value,
+            entry.diagnosticState,
+            entry.diagnosticDetail,
+          );
+        }
+        const address = formatAddress(payload.address);
+        setStatus(
+          payload.classification === "persistent"
+            ? `Write at ${address} persisted across frames and 250 ms.`
+            : payload.classification === "restored"
+              ? `The game restored ${address}; see the watch row for timing details.`
+              : `Write diagnostic for ${address}: ${payload.classification}.`,
+          payload.classification === "persistent" ? "ready" : "error",
+        );
+        break;
+      }
       case "freezeChanged": {
-        const record = selectedInstance();
+        const record = instanceFor(message.frameId, String(payload.instanceId));
         if (record) {
           const key = freezeIdentity(record, payload.type, payload.address);
           if (payload.enabled) {
@@ -365,6 +760,21 @@
             frozenAddresses.delete(key);
             setStatus(`Unfroze 0x${payload.address.toString(16)}.`, "ready");
           }
+          const entry = watchedAddresses.get(key);
+          if (entry) {
+            if (!payload.enabled) {
+              entry.diagnosticState = null;
+              entry.diagnosticDetail = "";
+            }
+            updateWatchEntry(
+              entry,
+              payload.enabled ? payload.value : entry.value,
+              payload.enabled ? "frozen" : "live",
+              payload.enabled
+                ? "The value is being rewritten every animation frame."
+                : "Freeze disabled; live refresh resumed.",
+            );
+          }
           updateFreezeButton();
         }
         break;
@@ -375,6 +785,11 @@
         setStatus("Scan state reset.", "ready");
         break;
       case "error":
+        if (watchReadRequests.has(payload.requestId)) {
+          const instanceKey = watchReadRequests.get(payload.requestId);
+          watchReadRequests.delete(payload.requestId);
+          pendingWatchInstances.delete(instanceKey);
+        }
         if (payload.requestId === activeScanRequestId || !payload.requestId) {
           activeScanRequestId = null;
           clearScanWatchdog();
@@ -397,6 +812,8 @@
         }
         port = null;
         activeScanRequestId = null;
+        watchReadRequests.clear();
+        pendingWatchInstances.clear();
         clearScanWatchdog();
         setScanButtonsDisabled(false);
         setStatus(
@@ -432,10 +849,7 @@
     if (!record) {
       return;
     }
-    const rawAddress = elements.writeAddress.value.trim();
-    const address = rawAddress.toLowerCase().startsWith("0x")
-      ? Number.parseInt(rawAddress.slice(2), 16)
-      : Number.parseInt(rawAddress, 10);
+    const address = parseAddress(elements.writeAddress.value);
     send({
       kind: "writeValue",
       requestId: requestId(),
@@ -444,6 +858,14 @@
       address,
       rawValue: elements.writeValue.value,
     }, record.frameId);
+  });
+  elements.addWatch.addEventListener("click", () => {
+    const record = selectedInstance();
+    if (!record) {
+      setStatus("No WebAssembly memory has been captured.", "error");
+      return;
+    }
+    addWatch(record, elements.type.value, parseAddress(elements.writeAddress.value));
   });
   elements.freeze.addEventListener("click", () => {
     const record = selectedInstance();
@@ -467,7 +889,10 @@
   elements.type.addEventListener("change", updateFreezeButton);
   elements.condition.addEventListener("change", updateConditionControls);
 
+  restoreWatches();
+  renderWatches();
   refreshInstanceSelect();
   updateConditionControls();
   connectPanel();
+  setInterval(refreshWatchValues, WATCH_REFRESH_MS);
 })();
