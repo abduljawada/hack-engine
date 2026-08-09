@@ -61,6 +61,10 @@ window.addEventListener("message", (event) => {
       refine: false,
     });
   } else if (payload?.kind === "scanResults" && payload.requestId === "unknown-initial") {
+    if (!payload.allCandidates || payload.preview.length !== 0) {
+      failAdvanced("the initial unknown scan should return a count without arbitrary preview rows.");
+      return;
+    }
     const view = new DataView(advancedInstance.exports.memory.buffer);
     view.setInt32(increasedOffset, 15, true);
     view.setInt32(decreasedOffset, 15, true);

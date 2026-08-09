@@ -51,9 +51,14 @@ window.addEventListener("message", (event) => {
     });
   } else if (payload?.kind === "scanResults" && payload.requestId === "large-unknown") {
     initialSnapshotBytes = payload.snapshotBytes;
-    if (payload.total !== expectedSlots || payload.snapshotBytes < largeMemoryBytes * 0.8) {
+    if (
+      payload.total !== expectedSlots ||
+      payload.snapshotBytes < largeMemoryBytes * 0.8 ||
+      !payload.allCandidates ||
+      payload.preview.length !== 0
+    ) {
       largeResultNode.textContent =
-        `FAIL: received ${payload.total} slots and a ${payload.snapshotBytes}-byte snapshot.`;
+        `FAIL: received ${payload.total} slots, ${payload.preview.length} preview rows, and a ${payload.snapshotBytes}-byte snapshot.`;
       return;
     }
     new DataView(largeInstance.exports.memory.buffer).setFloat64(changedAddress, 42.25, true);

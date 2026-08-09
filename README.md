@@ -15,6 +15,8 @@ Firefox-first WebExtension prototype for inspecting WebAssembly memory used by e
 - Can freeze a selected address by rewriting it once per animation frame.
 - Retains every aligned candidate in a compact bitset and displays the first 200 in the panel.
 - Safely continues across `WebAssembly.Memory` growth by refreshing detached scan views between chunks.
+- Copies page results into the content-script realm before WebExtension messaging so Firefox Xray wrappers do not corrupt nested candidate rows.
+- Treats the 15-second scan watchdog as a request timeout; result rendering errors are reported separately.
 
 Raw writes are experimental. A wrong address can corrupt or crash the embedded player.
 
@@ -55,9 +57,16 @@ With the extension loaded, scan the captured memory as `Float64` for `12345.5`. 
 
 `/test/large-unknown-harness.html` reproduces Ruffle's 225.5 MiB memory scale and verifies that an unknown scan completes with a chunk-compressed snapshot instead of duplicating the entire heap.
 
+`/test/bridge-payload-harness.html` verifies that the content bridge makes an independent structured clone while retaining nested addresses and special numeric values. The final cross-realm check must still be run with the temporary extension loaded in Firefox.
+
+`/test/panel-watchdog-harness.html` verifies that a matching result ends the 15-second request watchdog before candidate rendering and that malformed rows produce an immediate rendering error instead of a false timeout.
+
+`node test/run-browser-harnesses.mjs` runs all page-level harnesses in a real headless browser. With the local server running, `node test/run-firefox-extension-harness.mjs` starts an isolated headless Firefox profile, temporarily installs the extension through WebDriver BiDi, and verifies nested candidate data across the actual page/content/background bridge.
+
 ## Intentional limitations
 
 - Byte-by-byte and unknown-value scans can be significantly slower. Unknown scans keep independently compressed chunks in browser storage and load only the chunk needed by each comparison pass, avoiding a second Ruffle-sized JavaScript heap allocation.
+- The initial unknown-value scan intentionally displays no rows because every address is a candidate until the first comparison pass. Change the game value and use **Next scan** to obtain actionable candidates.
 - A scan covers the memory range that existed when it started; pages added during that scan are considered by the next first scan.
 - It captures instantiation through the two standard asynchronous WebAssembly APIs, not direct `new WebAssembly.Instance(...)` construction.
 - The Ruffle label is heuristic; the panel also exposes other captured WASM memories so detection failures do not hide the target.

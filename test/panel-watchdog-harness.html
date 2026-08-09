@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Ruffle Memory Inspector panel watchdog harness</title>
+  </head>
+  <body>
+    <h1>Panel watchdog harness</h1>
+    <p id="harness-result">Running…</p>
+
+    <select id="instance"></select>
+    <select id="type"><option value="f64">Float64</option></select>
+    <select id="alignment"><option value="aligned">Aligned</option></select>
+    <select id="condition">
+      <option value="exact">Exact</option>
+      <option value="unknown">Unknown</option>
+    </select>
+    <label id="scan-value-label"><input id="scan-value" value="100" /></label>
+    <button id="first-scan">First scan</button>
+    <button id="next-scan">Next scan</button>
+    <button id="reset-scan">Reset</button>
+    <button id="refresh">Refresh</button>
+    <span id="status-dot"></span>
+    <span id="status"></span>
+    <span id="result-count">0</span>
+    <table><tbody id="candidates"></tbody></table>
+    <input id="write-address" />
+    <input id="write-value" />
+    <button id="write">Write</button>
+    <button id="freeze">Freeze</button>
+
+    <script src="panel-watchdog-harness-setup.js"></script>
+    <script src="../devtools/panel/panel.js"></script>
+    <script src="panel-watchdog-harness-run.js"></script>
+  </body>
+</html>

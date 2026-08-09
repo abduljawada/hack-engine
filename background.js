@@ -62,6 +62,16 @@
         entry.url = message.url || entry.url;
         panelFor(tabId)?.postMessage({ kind: "frameConnected", frameId, url: entry.url });
       } else if (message?.kind === "pageMessage") {
+        if (message.payload?.kind === "bridgeDiagnostic") {
+          entry.port.postMessage({
+            kind: "pageCommand",
+            payload: {
+              kind: "bridgeDiagnosticResult",
+              probe: message.payload.probe,
+            },
+          });
+          return;
+        }
         panelFor(tabId)?.postMessage({
           kind: "pageMessage",
           frameId,
