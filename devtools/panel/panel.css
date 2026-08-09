@@ -139,6 +139,14 @@ label.disabled-label { opacity: 0.6; }
   background: var(--panel);
 }
 
+.history-list {
+  overflow: hidden;
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel);
+}
+
 .results-heading {
   justify-content: space-between;
   padding: 10px 12px;
@@ -146,15 +154,32 @@ label.disabled-label { opacity: 0.6; }
 }
 
 #result-count,
-#watch-count { color: var(--muted); }
+#watch-count,
+#selected-count,
+#visible-count { color: var(--muted); }
+.candidate-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.candidate-toolbar input { flex: 1 1 180px; padding: 5px 8px; }
+.candidate-toolbar select { padding: 5px 8px; }
+.batch-toolbar { background: color-mix(in srgb, var(--accent) 4%, transparent); }
 .table-wrap { max-height: 310px; overflow: auto; }
 .watch-table-wrap { max-height: 240px; }
+.history-table-wrap { max-height: 220px; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 th, td { padding: 7px 12px; text-align: left; border-bottom: 1px solid var(--border); }
 th { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: 600; }
 tbody tr { cursor: pointer; }
 tbody tr:hover, tbody tr.selected { background: color-mix(in srgb, var(--accent) 13%, transparent); }
-td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.watch-list td:first-child,
+.history-list td:first-child,
+#candidates td:nth-child(2) { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+#candidates td:first-child { width: 36px; padding-right: 0; }
+#candidates input[type="checkbox"] { min-height: auto; }
 
 .empty-state {
   padding: 12px;
@@ -163,6 +188,8 @@ td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 .watch-list.has-watches .empty-state { display: none; }
 .watch-list:not(.has-watches) .watch-table-wrap { display: none; }
+.history-list.has-history .empty-state { display: none; }
+.history-list:not(.has-history) .history-table-wrap { display: none; }
 .watch-state { color: var(--muted); }
 .watch-state.changed,
 .watch-state.restored,
@@ -174,6 +201,12 @@ td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   min-height: 26px;
   padding: 0 8px;
   color: var(--muted);
+}
+.watch-meta {
+  min-height: 26px;
+  min-width: 90px;
+  width: 100%;
+  padding: 3px 6px;
 }
 
 .write-controls {

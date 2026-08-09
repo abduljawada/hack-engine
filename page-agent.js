@@ -17,6 +17,7 @@
   const instances = new Map();
   const scans = new Map();
   const freezes = new Map();
+  const cancelledScans = new Set();
   const activeWriteDiagnostics = new Map();
   let nextInstanceId = 1;
   let nextSnapshotId = 1;
@@ -253,8 +254,17 @@
     return `${instanceId}:${type}:${address}`;
   }
 
-  function yieldToPage() {
-    return new Promise((resolve) => setTimeout(resolve, 0));
+  function throwIfScanCancelled(requestId) {
+    if (requestId != null && cancelledScans.has(String(requestId))) {
+      const error = new Error("Scan cancelled.");
+      error.name = "AbortError";
+      throw error;
+    }
+  }
+
+  async function yieldToPage(requestId) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    throwIfScanCancelled(requestId);
   }
 
   function createCandidateSet(slotCount, type, stride) {
@@ -443,6 +453,7 @@
     const snapshot = createSnapshot(byteLength);
     try {
       for (let offset = 0; offset < byteLength; offset += SNAPSHOT_CHUNK_SIZE) {
+        await yieldToPage(requestId);
         const chunkIndex = Math.floor(offset / SNAPSHOT_CHUNK_SIZE);
         const uniqueLength = Math.min(SNAPSHOT_CHUNK_SIZE, byteLength - offset);
         const byteLengthWithOverlap = Math.min(
@@ -529,7 +540,7 @@
       const inspected = slotIndex + 1;
       if (inspected % SCAN_CHUNK_SIZE === 0) {
         send({ kind: "scanProgress", requestId, inspected, total: slotCount });
-        await yieldToPage();
+        await yieldToPage(requestId);
         view = new DataView(record.memory.buffer);
       }
     }
@@ -580,6 +591,7 @@
     snapshot.chunks = new Array(chunkCount).fill(null);
     try {
       for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
+        await yieldToPage(requestId);
         const chunkOffset = chunkIndex * snapshot.chunkSize;
         const uniqueLength = Math.min(snapshot.chunkSize, byteLength - chunkOffset);
         const startSlot = Math.ceil(chunkOffset / candidates.stride);
@@ -623,6 +635,7 @@
     snapshot.chunks = new Array(chunkCount).fill(null);
     try {
       for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
+        await yieldToPage(requestId);
         const chunkOffset = chunkIndex * snapshot.chunkSize;
         const uniqueLength = Math.min(snapshot.chunkSize, byteLength - chunkOffset);
         const hasCandidates = [...sets.values()].some((candidates) => {
@@ -707,7 +720,7 @@
           inspected: Math.min((byteIndex + 1) * 8, slotCount),
           total: slotCount,
         });
-        await yieldToPage();
+        await yieldToPage(requestId);
         view = new DataView(record.memory.buffer);
       }
     }
@@ -753,7 +766,7 @@
       if ((byteIndex + 1) % bytesPerChunk === 0) {
         const inspected = Math.min((byteIndex + 1) * 8, slotCount);
         send({ kind: "scanProgress", requestId, inspected, total: slotCount });
-        await yieldToPage();
+        await yieldToPage(requestId);
         view = new DataView(record.memory.buffer);
       }
     }
@@ -791,6 +804,7 @@
         chunkIndex < previous.snapshot.chunks.length;
         chunkIndex += 1
       ) {
+        await yieldToPage(requestId);
         const previousChunk = previous.snapshot.chunks[chunkIndex];
         const chunkOffset = chunkIndex * previous.snapshot.chunkSize;
         const uniqueLength = Math.min(
@@ -1127,6 +1141,7 @@
 
     try {
       for (let chunkIndex = 0; chunkIndex < previousSnapshot.chunks.length; chunkIndex += 1) {
+        await yieldToPage(requestId);
         const previousChunk = previousSnapshot.chunks[chunkIndex];
         const chunkOffset = chunkIndex * previousSnapshot.chunkSize;
         const uniqueLength = Math.min(
@@ -1302,7 +1317,7 @@
     }
     if (!refine) {
       await clearInstanceScans(record.id);
-      await yieldToPage();
+      await yieldToPage(requestId);
     }
     const group = refine
       ? previous.snapshot
@@ -1340,6 +1355,7 @@
       deleteSnapshot(previous.snapshot).catch(() => {});
     }
     sendAutoScanResults(requestId, record, group);
+    cancelledScans.delete(String(requestId));
   }
 
   async function memoryScan({
@@ -1395,7 +1411,7 @@
       // this WASM memory before allocating a replacement so stale snapshots do
       // not double the peak memory usage or trigger a long final GC pause.
       await clearInstanceScans(record.id);
-      await yieldToPage();
+      await yieldToPage(requestId);
     }
 
     const candidates = refine
@@ -1434,6 +1450,7 @@
       deleteSnapshot(previous.snapshot).catch(() => {});
     }
     sendScanResults(requestId, record, type, candidates, multiplier);
+    cancelledScans.delete(String(requestId));
   }
 
   function sendScanResults(requestId, record, type, candidates, multiplier = 1) {
@@ -1828,6 +1845,9 @@
             });
           case "memoryScan":
             return memoryScan(command);
+          case "cancelScan":
+            cancelledScans.add(String(command.targetRequestId));
+            break;
           case "writeValue":
             writeValue(command);
             break;
@@ -1845,6 +1865,11 @@
         }
       })
       .catch((error) => {
+        if (error instanceof Error && error.name === "AbortError") {
+          cancelledScans.delete(String(command?.requestId));
+          send({ kind: "scanCancelled", requestId: command?.requestId });
+          return;
+        }
         send({
           kind: "error",
           requestId: command?.requestId,

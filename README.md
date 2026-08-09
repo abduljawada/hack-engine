@@ -2,7 +2,7 @@
 
 Firefox-first WebExtension prototype for inspecting WebAssembly memory used by embedded Ruffle players.
 
-## Current MVP
+## Version 0.7
 
 - Hooks `WebAssembly.instantiate` and `WebAssembly.instantiateStreaming` at `document_start` in the page's `MAIN` world.
 - Captures exported or imported `WebAssembly.Memory` objects in every permitted frame.
@@ -14,13 +14,17 @@ Firefox-first WebExtension prototype for inspecting WebAssembly memory used by e
 - Narrows unknown candidates by an exact displayed increase or decrease amount.
 - Scans naturally aligned values by default, with an optional byte-by-byte mode for unaligned values.
 - Displays candidate WASM byte offsets and permits direct writes.
+- Keeps the candidate preview capped at 200 rows, with filtering, sorting, multi-selection, and batch watch/write/freeze actions.
+- Automatically adds a candidate or manual address to the watch list when it is selected, written, or frozen.
 - Keeps a live watch list across scans for up to 256 typed addresses in the current DevTools session.
+- Supports watch labels and groups, a 20-entry scan history, and JSON workspace export/import.
 - Samples writes immediately, across two animation frames, after 75 ms, and after 250 ms so cached or game-restored values are distinguishable from persistent writes.
 - Can freeze a selected address by rewriting it once per animation frame.
 - Retains every aligned candidate in a compact bitset and displays the first 200 in the panel.
 - Safely continues across `WebAssembly.Memory` growth by refreshing detached scan views between chunks.
 - Copies page results into the content-script realm before WebExtension messaging so Firefox Xray wrappers do not corrupt nested candidate rows.
 - Treats the 15-second scan watchdog as a request timeout; result rendering errors are reported separately.
+- Cancels active scans cooperatively between chunks and releases partially stored snapshots.
 
 Raw writes are experimental. A wrong address can corrupt or crash the embedded player.
 
@@ -70,6 +74,8 @@ With the extension loaded, scan the captured memory as `Float64` for `12345.5`. 
 `/test/bridge-payload-harness.html` verifies that the content bridge makes an independent structured clone while retaining nested addresses and special numeric values. The final cross-realm check must still be run with the temporary extension loaded in Firefox.
 
 `/test/panel-watchdog-harness.html` verifies that a matching result ends the 15-second request watchdog before candidate rendering and that malformed rows produce an immediate rendering error instead of a false timeout.
+
+`/test/scan-cancellation-harness.html` verifies that cancellation interrupts an active scan and that a replacement scan succeeds immediately afterward.
 
 `node test/run-browser-harnesses.mjs` runs all page-level harnesses in a real headless browser. With the local server running, `node test/run-firefox-extension-harness.mjs` starts an isolated headless Firefox profile, temporarily installs the extension through WebDriver BiDi, and verifies nested candidate data across the actual page/content/background bridge.
 

@@ -71,6 +71,7 @@
         <div class="buttons wide">
           <button id="first-scan" class="primary" type="button">First scan</button>
           <button id="next-scan" type="button">Next scan</button>
+          <button id="cancel-scan" class="danger" type="button" disabled>Cancel scan</button>
           <button id="reset-scan" type="button">Reset</button>
         </div>
       </section>
@@ -82,13 +83,37 @@
 
       <section class="results">
         <div class="results-heading">
-          <h2>Candidates</h2>
+          <div>
+            <h2>Candidates</h2>
+            <p><span id="visible-count">0</span> visible · <span id="selected-count">0</span> selected</p>
+          </div>
           <span id="result-count">0</span>
+        </div>
+        <div class="candidate-toolbar">
+          <input id="candidate-filter" type="search" placeholder="Filter address, type, or value" />
+          <select id="candidate-sort" aria-label="Sort candidates">
+            <option value="addressAsc">Address ↑</option>
+            <option value="addressDesc">Address ↓</option>
+            <option value="typeAsc">Type</option>
+            <option value="valueAsc">Value ↑</option>
+            <option value="valueDesc">Value ↓</option>
+          </select>
+          <button id="select-visible" type="button">Select visible</button>
+          <button id="clear-selection" type="button">Clear selection</button>
+        </div>
+        <div class="candidate-toolbar batch-toolbar">
+          <input id="candidate-label" type="text" maxlength="80" placeholder="Label, e.g. money" />
+          <input id="candidate-group" type="text" maxlength="80" placeholder="Group, e.g. economy" />
+          <button id="apply-metadata" type="button">Apply label/group</button>
+          <button id="batch-watch" type="button">Watch selected</button>
+          <button id="batch-write" class="danger" type="button">Write selected</button>
+          <button id="batch-freeze" type="button">Freeze selected</button>
+          <button id="batch-unfreeze" type="button">Unfreeze selected</button>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Address</th><th>Type</th><th>Current value</th></tr>
+              <tr><th></th><th>Address</th><th>Type</th><th>Current value</th></tr>
             </thead>
             <tbody id="candidates"></tbody>
           </table>
@@ -121,9 +146,30 @@
         <div class="table-wrap watch-table-wrap">
           <table>
             <thead>
-              <tr><th>Address</th><th>Type</th><th>Value</th><th>State</th><th></th></tr>
+              <tr><th>Address</th><th>Type</th><th>Label</th><th>Group</th><th>Value</th><th>State</th><th></th></tr>
             </thead>
             <tbody id="watches"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="history-list" aria-label="Scan history">
+        <div class="results-heading">
+          <div>
+            <h2>Scan history</h2>
+            <p>Latest 20 requests in this DevTools session</p>
+          </div>
+          <div class="buttons">
+            <button id="export-workspace" type="button">Export workspace</button>
+            <button id="import-workspace" type="button">Import workspace</button>
+            <input id="workspace-file" type="file" accept="application/json,.json" hidden />
+          </div>
+        </div>
+        <p id="history-empty" class="empty-state">No scans recorded yet.</p>
+        <div class="table-wrap history-table-wrap">
+          <table>
+            <thead><tr><th>Time</th><th>Request</th><th>Result</th><th>Duration</th></tr></thead>
+            <tbody id="scan-history"></tbody>
           </table>
         </div>
       </section>

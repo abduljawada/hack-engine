@@ -9,6 +9,10 @@
   const watchedAddresses = new Map();
   const watchReadRequests = new Map();
   const pendingWatchInstances = new Set();
+  const selectedCandidates = new Set();
+  let candidateRecords = [];
+  let scanHistory = [];
+  let activeScanMeta = null;
   let requestSequence = 1;
   let selectedCandidateRow = null;
   let selectedAddress = null;
@@ -21,7 +25,10 @@
   const SCAN_WATCHDOG_MS = 15_000;
   const WATCH_REFRESH_MS = 250;
   const MAX_WATCH_ADDRESSES = 256;
+  const MAX_CANDIDATE_PREVIEW = 200;
+  const MAX_SCAN_HISTORY = 20;
   const WATCH_STORAGE_KEY = `ruffle-memory-inspector:watches:${tabId}`;
+  const HISTORY_STORAGE_KEY = `ruffle-memory-inspector:history:${tabId}`;
 
   const elements = {
     instance: document.querySelector("#instance"),
@@ -37,12 +44,26 @@
     multiplierLabel: document.querySelector("#multiplier-label"),
     firstScan: document.querySelector("#first-scan"),
     nextScan: document.querySelector("#next-scan"),
+    cancelScan: document.querySelector("#cancel-scan"),
     resetScan: document.querySelector("#reset-scan"),
     refresh: document.querySelector("#refresh"),
     status: document.querySelector("#status"),
     statusDot: document.querySelector("#status-dot"),
     resultCount: document.querySelector("#result-count"),
+    visibleCount: document.querySelector("#visible-count"),
+    selectedCount: document.querySelector("#selected-count"),
     candidates: document.querySelector("#candidates"),
+    candidateFilter: document.querySelector("#candidate-filter"),
+    candidateSort: document.querySelector("#candidate-sort"),
+    selectVisible: document.querySelector("#select-visible"),
+    clearSelection: document.querySelector("#clear-selection"),
+    candidateLabel: document.querySelector("#candidate-label"),
+    candidateGroup: document.querySelector("#candidate-group"),
+    applyMetadata: document.querySelector("#apply-metadata"),
+    batchWatch: document.querySelector("#batch-watch"),
+    batchWrite: document.querySelector("#batch-write"),
+    batchFreeze: document.querySelector("#batch-freeze"),
+    batchUnfreeze: document.querySelector("#batch-unfreeze"),
     writeAddress: document.querySelector("#write-address"),
     writeValue: document.querySelector("#write-value"),
     write: document.querySelector("#write"),
@@ -52,6 +73,11 @@
     watchCount: document.querySelector("#watch-count"),
     watchEmpty: document.querySelector("#watch-empty"),
     watches: document.querySelector("#watches"),
+    historyList: document.querySelector(".history-list"),
+    scanHistory: document.querySelector("#scan-history"),
+    exportWorkspace: document.querySelector("#export-workspace"),
+    importWorkspace: document.querySelector("#import-workspace"),
+    workspaceFile: document.querySelector("#workspace-file"),
   };
 
   function requestId() {
@@ -105,6 +131,7 @@
     const available = instances.size > 0;
     elements.firstScan.disabled = disabled || !available;
     elements.nextScan.disabled = disabled || !available;
+    elements.cancelScan.disabled = !disabled;
   }
 
   function clearScanWatchdog() {
@@ -118,7 +145,19 @@
       if (activeScanRequestId !== scanRequestId) {
         return;
       }
+      const record = activeScanMeta?.instanceKey
+        ? instances.get(activeScanMeta.instanceKey)
+        : selectedInstance();
+      if (record) {
+        send({
+          kind: "cancelScan",
+          requestId: requestId(),
+          targetRequestId: scanRequestId,
+        }, record.frameId);
+      }
+      activeScanRequestId = null;
       setScanButtonsDisabled(false);
+      completeScanHistory("timeout", null);
       setStatus(
         "The scan stopped reporting progress for 15 seconds. Reload the page and reopen DevTools if the extension was reloaded.",
         "error",
@@ -168,6 +207,68 @@
     return `${Math.round(bytes / 1024)} KiB`;
   }
 
+  function candidateIdentity(type, address, multiplier = 1) {
+    return `${type}:${address}:${multiplier}`;
+  }
+
+  function persistHistory() {
+    try {
+      sessionStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(scanHistory));
+    } catch {
+      // History remains available until this panel closes if storage is unavailable.
+    }
+  }
+
+  function restoreHistory() {
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(HISTORY_STORAGE_KEY) || "[]");
+      if (Array.isArray(stored)) {
+        scanHistory = stored.slice(0, MAX_SCAN_HISTORY);
+      }
+    } catch {
+      scanHistory = [];
+    }
+  }
+
+  function renderScanHistory() {
+    elements.scanHistory.replaceChildren();
+    for (const entry of scanHistory) {
+      const row = document.createElement("tr");
+      const time = document.createElement("td");
+      const request = document.createElement("td");
+      const result = document.createElement("td");
+      const duration = document.createElement("td");
+      time.textContent = new Date(entry.startedAt).toLocaleTimeString();
+      request.textContent = `${entry.refine ? "Next" : "First"} · ${entry.type} · ${entry.condition}`;
+      result.textContent = entry.status === "completed"
+        ? `${Number(entry.total || 0).toLocaleString()} candidates`
+        : entry.status;
+      duration.textContent = entry.completedAt
+        ? `${Math.max(0, entry.completedAt - entry.startedAt)} ms`
+        : "Running…";
+      row.append(time, request, result, duration);
+      elements.scanHistory.append(row);
+    }
+    elements.historyList.classList.toggle("has-history", scanHistory.length > 0);
+  }
+
+  function completeScanHistory(status, total) {
+    if (!activeScanMeta) {
+      return;
+    }
+    const entry = {
+      ...activeScanMeta,
+      status,
+      total: Number.isSafeInteger(total) ? total : null,
+      completedAt: Date.now(),
+    };
+    scanHistory.unshift(entry);
+    scanHistory = scanHistory.slice(0, MAX_SCAN_HISTORY);
+    activeScanMeta = null;
+    persistHistory();
+    renderScanHistory();
+  }
+
   function activeValueType() {
     const type = selectedValueType ?? elements.type.value;
     if (type === "auto") {
@@ -191,6 +292,8 @@
         type: entry.type,
         multiplier: entry.multiplier,
         address: entry.address,
+        label: entry.label,
+        group: entry.group,
         hint: entry.hint,
         url: entry.url,
       }));
@@ -230,6 +333,8 @@
           ? value.multiplier
           : 1,
         address: value.address,
+        label: typeof value.label === "string" ? value.label.slice(0, 80) : "",
+        group: typeof value.group === "string" ? value.group.slice(0, 80) : "",
         hint: typeof value.hint === "string" ? value.hint : "",
         url: typeof value.url === "string" ? value.url : "",
         value: undefined,
@@ -294,14 +399,35 @@
       const row = document.createElement("tr");
       const address = document.createElement("td");
       const type = document.createElement("td");
+      const labelCell = document.createElement("td");
+      const groupCell = document.createElement("td");
       const value = document.createElement("td");
       const state = document.createElement("td");
       const actions = document.createElement("td");
       const remove = document.createElement("button");
+      const label = document.createElement("input");
+      const group = document.createElement("input");
       address.textContent = formatAddress(entry.address);
       type.textContent = entry.multiplier === 1
         ? entry.type
         : `${entry.type} ×${entry.multiplier}`;
+      label.className = "watch-meta";
+      label.maxLength = 80;
+      label.placeholder = "Label";
+      label.value = entry.label || "";
+      group.className = "watch-meta";
+      group.maxLength = 80;
+      group.placeholder = "Group";
+      group.value = entry.group || "";
+      for (const [input, field] of [[label, "label"], [group, "group"]]) {
+        input.addEventListener("click", (event) => event.stopPropagation());
+        input.addEventListener("change", () => {
+          entry[field] = input.value.trim().slice(0, 80);
+          persistWatches();
+        });
+      }
+      labelCell.append(label);
+      groupCell.append(group);
       value.textContent = entry.value === undefined
         ? "—"
         : String(decodedValue(entry.value, entry.multiplier));
@@ -322,7 +448,7 @@
         renderWatches();
       });
       actions.append(remove);
-      row.append(address, type, value, state, actions);
+      row.append(address, type, labelCell, groupCell, value, state, actions);
       row.addEventListener("click", () => selectWatch(entry));
       entry.row = row;
       entry.valueCell = value;
@@ -349,7 +475,13 @@
     }
   }
 
-  function addWatch(record, type, address, multiplier = 1) {
+  function addWatch(
+    record,
+    type,
+    address,
+    multiplier = 1,
+    { select = true, quiet = false, label = "", group = "" } = {},
+  ) {
     multiplier = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
     if (!Number.isSafeInteger(address) || address < 0) {
       setStatus("Enter a valid non-negative address before adding a watch.", "error");
@@ -359,10 +491,20 @@
     if (watchedAddresses.has(key)) {
       const existing = watchedAddresses.get(key);
       existing.multiplier = multiplier;
+      if (label) {
+        existing.label = label.slice(0, 80);
+      }
+      if (group) {
+        existing.group = group.slice(0, 80);
+      }
       persistWatches();
       renderWatches();
-      selectWatch(existing);
-      setStatus(`${formatAddress(address)} is already on the watch list.`, "ready");
+      if (select) {
+        selectWatch(existing);
+      }
+      if (!quiet) {
+        setStatus(`${formatAddress(address)} is already on the watch list.`, "ready");
+      }
       return;
     }
     if (watchedAddresses.size >= MAX_WATCH_ADDRESSES) {
@@ -376,6 +518,8 @@
       type,
       multiplier,
       address,
+      label: label.slice(0, 80),
+      group: group.slice(0, 80),
       hint: record.hint || "",
       url: record.url || "",
       value: undefined,
@@ -387,9 +531,13 @@
     watchedAddresses.set(key, entry);
     persistWatches();
     renderWatches();
-    selectWatch(entry);
+    if (select) {
+      selectWatch(entry);
+    }
     refreshWatchValues();
-    setStatus(`Watching ${type} at ${formatAddress(address)}.`, "ready");
+    if (!quiet) {
+      setStatus(`Watching ${type} at ${formatAddress(address)}.`, "ready");
+    }
   }
 
   function refreshWatchValues() {
@@ -529,6 +677,16 @@
       activeScanRequestId = null;
       return;
     }
+    activeScanMeta = {
+      requestId: scanRequestId,
+      startedAt: Date.now(),
+      refine,
+      type: elements.type.value,
+      condition,
+      alignment: elements.alignment.value,
+      multiplier,
+      instanceKey: `${record.frameId}:${record.id}`,
+    };
     setScanButtonsDisabled(true);
     setStatus(
       condition === "unknown"
@@ -565,42 +723,124 @@
     elements.multiplierLabel.classList.remove("disabled-label");
   }
 
-  function renderCandidates(payload) {
+  function visibleCandidateRecords() {
+    const filter = elements.candidateFilter.value.trim().toLowerCase();
+    const records = filter
+      ? candidateRecords.filter((candidate) => (
+        formatAddress(candidate.address).includes(filter) ||
+        candidate.type.toLowerCase().includes(filter) ||
+        String(candidate.displayValue).toLowerCase().includes(filter)
+      ))
+      : candidateRecords.slice();
+    const numericValue = (candidate) => (
+      typeof candidate.displayValue === "number" ? candidate.displayValue : Number.NaN
+    );
+    switch (elements.candidateSort.value) {
+      case "addressDesc": records.sort((a, b) => b.address - a.address); break;
+      case "typeAsc": records.sort((a, b) => a.type.localeCompare(b.type) || a.address - b.address); break;
+      case "valueAsc": records.sort((a, b) => numericValue(a) - numericValue(b)); break;
+      case "valueDesc": records.sort((a, b) => numericValue(b) - numericValue(a)); break;
+      default: records.sort((a, b) => a.address - b.address || a.type.localeCompare(b.type));
+    }
+    return records;
+  }
+
+  function watchCandidate(candidate, quiet = true) {
+    const record = selectedInstance();
+    if (!record) {
+      return;
+    }
+    addWatch(record, candidate.type, candidate.address, candidate.multiplier, {
+      select: false,
+      quiet,
+      label: elements.candidateLabel.value.trim(),
+      group: elements.candidateGroup.value.trim(),
+    });
+  }
+
+  function activateCandidate(candidate, row) {
+    selectedCandidateRow?.classList.remove("selected");
+    selectedCandidateRow = row;
+    selectedAddress = candidate.address;
+    selectedValueType = candidate.type;
+    selectedMultiplier = candidate.multiplier;
+    row.classList.add("selected");
+    elements.writeAddress.value = formatAddress(candidate.address);
+    elements.writeValue.value = String(candidate.displayValue);
+    watchCandidate(candidate);
+    updateFreezeButton();
+  }
+
+  function selectedCandidateRecords() {
+    return candidateRecords.filter((candidate) => selectedCandidates.has(candidate.key));
+  }
+
+  function updateCandidateSelectionCount() {
+    elements.selectedCount.textContent = selectedCandidates.size.toLocaleString();
+  }
+
+  function renderCandidateWorkspace() {
     elements.candidates.replaceChildren();
     candidateValueCells.clear();
+    selectedCandidateRow = null;
+    const visible = visibleCandidateRecords();
+    for (const candidate of visible) {
+      const row = document.createElement("tr");
+      const selectionCell = document.createElement("td");
+      const address = document.createElement("td");
+      const type = document.createElement("td");
+      const value = document.createElement("td");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = selectedCandidates.has(candidate.key);
+      checkbox.setAttribute("aria-label", `Select ${formatAddress(candidate.address)} ${candidate.type}`);
+      checkbox.addEventListener("click", (event) => event.stopPropagation());
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) {
+          selectedCandidates.add(candidate.key);
+          watchCandidate(candidate);
+        } else {
+          selectedCandidates.delete(candidate.key);
+        }
+        updateCandidateSelectionCount();
+      });
+      selectionCell.append(checkbox);
+      address.textContent = formatAddress(candidate.address);
+      type.textContent = candidate.multiplier === 1
+        ? candidate.type
+        : `${candidate.type} ×${candidate.multiplier}`;
+      value.textContent = String(candidate.displayValue);
+      candidateValueCells.set(`${candidate.type}:${candidate.address}`, value);
+      row.append(selectionCell, address, type, value);
+      row.addEventListener("click", () => activateCandidate(candidate, row));
+      elements.candidates.append(row);
+    }
+    elements.visibleCount.textContent = visible.length.toLocaleString();
+    updateCandidateSelectionCount();
+  }
+
+  function renderCandidates(payload) {
+    candidateRecords = [];
+    selectedCandidates.clear();
     selectedCandidateRow?.classList.remove("selected");
     selectedCandidateRow = null;
     selectedAddress = null;
     selectedValueType = null;
     selectedMultiplier = Number(payload.multiplier) || 1;
     updateFreezeButton();
-    for (const candidate of payload.preview) {
-      const row = document.createElement("tr");
-      const address = document.createElement("td");
-      const type = document.createElement("td");
-      const value = document.createElement("td");
+    for (const candidate of payload.preview.slice(0, MAX_CANDIDATE_PREVIEW)) {
       const candidateType = candidate.type || payload.type;
       const candidateMultiplier = Number(candidate.multiplier ?? payload.multiplier) || 1;
-      address.textContent = formatAddress(candidate.address);
-      type.textContent = candidateMultiplier === 1
-        ? candidateType
-        : `${candidateType} ×${candidateMultiplier}`;
-      value.textContent = String(candidate.displayValue ?? candidate.value);
-      candidateValueCells.set(`${candidateType}:${candidate.address}`, value);
-      row.append(address, type, value);
-      row.addEventListener("click", () => {
-        selectedCandidateRow?.classList.remove("selected");
-        selectedCandidateRow = row;
-        selectedAddress = candidate.address;
-        selectedValueType = candidateType;
-        selectedMultiplier = candidateMultiplier;
-        row.classList.add("selected");
-        elements.writeAddress.value = address.textContent;
-        elements.writeValue.value = String(candidate.displayValue ?? candidate.value);
-        updateFreezeButton();
+      candidateRecords.push({
+        key: candidateIdentity(candidateType, candidate.address, candidateMultiplier),
+        address: candidate.address,
+        type: candidateType,
+        multiplier: candidateMultiplier,
+        value: candidate.value,
+        displayValue: candidate.displayValue ?? candidate.value,
       });
-      elements.candidates.append(row);
     }
+    renderCandidateWorkspace();
 
     elements.resultCount.textContent = payload.total.toLocaleString();
     const snapshotNote = payload.snapshotBytes == null
@@ -714,6 +954,7 @@
         if (!finishScanRequest(payload.requestId)) {
           break;
         }
+        completeScanHistory("completed", payload.total);
         try {
           validateScanResults(payload);
           renderCandidates(payload);
@@ -727,6 +968,15 @@
         }
         break;
       }
+      case "scanCancelled":
+        if (payload.requestId === activeScanRequestId) {
+          activeScanRequestId = null;
+          clearScanWatchdog();
+          setScanButtonsDisabled(false);
+          completeScanHistory("cancelled", null);
+          setStatus("Scan cancelled; partial snapshot data was released.", "ready");
+        }
+        break;
       case "watchValues": {
         const instanceKey = watchReadRequests.get(payload.requestId);
         if (!instanceKey) {
@@ -881,8 +1131,12 @@
         break;
       }
       case "scanReset":
+        candidateRecords = [];
+        selectedCandidates.clear();
         elements.candidates.replaceChildren();
         elements.resultCount.textContent = "0";
+        elements.visibleCount.textContent = "0";
+        updateCandidateSelectionCount();
         setStatus("Scan state reset.", "ready");
         break;
       case "error":
@@ -895,6 +1149,7 @@
           activeScanRequestId = null;
           clearScanWatchdog();
           setScanButtonsDisabled(false);
+          completeScanHistory("error", null);
         }
         setStatus(payload.message, "error");
         break;
@@ -913,6 +1168,7 @@
         }
         port = null;
         activeScanRequestId = null;
+        completeScanHistory("disconnected", null);
         watchReadRequests.clear();
         pendingWatchInstances.clear();
         clearScanWatchdog();
@@ -931,9 +1187,208 @@
     }
   }
 
+  function requireSelectedCandidates() {
+    const candidates = selectedCandidateRecords();
+    if (candidates.length === 0) {
+      setStatus("Select one or more candidate rows first.", "error");
+      return null;
+    }
+    return candidates;
+  }
+
+  function watchCandidates(candidates) {
+    for (const candidate of candidates) {
+      watchCandidate(candidate);
+    }
+    setStatus(`Watching ${candidates.length.toLocaleString()} selected candidate(s).`, "ready");
+  }
+
+  function batchWriteCandidates() {
+    const candidates = requireSelectedCandidates();
+    const record = selectedInstance();
+    const rawValue = elements.writeValue.value;
+    if (!candidates || !record) {
+      return;
+    }
+    if (rawValue.trim() === "") {
+      setStatus("Enter a new value before writing selected candidates.", "error");
+      return;
+    }
+    for (const candidate of candidates) {
+      watchCandidate(candidate);
+      send({
+        kind: "writeValue",
+        requestId: requestId(),
+        instanceId: record.id,
+        type: candidate.type,
+        address: candidate.address,
+        rawValue,
+        multiplier: candidate.multiplier,
+      }, record.frameId);
+    }
+    setStatus(`Writing ${rawValue} to ${candidates.length.toLocaleString()} selected candidate(s)…`);
+  }
+
+  function batchFreezeCandidates(enabled) {
+    const candidates = requireSelectedCandidates();
+    const record = selectedInstance();
+    if (!candidates || !record) {
+      return;
+    }
+    for (const candidate of candidates) {
+      watchCandidate(candidate);
+      send({
+        kind: "setFreeze",
+        requestId: requestId(),
+        instanceId: record.id,
+        type: candidate.type,
+        address: candidate.address,
+        rawValue: String(candidate.displayValue),
+        multiplier: candidate.multiplier,
+        enabled,
+      }, record.frameId);
+    }
+    setStatus(
+      `${enabled ? "Freezing" : "Unfreezing"} ${candidates.length.toLocaleString()} selected candidate(s)…`,
+    );
+  }
+
+  function applyCandidateMetadata() {
+    const candidates = requireSelectedCandidates();
+    const record = selectedInstance();
+    if (!candidates || !record) {
+      return;
+    }
+    const label = elements.candidateLabel.value.trim().slice(0, 80);
+    const group = elements.candidateGroup.value.trim().slice(0, 80);
+    for (const candidate of candidates) {
+      addWatch(record, candidate.type, candidate.address, candidate.multiplier, {
+        select: false,
+        quiet: true,
+        label,
+        group,
+      });
+    }
+    setStatus(`Updated metadata for ${candidates.length.toLocaleString()} candidate(s).`, "ready");
+  }
+
+  function serializableWatches() {
+    return [...watchedAddresses.values()].map((entry) => ({
+      frameId: entry.frameId,
+      instanceId: entry.instanceId,
+      type: entry.type,
+      multiplier: entry.multiplier,
+      address: entry.address,
+      label: entry.label || "",
+      group: entry.group || "",
+      hint: entry.hint || "",
+      url: entry.url || "",
+    }));
+  }
+
+  function exportWorkspace() {
+    const record = selectedInstance();
+    const payload = {
+      format: "ruffle-memory-workspace",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      instance: record ? { hint: record.hint || "", url: record.url || "" } : null,
+      candidates: candidateRecords.map(({ address, type, multiplier, value, displayValue }) => ({
+        address,
+        type,
+        multiplier,
+        value,
+        displayValue,
+      })),
+      watches: serializableWatches(),
+      history: scanHistory,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `ruffle-memory-workspace-${Date.now()}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setStatus("Workspace exported.", "ready");
+  }
+
+  function importWorkspaceData(payload) {
+    if (payload?.format !== "ruffle-memory-workspace" || payload.version !== 1) {
+      throw new Error("This is not a supported Ruffle Memory workspace file.");
+    }
+    const validTypes = new Set(["i8", "u8", "i16", "u16", "i32", "u32", "f32", "f64"]);
+    const record = selectedInstance();
+    if (record && Array.isArray(payload.watches)) {
+      for (const watch of payload.watches.slice(0, MAX_WATCH_ADDRESSES)) {
+        if (
+          !validTypes.has(watch?.type) ||
+          !Number.isSafeInteger(watch.address) ||
+          watch.address < 0
+        ) {
+          continue;
+        }
+        addWatch(record, watch.type, watch.address, Number(watch.multiplier) || 1, {
+          select: false,
+          quiet: true,
+          label: typeof watch.label === "string" ? watch.label : "",
+          group: typeof watch.group === "string" ? watch.group : "",
+        });
+      }
+    }
+    if (Array.isArray(payload.candidates)) {
+      candidateRecords = payload.candidates.slice(0, MAX_CANDIDATE_PREVIEW).flatMap((candidate) => {
+        const multiplier = Number(candidate?.multiplier) || 1;
+        if (
+          !validTypes.has(candidate?.type) ||
+          !Number.isSafeInteger(candidate.address) ||
+          candidate.address < 0 ||
+          !Number.isFinite(multiplier) ||
+          multiplier <= 0
+        ) {
+          return [];
+        }
+        return [{
+          key: candidateIdentity(candidate.type, candidate.address, multiplier),
+          address: candidate.address,
+          type: candidate.type,
+          multiplier,
+          value: candidate.value,
+          displayValue: candidate.displayValue ?? candidate.value,
+        }];
+      });
+      selectedCandidates.clear();
+      elements.resultCount.textContent = candidateRecords.length.toLocaleString();
+      renderCandidateWorkspace();
+    }
+    if (Array.isArray(payload.history)) {
+      scanHistory = payload.history.slice(0, MAX_SCAN_HISTORY);
+      persistHistory();
+      renderScanHistory();
+    }
+    persistWatches();
+    renderWatches();
+    refreshWatchValues();
+    setStatus("Workspace imported. Verify addresses before writing or freezing.", "ready");
+  }
+
   elements.refresh.addEventListener("click", listInstances);
   elements.firstScan.addEventListener("click", () => runScan(false));
   elements.nextScan.addEventListener("click", () => runScan(true));
+  elements.cancelScan.addEventListener("click", () => {
+    const record = selectedInstance();
+    if (!record || !activeScanRequestId) {
+      return;
+    }
+    const targetRequestId = activeScanRequestId;
+    elements.cancelScan.disabled = true;
+    send({
+      kind: "cancelScan",
+      requestId: requestId(),
+      targetRequestId,
+    }, record.frameId);
+    setStatus("Cancelling scan and releasing partial snapshot data…");
+  });
   elements.resetScan.addEventListener("click", () => {
     const record = selectedInstance();
     if (record) {
@@ -955,6 +1410,13 @@
     if (!type) {
       return;
     }
+    addWatch(
+      record,
+      type,
+      address,
+      selectedValueType ? selectedMultiplier : Number(elements.multiplier.value),
+      { select: false, quiet: true },
+    );
     send({
       kind: "writeValue",
       requestId: requestId(),
@@ -994,6 +1456,13 @@
     }
     const key = freezeIdentity(record, type, selectedAddress);
     const enabled = !frozenAddresses.has(key);
+    addWatch(
+      record,
+      type,
+      selectedAddress,
+      selectedValueType ? selectedMultiplier : Number(elements.multiplier.value),
+      { select: false, quiet: true },
+    );
     send({
       kind: "setFreeze",
       requestId: requestId(),
@@ -1015,9 +1484,54 @@
     updateFreezeButton();
   });
   elements.condition.addEventListener("change", updateConditionControls);
+  elements.candidateFilter.addEventListener("input", renderCandidateWorkspace);
+  elements.candidateSort.addEventListener("change", renderCandidateWorkspace);
+  elements.selectVisible.addEventListener("click", () => {
+    const candidates = visibleCandidateRecords();
+    for (const candidate of candidates) {
+      selectedCandidates.add(candidate.key);
+      watchCandidate(candidate);
+    }
+    renderCandidateWorkspace();
+    setStatus(`Selected and watched ${candidates.length.toLocaleString()} visible candidate(s).`, "ready");
+  });
+  elements.clearSelection.addEventListener("click", () => {
+    selectedCandidates.clear();
+    renderCandidateWorkspace();
+  });
+  elements.batchWatch.addEventListener("click", () => {
+    const candidates = requireSelectedCandidates();
+    if (candidates) {
+      watchCandidates(candidates);
+    }
+  });
+  elements.batchWrite.addEventListener("click", batchWriteCandidates);
+  elements.batchFreeze.addEventListener("click", () => batchFreezeCandidates(true));
+  elements.batchUnfreeze.addEventListener("click", () => batchFreezeCandidates(false));
+  elements.applyMetadata.addEventListener("click", applyCandidateMetadata);
+  elements.exportWorkspace.addEventListener("click", exportWorkspace);
+  elements.importWorkspace.addEventListener("click", () => elements.workspaceFile.click());
+  elements.workspaceFile.addEventListener("change", async () => {
+    const [file] = elements.workspaceFile.files || [];
+    if (!file) {
+      return;
+    }
+    try {
+      importWorkspaceData(JSON.parse(await file.text()));
+    } catch (error) {
+      setStatus(
+        `Unable to import workspace: ${error instanceof Error ? error.message : String(error)}`,
+        "error",
+      );
+    } finally {
+      elements.workspaceFile.value = "";
+    }
+  });
 
+  restoreHistory();
   restoreWatches();
   renderWatches();
+  renderScanHistory();
   refreshInstanceSelect();
   updateConditionControls();
   connectPanel();
