@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Development status and roadmap for Ruffle Memory Inspector, a Firefox-first WebAssembly memory inspection extension."
+    />
+    <meta name="theme-color" content="#10131a" />
+    <title>Ruffle Memory Inspector — Road to 1.0</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="status.js" defer></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="Ruffle Memory Inspector home">
+        <span class="brand-mark" aria-hidden="true">RM</span>
+        <span>Ruffle Memory Inspector</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="#status">Status</a>
+        <a href="#capabilities">Capabilities</a>
+        <a href="#roadmap">Roadmap</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section id="top" class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Firefox-first · WebAssembly tooling</p>
+          <h1>Inspect Ruffle memory.<br /><span>Stay inside the browser.</span></h1>
+          <p class="lede">
+            A DevTools extension for finding, watching, and editing numeric values in embedded
+            Ruffle players—without changing macOS system protections.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="#roadmap">View the road to 1.0</a>
+            <a class="button secondary" href="#capabilities">See what works today</a>
+          </div>
+        </div>
+
+        <aside class="release-card" aria-label="Current release status">
+          <div class="release-topline">
+            <span class="live-dot" aria-hidden="true"></span>
+            <span id="release-state">Active development</span>
+          </div>
+          <strong id="current-version">v0.7</strong>
+          <p id="release-name">Candidate workspace</p>
+          <div class="progress-track" aria-label="Roadmap progress">
+            <span id="progress-fill"></span>
+          </div>
+          <div class="progress-labels">
+            <span>Prototype</span>
+            <span>1.0</span>
+          </div>
+        </aside>
+      </section>
+
+      <section id="status" class="status-strip" aria-label="Project summary">
+        <article>
+          <span class="metric" id="release-metric">0.7</span>
+          <span class="metric-label">current release</span>
+        </article>
+        <article>
+          <span class="metric">8</span>
+          <span class="metric-label">numeric representations</span>
+        </article>
+        <article>
+          <span class="metric">200</span>
+          <span class="metric-label">candidate preview limit</span>
+        </article>
+        <article>
+          <span class="metric">225.5 MiB</span>
+          <span class="metric-label">large-memory regression</span>
+        </article>
+      </section>
+
+      <section id="capabilities" class="section-block">
+        <div class="section-heading">
+          <p class="eyebrow">Available now</p>
+          <h2>A focused memory workflow</h2>
+          <p>Scan broadly, narrow deliberately, and keep useful candidates visible as the game runs.</p>
+        </div>
+        <div id="capability-grid" class="capability-grid"></div>
+      </section>
+
+      <section class="section-block split-section">
+        <div class="section-heading compact">
+          <p class="eyebrow">Current boundaries</p>
+          <h2>What 0.7 is—and is not</h2>
+        </div>
+        <div class="boundary-grid">
+          <article class="boundary-card positive">
+            <p class="card-kicker">Built for</p>
+            <ul id="built-for-list"></ul>
+          </article>
+          <article class="boundary-card neutral">
+            <p class="card-kicker">Not yet covered</p>
+            <ul id="not-yet-list"></ul>
+          </article>
+        </div>
+      </section>
+
+      <section id="roadmap" class="section-block roadmap-section">
+        <div class="section-heading">
+          <p class="eyebrow">Living roadmap</p>
+          <h2>From 0.7 to a stable 1.0</h2>
+          <p>Milestones may be refined as real Ruffle games reveal new storage patterns and edge cases.</p>
+        </div>
+        <div id="roadmap-list" class="roadmap-list"></div>
+      </section>
+
+      <section class="section-block verification-section">
+        <div>
+          <p class="eyebrow">Verification</p>
+          <h2>Tested where it matters</h2>
+        </div>
+        <p>
+          Browser harnesses cover exact, range, unknown, scaled, unaligned, cancellation, memory-growth,
+          watch, freeze, and large-snapshot paths. The live extension bridge is also exercised in Firefox.
+        </p>
+      </section>
+    </main>
+
+    <footer>
+      <p>Ruffle Memory Inspector · Development status page</p>
+      <p>Use only with games and software you are authorized to inspect.</p>
+    </footer>
+  </body>
+</html>
