@@ -30,6 +30,8 @@ Firefox-first WebExtension prototype for inspecting WebAssembly memory used by e
 
 Raw writes are experimental. A wrong address can corrupt or crash the embedded player.
 
+See [STORE_PUBLISHING_CHECKLIST.md](STORE_PUBLISHING_CHECKLIST.md) for the current Chrome Web Store and Firefox Add-ons release gates.
+
 For approximate or rounded values, select **Value range** and enter inclusive minimum and maximum values. Range scanning works for both first and next scans. For values that do not appear in a naturally aligned scan, try **Any byte** alignment. If the representation is unknown, run an **Unknown initial value** first scan, change the value in the game, select **Changed**, **Increased**, **Decreased**, or **Value range**, and use **Next scan**. Keep the type and alignment unchanged until resetting the scan. Starting any new first scan replaces the previous session for that captured memory so large snapshots are released promptly.
 
 Use **All numeric types** when the game representation is unknown. Results show the detected type per address. If the stored value is a scaled form of the displayed value, set **Stored-value multiplier** before scanning; candidate values, writes, freezes, and watches will continue to use the displayed value. Comparison conditions can follow exact, range, or unknown first scans. **Increased by** and **Decreased by** compare against the preceding scan after applying the same multiplier.

@@ -577,7 +577,7 @@
 
   elements.howItWorks.addEventListener("click", async () => {
     await extensionApi.tabs.create({
-      url: "https://abduljawada.github.io/ruffle-memory-inspector/#capabilities",
+      url: "https://abduljawada.github.io/hack-engine/#capabilities",
     });
     window.close();
   });
