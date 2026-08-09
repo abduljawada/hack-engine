@@ -433,15 +433,39 @@
     }
   }
 
-  async function firstExactScan({ requestId, record, type, spec, rawValue, stride }) {
-    const value = parseValue(type, rawValue);
+  function scanValueMatcher(type, condition, rawValue, rawMaxValue) {
+    const minimum = parseValue(type, rawValue);
+    if (condition === "exact") {
+      return (value) => value === minimum;
+    }
+    if (condition !== "range") {
+      throw new Error(`Unsupported value condition: ${condition}`);
+    }
+    const maximum = parseValue(type, rawMaxValue);
+    if (minimum > maximum) {
+      throw new Error("Range minimum cannot be greater than maximum.");
+    }
+    return (value) => value >= minimum && value <= maximum;
+  }
+
+  async function firstValueScan({
+    requestId,
+    record,
+    type,
+    spec,
+    rawValue,
+    rawMaxValue,
+    condition,
+    stride,
+  }) {
+    const matches = scanValueMatcher(type, condition, rawValue, rawMaxValue);
     let view = new DataView(record.memory.buffer);
     const slotCount = slotCountFor(view.byteLength, spec, stride);
     const candidates = createCandidateSet(slotCount, type, stride);
 
     for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
       const offset = slotIndex * stride;
-      if (spec.read(view, offset) === value) {
+      if (matches(spec.read(view, offset))) {
         retainCandidate(candidates, slotIndex, offset);
       }
 
@@ -483,18 +507,20 @@
     return false;
   }
 
-  async function refineLiveExact({
+  async function refineLiveValue({
     requestId,
     record,
     type,
     spec,
     rawValue,
+    rawMaxValue,
+    condition,
     stride,
     previous,
     slotCount,
   }) {
     const candidates = createCandidateSet(slotCount, type, stride);
-    const value = parseValue(type, rawValue);
+    const matches = scanValueMatcher(type, condition, rawValue, rawMaxValue);
     let view = new DataView(record.memory.buffer);
     const bytesPerChunk = Math.max(1, Math.floor(SCAN_CHUNK_SIZE / 8));
 
@@ -510,7 +536,7 @@
             break;
           }
           const offset = slotIndex * stride;
-          if (spec.read(view, offset) === value) {
+          if (matches(spec.read(view, offset))) {
             retainCandidate(candidates, slotIndex, offset);
           }
         }
@@ -532,6 +558,7 @@
     type,
     spec,
     rawValue,
+    rawMaxValue,
     condition,
     stride,
     previous,
@@ -541,7 +568,10 @@
     const candidates = createCandidateSet(slotCount, type, stride);
     const currentSnapshot = createSnapshot(currentByteLength);
     currentSnapshot.chunks = new Array(previous.snapshot.chunks.length).fill(null);
-    const value = condition === "exact" ? parseValue(type, rawValue) : null;
+    const valueCondition = condition === "exact" || condition === "range";
+    const matchesValue = valueCondition
+      ? scanValueMatcher(type, condition, rawValue, rawMaxValue)
+      : null;
 
     try {
       for (
@@ -598,8 +628,8 @@
           const address = slotIndex * stride;
           const localOffset = address - chunkOffset;
           const currentValue = spec.read(currentView, localOffset);
-          const matches = condition === "exact"
-            ? currentValue === value
+          const matches = valueCondition
+            ? matchesValue(currentValue)
             : comparisonMatches(condition, currentValue, spec.read(previousView, localOffset));
           if (matches) {
             retainCandidate(candidates, slotIndex, address);
@@ -637,6 +667,7 @@
     type,
     spec,
     rawValue,
+    rawMaxValue,
     condition,
     stride,
     previous,
@@ -644,7 +675,7 @@
     if (previous.stride !== stride) {
       throw new Error("Scan alignment changed. Reset before starting a new scan.");
     }
-    if (condition !== "exact" && !previous.snapshot) {
+    if (!["exact", "range"].includes(condition) && !previous.snapshot) {
       throw new Error("Start with an unknown-value scan before using comparison filters.");
     }
 
@@ -655,12 +686,14 @@
     const currentSlotCount = slotCountFor(currentByteLength, spec, stride);
     const slotCount = Math.min(previous.slotCount, currentSlotCount);
     if (!previous.snapshot) {
-      return refineLiveExact({
+      return refineLiveValue({
         requestId,
         record,
         type,
         spec,
         rawValue,
+        rawMaxValue,
+        condition,
         stride,
         previous,
         slotCount,
@@ -672,6 +705,7 @@
       type,
       spec,
       rawValue,
+      rawMaxValue,
       condition,
       stride,
       previous,
@@ -685,6 +719,7 @@
     instanceId,
     type,
     rawValue,
+    rawMaxValue,
     condition = "exact",
     alignment = "aligned",
     refine,
@@ -705,8 +740,8 @@
     if (refine && !previous) {
       throw new Error("No previous scan exists. Run a first scan before filtering.");
     }
-    if (!refine && condition !== "exact" && condition !== "unknown") {
-      throw new Error("First scans support exact or unknown initial values.");
+    if (!refine && !["exact", "range", "unknown"].includes(condition)) {
+      throw new Error("First scans support exact, range, or unknown initial values.");
     }
     if (refine && condition === "unknown") {
       throw new Error("Unknown initial value is only available for a first scan.");
@@ -727,13 +762,23 @@
         type,
         spec,
         rawValue,
+        rawMaxValue,
         condition,
         stride,
         previous,
       })
       : condition === "unknown"
         ? await firstUnknownScan({ requestId, record, type, spec, stride })
-        : await firstExactScan({ requestId, record, type, spec, rawValue, stride });
+        : await firstValueScan({
+          requestId,
+          record,
+          type,
+          spec,
+          rawValue,
+          rawMaxValue,
+          condition,
+          stride,
+        });
 
     scans.set(key, candidates);
     if (previous?.snapshot && previous.snapshot !== candidates.snapshot) {

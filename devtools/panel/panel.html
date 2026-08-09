@@ -41,6 +41,7 @@
           Condition
           <select id="condition">
             <option value="exact">Exact value</option>
+            <option value="range">Value range</option>
             <option value="unknown">Unknown initial value</option>
             <option value="changed">Changed value</option>
             <option value="unchanged">Unchanged value</option>
@@ -49,8 +50,12 @@
           </select>
         </label>
         <label id="scan-value-label">
-          Value
+          <span id="scan-value-text">Value</span>
           <input id="scan-value" type="number" step="any" value="100" />
+        </label>
+        <label id="scan-max-value-label" hidden>
+          Maximum value
+          <input id="scan-max-value" type="number" step="any" value="200" />
         </label>
         <div class="buttons wide">
           <button id="first-scan" class="primary" type="button">First scan</button>

@@ -28,6 +28,9 @@
     condition: document.querySelector("#condition"),
     scanValue: document.querySelector("#scan-value"),
     scanValueLabel: document.querySelector("#scan-value-label"),
+    scanValueText: document.querySelector("#scan-value-text"),
+    scanMaxValue: document.querySelector("#scan-max-value"),
+    scanMaxValueLabel: document.querySelector("#scan-max-value-label"),
     firstScan: document.querySelector("#first-scan"),
     nextScan: document.querySelector("#next-scan"),
     resetScan: document.querySelector("#reset-scan"),
@@ -443,12 +446,21 @@
     }
     const condition = elements.condition.value;
     const rawValue = elements.scanValue.value;
-    if (condition === "exact" && rawValue.trim() === "") {
+    const rawMaxValue = elements.scanMaxValue.value;
+    if (["exact", "range"].includes(condition) && rawValue.trim() === "") {
       setStatus("Enter a value to scan for.", "error");
       return;
     }
-    if (!refine && !["exact", "unknown"].includes(condition)) {
-      setStatus("A first scan must use Exact value or Unknown initial value.", "error");
+    if (condition === "range" && rawMaxValue.trim() === "") {
+      setStatus("Enter a maximum value for the range.", "error");
+      return;
+    }
+    if (condition === "range" && Number(rawValue) > Number(rawMaxValue)) {
+      setStatus("The range minimum cannot be greater than its maximum.", "error");
+      return;
+    }
+    if (!refine && !["exact", "range", "unknown"].includes(condition)) {
+      setStatus("A first scan must use Exact value, Value range, or Unknown initial value.", "error");
       return;
     }
     if (refine && condition === "unknown") {
@@ -463,6 +475,7 @@
       instanceId: record.id,
       type: elements.type.value,
       rawValue,
+      rawMaxValue,
       condition,
       alignment: elements.alignment.value,
       refine,
@@ -475,6 +488,10 @@
     setStatus(
       condition === "unknown"
         ? "Capturing an initial memory snapshot…"
+        : condition === "range"
+          ? refine
+            ? "Filtering candidates within the selected range…"
+            : "Scanning WASM memory for values in the selected range…"
         : refine && condition !== "exact"
           ? `Filtering candidates whose values ${condition}…`
           : refine
@@ -485,9 +502,14 @@
   }
 
   function updateConditionControls() {
-    const needsValue = elements.condition.value === "exact";
+    const condition = elements.condition.value;
+    const needsValue = condition === "exact" || condition === "range";
+    const needsMaximum = condition === "range";
     elements.scanValue.disabled = !needsValue;
     elements.scanValueLabel.classList.toggle("disabled-label", !needsValue);
+    elements.scanValueText.textContent = needsMaximum ? "Minimum value" : "Value";
+    elements.scanMaxValue.disabled = !needsMaximum;
+    elements.scanMaxValueLabel.hidden = !needsMaximum;
   }
 
   function renderCandidates(payload) {

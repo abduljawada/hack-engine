@@ -7,7 +7,7 @@ Firefox-first WebExtension prototype for inspecting WebAssembly memory used by e
 - Hooks `WebAssembly.instantiate` and `WebAssembly.instantiateStreaming` at `document_start` in the page's `MAIN` world.
 - Captures exported or imported `WebAssembly.Memory` objects in every permitted frame.
 - Adds a **Ruffle Memory** Firefox DevTools panel.
-- Supports exact and unknown-value scans for `i32`, `u32`, `f32`, and `f64`.
+- Supports exact, inclusive range, and unknown-value scans for `i32`, `u32`, `f32`, and `f64`.
 - Narrows unknown-value candidates by changed, unchanged, increased, or decreased comparisons.
 - Scans naturally aligned values by default, with an optional byte-by-byte mode for unaligned values.
 - Displays candidate WASM byte offsets and permits direct writes.
@@ -21,7 +21,7 @@ Firefox-first WebExtension prototype for inspecting WebAssembly memory used by e
 
 Raw writes are experimental. A wrong address can corrupt or crash the embedded player.
 
-For values that do not appear in an exact naturally aligned scan, try **Any byte** alignment. If the representation is unknown, run an **Unknown initial value** first scan, change the value in the game, select **Changed**, **Increased**, or **Decreased**, and use **Next scan**. Keep the type and alignment unchanged until resetting the scan. Starting any new first scan replaces the previous session for that captured memory so large snapshots are released promptly.
+For approximate or rounded values, select **Value range** and enter inclusive minimum and maximum values. Range scanning works for both first and next scans. For values that do not appear in a naturally aligned scan, try **Any byte** alignment. If the representation is unknown, run an **Unknown initial value** first scan, change the value in the game, select **Changed**, **Increased**, **Decreased**, or **Value range**, and use **Next scan**. Keep the type and alignment unchanged until resetting the scan. Starting any new first scan replaces the previous session for that captured memory so large snapshots are released promptly.
 
 ## Load in Firefox
 
@@ -56,7 +56,7 @@ With the extension loaded, scan the captured memory as `Float64` for `12345.5`. 
 
 `/test/memory-growth-harness.html` grows the captured WASM memory during a scan and verifies that scanning continues without using the detached original buffer.
 
-`/test/advanced-scan-harness.html` verifies byte-by-byte discovery of an unaligned value and unknown-value filtering by change direction.
+`/test/advanced-scan-harness.html` verifies byte-by-byte discovery of an unaligned value, inclusive range scans and refinements, and unknown-value filtering by range and change direction.
 
 `/test/large-unknown-harness.html` reproduces Ruffle's 225.5 MiB memory scale and verifies that an unknown scan completes with a chunk-compressed snapshot instead of duplicating the entire heap.
 
