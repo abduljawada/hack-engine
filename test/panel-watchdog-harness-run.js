@@ -27,6 +27,28 @@ emitPanelPayload({
   }],
 });
 
+document.querySelector("#condition").value = "range";
+document.querySelector("#condition").dispatchEvent(new Event("change"));
+document.querySelector("#scan-value").value = "10";
+document.querySelector("#scan-max-value").value = "20";
+document.querySelector("#first-scan").click();
+const rangeRequest = latestScanCommand();
+const rangeControlsWork =
+  !document.querySelector("#scan-max-value-label").hidden &&
+  document.querySelector("#scan-value-text").textContent === "Minimum value" &&
+  rangeRequest?.condition === "range" &&
+  rangeRequest?.rawValue === "10" &&
+  rangeRequest?.rawMaxValue === "20";
+emitPanelPayload({
+  kind: "scanResults",
+  requestId: rangeRequest?.requestId,
+  instanceId: "1",
+  type: "f64",
+  total: 0,
+  preview: [],
+  allCandidates: false,
+});
+
 document.querySelector("#condition").value = "unknown";
 document.querySelector("#condition").dispatchEvent(new Event("change"));
 document.querySelector("#first-scan").click();
@@ -125,6 +147,6 @@ const diagnosed =
   document.querySelector("#watches").textContent.includes("Game restored it") &&
   document.querySelector("#status").textContent.includes("game restored");
 
-panelHarnessResult.textContent = malformedHandled && validHandled && watched && diagnosed
-  ? "PASS: panel watchdog, initial unknown results, live watches, and write diagnostics work."
+panelHarnessResult.textContent = rangeControlsWork && malformedHandled && validHandled && watched && diagnosed
+  ? "PASS: panel range controls, watchdog, initial unknown results, live watches, and write diagnostics work."
   : "FAIL: panel request lifecycle did not complete as expected.";

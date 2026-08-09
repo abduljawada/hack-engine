@@ -13,9 +13,11 @@
     <select id="alignment"><option value="aligned">Aligned</option></select>
     <select id="condition">
       <option value="exact">Exact</option>
+      <option value="range">Range</option>
       <option value="unknown">Unknown</option>
     </select>
-    <label id="scan-value-label"><input id="scan-value" value="100" /></label>
+    <label id="scan-value-label"><span id="scan-value-text">Value</span><input id="scan-value" value="100" /></label>
+    <label id="scan-max-value-label" hidden><input id="scan-max-value" value="200" /></label>
     <button id="first-scan">First scan</button>
     <button id="next-scan">Next scan</button>
     <button id="reset-scan">Reset</button>

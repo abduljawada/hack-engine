@@ -2,6 +2,8 @@ const ADVANCED_CHANNEL = "ruffle-memory-inspector:v1";
 const advancedResultNode = document.querySelector("#result");
 const unalignedOffset = 4099;
 const unalignedValue = 12345.75;
+const rangeOffset = 8192;
+const outsideRangeOffset = 8200;
 const increasedOffset = 1024;
 const decreasedOffset = 2048;
 let advancedInstance = null;
@@ -53,6 +55,39 @@ window.addEventListener("message", (event) => {
     }
     sendAdvancedCommand({
       kind: "memoryScan",
+      requestId: "range-initial",
+      instanceId: advancedInstanceId,
+      type: "f64",
+      rawValue: "77",
+      rawMaxValue: "78",
+      condition: "range",
+      alignment: "aligned",
+      refine: false,
+    });
+  } else if (payload?.kind === "scanResults" && payload.requestId === "range-initial") {
+    if (payload.total !== 1 || payload.preview[0]?.address !== rangeOffset) {
+      failAdvanced(`initial range scan returned ${payload.total} candidates.`);
+      return;
+    }
+    new DataView(advancedInstance.exports.memory.buffer).setFloat64(rangeOffset, 78.25, true);
+    sendAdvancedCommand({
+      kind: "memoryScan",
+      requestId: "range-refinement",
+      instanceId: advancedInstanceId,
+      type: "f64",
+      rawValue: "78",
+      rawMaxValue: "79",
+      condition: "range",
+      alignment: "aligned",
+      refine: true,
+    });
+  } else if (payload?.kind === "scanResults" && payload.requestId === "range-refinement") {
+    if (payload.total !== 1 || payload.preview[0]?.address !== rangeOffset) {
+      failAdvanced(`range refinement retained ${payload.total} candidates.`);
+      return;
+    }
+    sendAdvancedCommand({
+      kind: "memoryScan",
       requestId: "unknown-initial",
       instanceId: advancedInstanceId,
       type: "i32",
@@ -85,6 +120,25 @@ window.addEventListener("message", (event) => {
       !addresses.includes(decreasedOffset)
     ) {
       failAdvanced(`changed filter returned ${payload.total} candidates instead of the two mutations.`);
+      return;
+    }
+    sendAdvancedCommand({
+      kind: "memoryScan",
+      requestId: "snapshot-range-filter",
+      instanceId: advancedInstanceId,
+      type: "i32",
+      rawValue: "14",
+      rawMaxValue: "16",
+      condition: "range",
+      alignment: "aligned",
+      refine: true,
+    });
+  } else if (
+    payload?.kind === "scanResults" &&
+    payload.requestId === "snapshot-range-filter"
+  ) {
+    if (payload.total !== 2) {
+      failAdvanced(`snapshot range filter retained ${payload.total} candidates.`);
       return;
     }
     const view = new DataView(advancedInstance.exports.memory.buffer);
@@ -134,7 +188,7 @@ window.addEventListener("message", (event) => {
       payload.message === "No previous scan exists. Run a first scan before filtering."
     ) {
       advancedResultNode.textContent =
-        "PASS: unaligned and comparison scans work, and replacement scans release stale sessions.";
+        "PASS: unaligned, range, and comparison scans work, and replacement scans release stale sessions.";
     } else {
       failAdvanced(payload.message);
     }
@@ -152,6 +206,8 @@ WebAssembly.instantiate(advancedModuleBytes).then(({ instance }) => {
   advancedInstance = instance;
   const view = new DataView(instance.exports.memory.buffer);
   view.setFloat64(unalignedOffset, unalignedValue, true);
+  view.setFloat64(rangeOffset, 77.5, true);
+  view.setFloat64(outsideRangeOffset, 88.5, true);
   view.setInt32(increasedOffset, 10, true);
   view.setInt32(decreasedOffset, 20, true);
 });
