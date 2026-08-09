@@ -2,7 +2,11 @@
   "use strict";
 
   const extensionApi = globalThis.browser ?? globalThis.chrome;
-  const tabId = extensionApi.devtools.inspectedWindow.tabId;
+  const queryTabId = Number(new URLSearchParams(location.search).get("tabId"));
+  const tabId = extensionApi.devtools?.inspectedWindow?.tabId ?? queryTabId;
+  if (!Number.isInteger(tabId) || tabId < 0) {
+    throw new Error("Hack Engine could not determine which browser tab to inspect.");
+  }
   const instances = new Map();
   const candidateValueCells = new Map();
   const frozenAddresses = new Set();
@@ -1315,7 +1319,7 @@
 
   function importWorkspaceData(payload) {
     if (payload?.format !== "ruffle-memory-workspace" || payload.version !== 1) {
-      throw new Error("This is not a supported Ruffle Memory workspace file.");
+      throw new Error("This is not a supported Hack Engine workspace file.");
     }
     const validTypes = new Set(["i8", "u8", "i16", "u16", "i32", "u32", "f32", "f64"]);
     const record = selectedInstance();

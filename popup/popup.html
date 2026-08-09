@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hack Engine</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <header class="brand-row">
+        <img src="../assets/icons/icon-96.png" alt="" width="52" height="52" />
+        <div>
+          <h1>Hack Engine</h1>
+          <p>Ruffle memory tools</p>
+        </div>
+      </header>
+
+      <section class="tab-context" aria-label="Active tab">
+        <img class="ui-icon" src="../assets/ui-icons/globe-alt.svg" alt="" />
+        <div>
+          <span class="context-label">Active tab</span>
+          <strong id="hostname">Checking current tab…</strong>
+        </div>
+      </section>
+
+      <section class="connection-state" aria-live="polite">
+        <span id="status-dot" class="status-dot searching" aria-hidden="true"></span>
+        <div>
+          <h2 id="status-title">Looking for Ruffle memory…</h2>
+          <p id="status-detail">Hack Engine is checking the active page.</p>
+        </div>
+      </section>
+
+      <section id="memory-summary" class="memory-summary" hidden>
+        <img src="../assets/icons/icon-48.png" alt="" width="36" height="36" />
+        <div>
+          <strong id="memory-count">0 captured memories</strong>
+          <span id="memory-size">0 KiB available</span>
+        </div>
+      </section>
+
+      <button id="open-inspector" class="primary-action" type="button" disabled>
+        <img src="../assets/ui-icons/magnifying-glass.svg" alt="" />
+        Open inspector
+      </button>
+
+      <div class="secondary-actions">
+        <button id="refresh-connection" type="button">
+          <img class="ui-icon" src="../assets/ui-icons/arrow-path.svg" alt="" />
+          <span>Refresh connection</span>
+          <img class="ui-icon chevron" src="../assets/ui-icons/chevron-right.svg" alt="" />
+        </button>
+        <button id="how-it-works" type="button">
+          <img class="ui-icon" src="../assets/ui-icons/question-mark-circle.svg" alt="" />
+          <span>How it works</span>
+          <img class="ui-icon chevron" src="../assets/ui-icons/chevron-right.svg" alt="" />
+        </button>
+      </div>
+
+      <footer>v0.7</footer>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

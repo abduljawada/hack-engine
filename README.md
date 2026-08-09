@@ -1,4 +1,4 @@
-# Ruffle Memory Inspector
+# Hack Engine
 
 Firefox-first WebExtension prototype for inspecting WebAssembly memory used by embedded Ruffle players.
 
@@ -6,7 +6,7 @@ Firefox-first WebExtension prototype for inspecting WebAssembly memory used by e
 
 - Hooks `WebAssembly.instantiate` and `WebAssembly.instantiateStreaming` at `document_start` in the page's `MAIN` world.
 - Captures exported or imported `WebAssembly.Memory` objects in every permitted frame.
-- Adds a **Ruffle Memory** Firefox DevTools panel.
+- Adds a **Hack Engine** Firefox DevTools panel.
 - Supports exact, inclusive range, and unknown-value scans for signed/unsigned 8-, 16-, and 32-bit integers plus `f32` and `f64`.
 - Provides an **All numeric types** discovery mode whose candidates retain their detected representation.
 - Decodes configurable stored-value multipliers (for example, displayed value × 8) across scanning, watching, writing, and freezing.
@@ -39,7 +39,7 @@ Use **All numeric types** when the game representation is unknown. Results show 
 3. Choose **Load Temporary Add-on**.
 4. Select this folder's `manifest.json`.
 5. Open or reload the page containing the embedded Ruffle player.
-6. Open Firefox Developer Tools and select **Ruffle Memory**.
+6. Open Firefox Developer Tools and select **Hack Engine**.
 
 The extension needs permission on the player frame's URL. Reloading is required because the WASM hook must run before Ruffle initializes.
 

@@ -1,10 +1,25 @@
 {
   "manifest_version": 3,
-  "name": "Ruffle Memory Inspector",
+  "name": "Hack Engine",
   "version": "0.7.0",
-  "description": "Inspect and edit WebAssembly memory used by embedded Ruffle players.",
-  "permissions": [],
+  "description": "Inspect, watch, and edit WebAssembly memory used by embedded Ruffle players.",
+  "permissions": ["tabs"],
   "host_permissions": ["<all_urls>"],
+  "icons": {
+    "16": "assets/icons/icon-16.png",
+    "32": "assets/icons/icon-32.png",
+    "48": "assets/icons/icon-48.png",
+    "96": "assets/icons/icon-96.png",
+    "128": "assets/icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "Hack Engine",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "assets/icons/icon-16.png",
+      "32": "assets/icons/icon-32.png"
+    }
+  },
   "background": {
     "scripts": ["background.js"]
   },

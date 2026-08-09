@@ -1,7 +1,7 @@
 const extensionApi = globalThis.browser ?? globalThis.chrome;
 
 extensionApi.devtools.panels.create(
-  "Ruffle Memory",
-  "",
+  "Hack Engine",
+  "assets/icons/icon-32.png",
   "panel/panel.html",
 );
