@@ -8,6 +8,7 @@ const baseUrl = process.argv[2] ?? "http://127.0.0.1:8765";
 const harnesses = [
   ["exact scan", "/test/harness.html", 30_000],
   ["freeze", "/test/freeze-harness.html", 30_000],
+  ["watch diagnostics", "/test/watch-diagnostics-harness.html", 30_000],
   ["candidate retention", "/test/candidate-retention-harness.html", 30_000],
   ["memory growth", "/test/memory-growth-harness.html", 30_000],
   ["advanced scan", "/test/advanced-scan-harness.html", 90_000],

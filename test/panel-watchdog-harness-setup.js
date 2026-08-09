@@ -15,7 +15,9 @@ function panelListenerSlot() {
 const panelHarnessState = {
   commands: [],
   watchdogs: new Map(),
+  intervals: new Map(),
   nextWatchdogId: 1_000_000,
+  nextIntervalId: 2_000_000,
 };
 
 const nativeSetTimeout = globalThis.setTimeout.bind(globalThis);
@@ -35,6 +37,16 @@ globalThis.clearTimeout = (id) => {
     return;
   }
   nativeClearTimeout(id);
+};
+
+globalThis.setInterval = (callback, delay, ...args) => {
+  const id = panelHarnessState.nextIntervalId++;
+  panelHarnessState.intervals.set(id, () => callback(...args));
+  return id;
+};
+
+globalThis.clearInterval = (id) => {
+  panelHarnessState.intervals.delete(id);
 };
 
 panelHarnessState.port = {

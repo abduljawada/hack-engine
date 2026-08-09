@@ -27,7 +27,13 @@
     <input id="write-address" />
     <input id="write-value" />
     <button id="write">Write</button>
+    <button id="add-watch">Add watch</button>
     <button id="freeze">Freeze</button>
+    <section class="watch-list">
+      <span id="watch-count">0</span>
+      <p id="watch-empty"></p>
+      <table><tbody id="watches"></tbody></table>
+    </section>
 
     <script src="panel-watchdog-harness-setup.js"></script>
     <script src="../devtools/panel/panel.js"></script>
