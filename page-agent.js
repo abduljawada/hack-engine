@@ -534,6 +534,10 @@
       }
     }
 
+    if (condition === "exact") {
+      candidates.baselineValue = parseDisplayValue(type, rawValue, multiplier);
+    }
+
     return candidates;
   }
 
@@ -562,6 +566,152 @@
       }
     }
     return false;
+  }
+
+  async function captureCandidateSnapshot({
+    requestId,
+    record,
+    candidates,
+    spec,
+  }) {
+    const byteLength = record.memory.buffer.byteLength;
+    const snapshot = createSnapshot(byteLength);
+    const chunkCount = Math.ceil(byteLength / snapshot.chunkSize);
+    snapshot.chunks = new Array(chunkCount).fill(null);
+    try {
+      for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
+        const chunkOffset = chunkIndex * snapshot.chunkSize;
+        const uniqueLength = Math.min(snapshot.chunkSize, byteLength - chunkOffset);
+        const startSlot = Math.ceil(chunkOffset / candidates.stride);
+        const endSlot = Math.min(
+          candidates.slotCount,
+          Math.ceil((chunkOffset + uniqueLength) / candidates.stride),
+        );
+        if (!candidateRangeHasMatches(candidates, startSlot, endSlot)) {
+          continue;
+        }
+        const readLength = Math.min(
+          uniqueLength + spec.size - 1,
+          byteLength - chunkOffset,
+        );
+        const bytes = new Uint8Array(record.memory.buffer, chunkOffset, readLength).slice();
+        const data = await compressSnapshotBytes(bytes);
+        await storeSnapshotChunk(snapshot, chunkIndex, data, {
+          byteLength: readLength,
+          uniqueLength,
+        });
+        send({
+          kind: "scanProgress",
+          requestId,
+          inspected: chunkOffset + uniqueLength,
+          total: byteLength,
+          snapshotBytes: snapshot.compressedBytes,
+        });
+      }
+    } catch (error) {
+      await deleteSnapshot(snapshot).catch(() => {});
+      throw error;
+    }
+    candidates.snapshot = snapshot;
+    return snapshot;
+  }
+
+  async function captureAutoCandidateSnapshot({ requestId, record, sets }) {
+    const byteLength = record.memory.buffer.byteLength;
+    const snapshot = createSnapshot(byteLength);
+    const chunkCount = Math.ceil(byteLength / snapshot.chunkSize);
+    snapshot.chunks = new Array(chunkCount).fill(null);
+    try {
+      for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
+        const chunkOffset = chunkIndex * snapshot.chunkSize;
+        const uniqueLength = Math.min(snapshot.chunkSize, byteLength - chunkOffset);
+        const hasCandidates = [...sets.values()].some((candidates) => {
+          const startSlot = Math.ceil(chunkOffset / candidates.stride);
+          const endSlot = Math.min(
+            candidates.slotCount,
+            Math.ceil((chunkOffset + uniqueLength) / candidates.stride),
+          );
+          return candidateRangeHasMatches(candidates, startSlot, endSlot);
+        });
+        if (!hasCandidates) {
+          continue;
+        }
+        const readLength = Math.min(
+          uniqueLength + typeSpecs.f64.size - 1,
+          byteLength - chunkOffset,
+        );
+        const bytes = new Uint8Array(record.memory.buffer, chunkOffset, readLength).slice();
+        const data = await compressSnapshotBytes(bytes);
+        await storeSnapshotChunk(snapshot, chunkIndex, data, {
+          byteLength: readLength,
+          uniqueLength,
+        });
+        send({
+          kind: "scanProgress",
+          requestId,
+          inspected: chunkOffset + uniqueLength,
+          total: byteLength,
+          snapshotBytes: snapshot.compressedBytes,
+        });
+      }
+    } catch (error) {
+      await deleteSnapshot(snapshot).catch(() => {});
+      throw error;
+    }
+    for (const candidates of sets.values()) {
+      candidates.snapshot = snapshot;
+    }
+    return snapshot;
+  }
+
+  async function refineKnownBaselineCandidates({
+    requestId,
+    record,
+    type,
+    spec,
+    rawValue,
+    multiplier,
+    condition,
+    stride,
+    previous,
+    slotCount,
+  }) {
+    const candidates = createCandidateSet(slotCount, type, stride);
+    if (previous.baselineValue === undefined) {
+      return candidates;
+    }
+    const matches = scanComparisonMatcher(type, condition, rawValue, multiplier);
+    let view = new DataView(record.memory.buffer);
+    const bytesPerChunk = Math.max(1, Math.floor(SCAN_CHUNK_SIZE / 8));
+    for (let byteIndex = 0; byteIndex < previous.bits.length; byteIndex += 1) {
+      const candidateByte = previous.bits[byteIndex];
+      if (candidateByte) {
+        for (let bitIndex = 0; bitIndex < 8; bitIndex += 1) {
+          if (!(candidateByte & (1 << bitIndex))) {
+            continue;
+          }
+          const slotIndex = byteIndex * 8 + bitIndex;
+          if (slotIndex >= slotCount) {
+            break;
+          }
+          const address = slotIndex * stride;
+          if (matches(spec.read(view, address), previous.baselineValue)) {
+            retainCandidate(candidates, slotIndex, address);
+          }
+        }
+      }
+      if ((byteIndex + 1) % bytesPerChunk === 0) {
+        send({
+          kind: "scanProgress",
+          requestId,
+          inspected: Math.min((byteIndex + 1) * 8, slotCount),
+          total: slotCount,
+        });
+        await yieldToPage();
+        view = new DataView(record.memory.buffer);
+      }
+    }
+    return candidates;
   }
 
   async function refineLiveValue({
@@ -738,10 +888,6 @@
     if (previous.stride !== stride) {
       throw new Error("Scan alignment changed. Reset before starting a new scan.");
     }
-    if (!["exact", "range"].includes(condition) && !previous.snapshot) {
-      throw new Error("Start with an unknown-value scan before using comparison filters.");
-    }
-
     const currentByteLength = Math.min(
       record.memory.buffer.byteLength,
       previous.snapshot?.byteLength ?? record.memory.buffer.byteLength,
@@ -749,7 +895,23 @@
     const currentSlotCount = slotCountFor(currentByteLength, spec, stride);
     const slotCount = Math.min(previous.slotCount, currentSlotCount);
     if (!previous.snapshot) {
-      return refineLiveValue({
+      if (!["exact", "range"].includes(condition)) {
+        const candidates = await refineKnownBaselineCandidates({
+          requestId,
+          record,
+          type,
+          spec,
+          rawValue,
+          multiplier,
+          condition,
+          stride,
+          previous,
+          slotCount,
+        });
+        await captureCandidateSnapshot({ requestId, record, candidates, spec });
+        return candidates;
+      }
+      const candidates = await refineLiveValue({
         requestId,
         record,
         type,
@@ -762,6 +924,12 @@
         previous,
         slotCount,
       });
+      if (condition === "exact") {
+        candidates.baselineValue = parseDisplayValue(type, rawValue, multiplier);
+      } else {
+        await captureCandidateSnapshot({ requestId, record, candidates, spec });
+      }
+      return candidates;
     }
     return refineSnapshotScan({
       requestId,
@@ -832,7 +1000,10 @@
         sets.set(type, emptyCandidatesFor(record, type, spec, alignment, byteLength));
       }
     }
-    return { multi: true, sets, snapshot: null, multiplier };
+    const snapshot = condition === "range"
+      ? await captureAutoCandidateSnapshot({ requestId, record, sets })
+      : null;
+    return { multi: true, sets, snapshot, multiplier };
   }
 
   async function refineAutoLiveScan({
@@ -845,11 +1016,9 @@
     condition,
     alignment,
   }) {
-    if (!["exact", "range"].includes(condition)) {
-      throw new Error("Start with an unknown-value scan before using comparison filters.");
-    }
     const sets = new Map();
     const byteLength = record.memory.buffer.byteLength;
+    const valueCondition = condition === "exact" || condition === "range";
     for (const { type, spec } of autoScanTypes()) {
       const prior = previous.sets.get(type);
       const stride = scanStride(spec, alignment);
@@ -858,19 +1027,36 @@
       }
       const slotCount = Math.min(prior.slotCount, slotCountFor(byteLength, spec, stride));
       try {
-        sets.set(type, await refineLiveValue({
-          requestId,
-          record,
-          type,
-          spec,
-          rawValue,
-          rawMaxValue,
-          multiplier,
-          condition,
-          stride,
-          previous: prior,
-          slotCount,
-        }));
+        const candidates = valueCondition
+          ? await refineLiveValue({
+            requestId,
+            record,
+            type,
+            spec,
+            rawValue,
+            rawMaxValue,
+            multiplier,
+            condition,
+            stride,
+            previous: prior,
+            slotCount,
+          })
+          : await refineKnownBaselineCandidates({
+            requestId,
+            record,
+            type,
+            spec,
+            rawValue,
+            multiplier,
+            condition,
+            stride,
+            previous: prior,
+            slotCount,
+          });
+        if (condition === "exact") {
+          candidates.baselineValue = parseDisplayValue(type, rawValue, multiplier);
+        }
+        sets.set(type, candidates);
       } catch (error) {
         if (!(error instanceof Error) || !/integer|numeric range/.test(error.message)) {
           throw error;
@@ -878,7 +1064,10 @@
         sets.set(type, createCandidateSet(slotCount, type, stride));
       }
     }
-    return { multi: true, sets, snapshot: null, multiplier };
+    const snapshot = condition === "exact"
+      ? null
+      : await captureAutoCandidateSnapshot({ requestId, record, sets });
+    return { multi: true, sets, snapshot, multiplier };
   }
 
   async function refineAutoSnapshotScan({
@@ -1235,6 +1424,10 @@
           condition,
           stride,
         });
+
+    if (!refine && condition === "range") {
+      await captureCandidateSnapshot({ requestId, record, candidates, spec });
+    }
 
     scans.set(key, candidates);
     if (previous?.snapshot && previous.snapshot !== candidates.snapshot) {

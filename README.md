@@ -10,7 +10,7 @@ Firefox-first WebExtension prototype for inspecting WebAssembly memory used by e
 - Supports exact, inclusive range, and unknown-value scans for signed/unsigned 8-, 16-, and 32-bit integers plus `f32` and `f64`.
 - Provides an **All numeric types** discovery mode whose candidates retain their detected representation.
 - Decodes configurable stored-value multipliers (for example, displayed value × 8) across scanning, watching, writing, and freezing.
-- Narrows unknown-value candidates by changed, unchanged, increased, or decreased comparisons.
+- Narrows candidates from exact, range, or unknown first scans by changed, unchanged, increased, or decreased comparisons.
 - Narrows unknown candidates by an exact displayed increase or decrease amount.
 - Scans naturally aligned values by default, with an optional byte-by-byte mode for unaligned values.
 - Displays candidate WASM byte offsets and permits direct writes.
@@ -26,7 +26,7 @@ Raw writes are experimental. A wrong address can corrupt or crash the embedded p
 
 For approximate or rounded values, select **Value range** and enter inclusive minimum and maximum values. Range scanning works for both first and next scans. For values that do not appear in a naturally aligned scan, try **Any byte** alignment. If the representation is unknown, run an **Unknown initial value** first scan, change the value in the game, select **Changed**, **Increased**, **Decreased**, or **Value range**, and use **Next scan**. Keep the type and alignment unchanged until resetting the scan. Starting any new first scan replaces the previous session for that captured memory so large snapshots are released promptly.
 
-Use **All numeric types** when the game representation is unknown. Results show the detected type per address. If the stored value is a scaled form of the displayed value, set **Stored-value multiplier** before scanning; candidate values, writes, freezes, and watches will continue to use the displayed value. **Increased by** and **Decreased by** compare against the previous unknown-scan snapshot after applying the same multiplier.
+Use **All numeric types** when the game representation is unknown. Results show the detected type per address. If the stored value is a scaled form of the displayed value, set **Stored-value multiplier** before scanning; candidate values, writes, freezes, and watches will continue to use the displayed value. Comparison conditions can follow exact, range, or unknown first scans. **Increased by** and **Decreased by** compare against the preceding scan after applying the same multiplier.
 
 ## Load in Firefox
 
@@ -57,7 +57,7 @@ With the extension loaded, scan the captured memory as `Float64` for `12345.5`. 
 
 `/test/watch-diagnostics-harness.html` verifies live multi-address reads and five-sample write classification for both game-restored and persistent values.
 
-`/test/representation-discovery-harness.html` verifies automatic numeric-type discovery, scaled-value decoding and writes, and exact-delta refinement from a shared multi-type snapshot.
+`/test/representation-discovery-harness.html` verifies automatic numeric-type discovery, scaled-value decoding and writes, comparisons after known initial values, and exact-delta refinement from a shared multi-type snapshot.
 
 `/test/candidate-retention-harness.html` starts with more than 250,000 identical values, changes only the final one, and verifies that a next scan still finds that late-memory address.
 
