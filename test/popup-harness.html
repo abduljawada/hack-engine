@@ -23,16 +23,56 @@
         <img src="../assets/icons/icon-48.png" alt="" width="36" height="36" />
         <div><strong id="memory-count"></strong><span id="memory-size"></span></div>
       </section>
-      <button id="open-inspector" class="primary-action" type="button" disabled>
-        <img src="../assets/ui-icons/magnifying-glass.svg" alt="" />Open inspector
+      <section id="quick-tools" class="quick-tools" hidden>
+        <div class="quick-heading">
+          <div><span class="context-label">Simple view</span><h2>Quick scan</h2></div>
+          <span id="automatic-badge" class="automatic-badge">Automatic</span>
+        </div>
+        <div class="quick-form">
+          <label>Condition
+            <select id="quick-condition">
+              <option value="exact">Exact value</option><option value="range">Value range</option>
+              <option value="unknown">Unknown initial value</option>
+              <option value="changed" data-refine-only>Changed</option>
+              <option value="unchanged" data-refine-only>Unchanged</option>
+              <option value="increased" data-refine-only>Increased</option>
+              <option value="decreased" data-refine-only>Decreased</option>
+              <option value="increasedBy" data-refine-only>Increased by</option>
+              <option value="decreasedBy" data-refine-only>Decreased by</option>
+            </select>
+          </label>
+          <div class="value-fields">
+            <label id="quick-value-label"><span id="quick-value-text">Value</span><input id="quick-value" type="number" step="any" value="100" /></label>
+            <label id="quick-max-label" hidden>Maximum<input id="quick-max-value" type="number" step="any" value="200" /></label>
+          </div>
+        </div>
+        <p id="scan-strategy" class="scan-strategy">The number format will be detected automatically.</p>
+        <div class="scan-actions">
+          <button id="quick-scan" class="primary-action" type="button">First scan</button>
+          <button id="cancel-quick-scan" class="compact-action danger" type="button" hidden>Cancel</button>
+          <button id="reset-quick-scan" class="compact-action" type="button" hidden>Reset</button>
+        </div>
+        <div id="quick-status" class="quick-status">Ready to scan this memory.</div>
+        <section id="quick-results" class="quick-results" hidden>
+          <div class="results-heading"><strong>Candidates</strong><span id="quick-result-count">0</span></div>
+          <div id="quick-candidates" class="quick-candidates"></div>
+          <button id="broaden-search" class="text-action" type="button" hidden>Search all number formats</button>
+        </section>
+        <section id="quick-editor" class="quick-editor" hidden>
+          <div><span class="context-label">Selected value</span><strong id="selected-address">0x00000000</strong></div>
+          <label>New value<input id="quick-write-value" type="number" step="any" /></label>
+          <div class="editor-actions">
+            <button id="quick-write" class="compact-action danger" type="button">Write value</button>
+            <button id="quick-freeze" class="compact-action" type="button">Freeze</button>
+          </div>
+        </section>
+      </section>
+      <button id="open-inspector" class="inspector-action" type="button" disabled>
+        <img class="ui-icon" src="../assets/ui-icons/magnifying-glass.svg" alt="" /><span>Open full inspector</span><img class="ui-icon chevron" src="../assets/ui-icons/chevron-right.svg" alt="" />
       </button>
       <div class="secondary-actions">
-        <button id="refresh-connection" type="button">
-          <img class="ui-icon" src="../assets/ui-icons/arrow-path.svg" alt="" /><span>Refresh connection</span><img class="ui-icon chevron" src="../assets/ui-icons/chevron-right.svg" alt="" />
-        </button>
-        <button id="how-it-works" type="button">
-          <img class="ui-icon" src="../assets/ui-icons/question-mark-circle.svg" alt="" /><span>How it works</span><img class="ui-icon chevron" src="../assets/ui-icons/chevron-right.svg" alt="" />
-        </button>
+        <button id="refresh-connection" type="button"><img class="ui-icon" src="../assets/ui-icons/arrow-path.svg" alt="" /><span>Refresh connection</span><img class="ui-icon chevron" src="../assets/ui-icons/chevron-right.svg" alt="" /></button>
+        <button id="how-it-works" type="button"><img class="ui-icon" src="../assets/ui-icons/question-mark-circle.svg" alt="" /><span>How it works</span><img class="ui-icon chevron" src="../assets/ui-icons/chevron-right.svg" alt="" /></button>
       </div>
       <footer>v0.7</footer>
     </main>

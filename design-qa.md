@@ -4,10 +4,10 @@
 
 - Selected source: `/Users/ahmed/.codex/generated_images/019fc6f5-7b69-7a51-b2e2-cef2d880323c/exec-0fda6964-a151-43c1-8c00-ee857a39774d.png`
 - Normalized source: `/tmp/hack-engine-source-normalized.png`
-- Firefox implementation capture: `/tmp/hack-engine-popup-firefox-2.png`
-- Comparison viewport: 380 × 560 px
+- Firefox implementation capture: `/tmp/hack-engine-popup-fixed-2.png`
+- Comparison viewport: 420 × 720 px
 - Source dimensions: 1033 × 1523 px, normalized to 380 × 560 px
-- Implementation dimensions: 380 × 560 px at device scale 1
+- Implementation dimensions: 420 × 720 px at device scale 1
 - Tested state: connected to a page with one captured Ruffle WebAssembly memory
 
 ## Visual comparison
@@ -19,6 +19,8 @@
 - Image quality: extension icon source is clean at the toolbar sizes and the popup mark remains legible.
 - Copy: visible product naming is consistently “Hack Engine”; runtime-specific wording remains concise.
 - Intentional differences: the browser owns the popup's outer frame; live test data replaces mock domain and memory values; a compact subtitle clarifies the extension purpose.
+- Quick scan: the simple view exposes condition and value controls without a numeric-type selector, and explains the detected ActionScript strategy in one line.
+- Progressive disclosure: range maximum, cancellation/reset controls, results, and the candidate editor remain hidden until relevant.
 
 ## Interaction QA — Firefox
 
@@ -27,11 +29,15 @@
 - Refresh connection reloads the original active tab.
 - How it works opens the capabilities section of the project page.
 - Popup harness completed without an uncaught runtime error.
+- ActionScript-guided first scans send the internal smart mode, while candidate writes and freezes retain the detected numeric type.
+- Quick scan state and completed results survive closing and reopening the toolbar popup.
 
 ## Iteration history
 
 - First pass: P2 — standard action iconography was missing from the implementation.
 - Resolution: added official Heroicons for tab, inspect, refresh, help, and navigation actions.
+- Quick-scan pass: P2 — author CSS overrode the native `hidden` attribute, exposing the range maximum and empty candidate editor during an exact first scan.
+- Resolution: made hidden state authoritative and added computed-style regression assertions.
 - Post-fix review: no remaining P0, P1, or P2 visual or interaction findings.
 
 final result: passed

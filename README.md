@@ -7,6 +7,8 @@ Firefox-first WebExtension prototype for inspecting WebAssembly memory used by e
 - Hooks `WebAssembly.instantiate` and `WebAssembly.instantiateStreaming` at `document_start` in the page's `MAIN` world.
 - Captures exported or imported `WebAssembly.Memory` objects in every permitted frame.
 - Adds a **Hack Engine** Firefox DevTools panel.
+- Adds a compact toolbar popup with a type-free quick scan, candidate writing, and freezing; the full inspector retains explicit numeric controls.
+- Reads Ruffle's public movie metadata when available to distinguish ActionScript 1/2 from ActionScript 3 and prioritize the relevant numeric representations automatically.
 - Supports exact, inclusive range, and unknown-value scans for signed/unsigned 8-, 16-, and 32-bit integers plus `f32` and `f64`.
 - Provides an **All numeric types** discovery mode whose candidates retain their detected representation.
 - Decodes configurable stored-value multipliers (for example, displayed value × 8) across scanning, watching, writing, and freezing.
@@ -31,6 +33,8 @@ Raw writes are experimental. A wrong address can corrupt or crash the embedded p
 For approximate or rounded values, select **Value range** and enter inclusive minimum and maximum values. Range scanning works for both first and next scans. For values that do not appear in a naturally aligned scan, try **Any byte** alignment. If the representation is unknown, run an **Unknown initial value** first scan, change the value in the game, select **Changed**, **Increased**, **Decreased**, or **Value range**, and use **Next scan**. Keep the type and alignment unchanged until resetting the scan. Starting any new first scan replaces the previous session for that captured memory so large snapshots are released promptly.
 
 Use **All numeric types** when the game representation is unknown. Results show the detected type per address. If the stored value is a scaled form of the displayed value, set **Stored-value multiplier** before scanning; candidate values, writes, freezes, and watches will continue to use the displayed value. Comparison conditions can follow exact, range, or unknown first scans. **Increased by** and **Decreased by** compare against the preceding scan after applying the same multiplier.
+
+For the shortest workflow, open **Hack Engine** from the Firefox toolbar and use **Quick scan**. It does not ask for a numeric type. For an ActionScript 1/2 movie it starts with `f64`; for ActionScript 3 it starts with `i32`, `u32`, and `f64` as appropriate. If Ruffle does not expose usable metadata, it safely falls back to all eight supported representations. Results retain their detected type internally, so selecting, writing, and freezing a candidate remains type-correct. **Search all number formats** is available after a guided exact or range scan when the first pass does not find the desired value.
 
 ## Load in Firefox
 
@@ -63,6 +67,8 @@ With the extension loaded, scan the captured memory as `Float64` for `12345.5`. 
 
 `/test/representation-discovery-harness.html` verifies automatic numeric-type discovery, scaled-value decoding and writes, comparisons after known initial values, and exact-delta refinement from a shared multi-type snapshot.
 
+`/test/avm-guided-scan-harness.html` verifies ActionScript 1/2 and ActionScript 3 detection through public Ruffle metadata, their guided numeric plans, and the all-format fallback when metadata is unavailable.
+
 `/test/candidate-retention-harness.html` starts with more than 250,000 identical values, changes only the final one, and verifies that a next scan still finds that late-memory address.
 
 `/test/memory-growth-harness.html` grows the captured WASM memory during a scan and verifies that scanning continues without using the detached original buffer.
@@ -74,6 +80,8 @@ With the extension loaded, scan the captured memory as `Float64` for `12345.5`. 
 `/test/bridge-payload-harness.html` verifies that the content bridge makes an independent structured clone while retaining nested addresses and special numeric values. The final cross-realm check must still be run with the temporary extension loaded in Firefox.
 
 `/test/panel-watchdog-harness.html` verifies that a matching result ends the 15-second request watchdog before candidate rendering and that malformed rows produce an immediate rendering error instead of a false timeout.
+
+`/test/popup-harness.html` verifies the toolbar's type-free scan and its type-correct candidate write/freeze actions. `/test/background-session-harness.html` verifies that the popup and full inspector can share one captured page and that a quick scan survives closing and reopening the popup.
 
 `/test/scan-cancellation-harness.html` verifies that cancellation interrupts an active scan and that a replacement scan succeeds immediately afterward.
 
@@ -87,3 +95,4 @@ With the extension loaded, scan the captured memory as `Float64` for `12345.5`. 
 - A scan covers the memory range that existed when it started; pages added during that scan are considered by the next first scan.
 - It captures instantiation through the two standard asynchronous WebAssembly APIs, not direct `new WebAssembly.Instance(...)` construction.
 - The Ruffle label is heuristic; the panel also exposes other captured WASM memories so detection failures do not hide the target.
+- ActionScript detection is a scan-planning hint, not semantic ActionScript inspection. Hack Engine does not yet decode Ruffle's internal tagged values, objects, property names, or paths such as `game.cash`.

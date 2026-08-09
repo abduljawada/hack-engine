@@ -9,8 +9,8 @@ window.RUFFLE_MEMORY_STATUS = {
       description: "Exact, inclusive-range, and unknown-value scans with aligned or byte-level addressing.",
     },
     {
-      title: "Representation discovery",
-      description: "Search eight integer and floating-point representations together, including scaled values.",
+      title: "Type-free quick scan",
+      description: "Use Ruffle movie metadata to guide a simple toolbar scan, with a safe all-format fallback.",
     },
     {
       title: "Comparison refinement",
@@ -46,7 +46,7 @@ window.RUFFLE_MEMORY_STATUS = {
       status: "Current",
       state: "current",
       description: "Turn scan results into a manageable working set and make long scans interruptible.",
-      items: ["200-row preview", "Auto-watch", "Batch actions", "Labels and groups", "Scan history"],
+      items: ["200-row preview", "Type-free popup", "Auto-watch", "Batch actions", "Labels and groups", "Scan history"],
     },
     {
       version: "0.8",

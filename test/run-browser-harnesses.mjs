@@ -11,12 +11,14 @@ const allHarnesses = [
   ["freeze", "/test/freeze-harness.html", 30_000],
   ["watch diagnostics", "/test/watch-diagnostics-harness.html", 30_000],
   ["representation discovery", "/test/representation-discovery-harness.html", 90_000],
+  ["AVM-guided scan", "/test/avm-guided-scan-harness.html", 90_000],
   ["candidate retention", "/test/candidate-retention-harness.html", 30_000],
   ["memory growth", "/test/memory-growth-harness.html", 30_000],
   ["advanced scan", "/test/advanced-scan-harness.html", 90_000],
   ["bridge payload", "/test/bridge-payload-harness.html", 30_000],
   ["panel watchdog", "/test/panel-watchdog-harness.html", 30_000],
   ["toolbar popup", "/test/popup-harness.html", 30_000],
+  ["background session", "/test/background-session-harness.html", 30_000],
   ["large unknown scan", "/test/large-unknown-harness.html", 240_000],
 ];
 const requestedHarness = process.argv[3];

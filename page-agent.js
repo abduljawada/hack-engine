@@ -9,6 +9,7 @@
   const SNAPSHOT_DB_NAME = "ruffle-memory-inspector-snapshots-v1";
   const SNAPSHOT_STORE_NAME = "chunks";
   const AUTO_TYPES = ["i8", "u8", "i16", "u16", "i32", "u32", "f32", "f64"];
+  const RUFFLE_PLAYER_SELECTOR = "ruffle-player, ruffle-embed, ruffle-object";
 
   if (window.__ruffleMemoryInspectorV1) {
     return;
@@ -90,6 +91,7 @@
   }
 
   function describeInstance(record) {
+    const avmKind = record.looksLikeRuffle ? detectRuffleAvmKind() : "unknown";
     return {
       id: record.id,
       url: location.href,
@@ -97,12 +99,29 @@
       memoryBytes: record.memory.buffer.byteLength,
       exportNames: record.exportNames,
       looksLikeRuffle: record.looksLikeRuffle,
+      avmKind,
     };
   }
 
   function detectRuffle(hint, exportNames) {
     const text = `${hint || ""} ${exportNames.join(" ")}`;
-    return /ruffle/i.test(text) || Boolean(document.querySelector("ruffle-player"));
+    return /ruffle/i.test(text) || Boolean(document.querySelector(RUFFLE_PLAYER_SELECTOR));
+  }
+
+  function detectRuffleAvmKind() {
+    const kinds = new Set();
+    for (const player of document.querySelectorAll(RUFFLE_PLAYER_SELECTOR)) {
+      try {
+        const api = typeof player.ruffle === "function" ? player.ruffle(1) : player;
+        const metadata = api?.metadata ?? player.metadata;
+        if (typeof metadata?.isActionScript3 === "boolean") {
+          kinds.add(metadata.isActionScript3 ? "avm2" : "avm1");
+        }
+      } catch {
+        // Older or partially initialized Ruffle players may not expose metadata.
+      }
+    }
+    return kinds.size === 1 ? [...kinds][0] : "unknown";
   }
 
   function collectImportedMemories(imports) {
@@ -961,8 +980,28 @@
     });
   }
 
-  function autoScanTypes() {
-    return AUTO_TYPES.map((type) => ({ type, spec: typeSpecs[type] }));
+  function autoScanTypes(types = AUTO_TYPES) {
+    return types.map((type) => ({ type, spec: typeSpecs[type] }));
+  }
+
+  function smartScanTypes(record, rawValue, rawMaxValue, multiplier, condition) {
+    const avmKind = record.looksLikeRuffle ? detectRuffleAvmKind() : "unknown";
+    if (avmKind === "avm1") {
+      return ["f64"];
+    }
+    if (avmKind !== "avm2") {
+      return AUTO_TYPES.slice();
+    }
+
+    if (!["exact", "range", "increasedBy", "decreasedBy"].includes(condition)) {
+      return ["i32", "u32", "f64"];
+    }
+    const values = [rawValue, condition === "range" ? rawMaxValue : rawValue]
+      .map((value) => Number(value) * multiplier)
+      .filter(Number.isFinite);
+    return values.some((value) => !Number.isInteger(value))
+      ? ["f64"]
+      : ["i32", "u32", "f64"];
   }
 
   function emptyCandidatesFor(record, type, spec, alignment, byteLength) {
@@ -978,22 +1017,23 @@
     multiplier,
     condition,
     alignment,
+    types,
   }) {
     const byteLength = record.memory.buffer.byteLength;
     const sets = new Map();
     if (condition === "unknown") {
       const snapshot = await captureSnapshot(record, requestId, byteLength, typeSpecs.f64);
-      for (const { type, spec } of autoScanTypes()) {
+      for (const { type, spec } of autoScanTypes(types)) {
         const stride = scanStride(spec, alignment);
         sets.set(
           type,
           createAllCandidateSet(slotCountFor(byteLength, spec, stride), type, stride, snapshot),
         );
       }
-      return { multi: true, sets, snapshot, multiplier };
+      return { multi: true, sets, snapshot, multiplier, types };
     }
 
-    for (const { type, spec } of autoScanTypes()) {
+    for (const { type, spec } of autoScanTypes(types)) {
       const stride = scanStride(spec, alignment);
       try {
         sets.set(type, await firstValueScan({
@@ -1017,7 +1057,7 @@
     const snapshot = condition === "range"
       ? await captureAutoCandidateSnapshot({ requestId, record, sets })
       : null;
-    return { multi: true, sets, snapshot, multiplier };
+    return { multi: true, sets, snapshot, multiplier, types };
   }
 
   async function refineAutoLiveScan({
@@ -1033,7 +1073,7 @@
     const sets = new Map();
     const byteLength = record.memory.buffer.byteLength;
     const valueCondition = condition === "exact" || condition === "range";
-    for (const { type, spec } of autoScanTypes()) {
+    for (const { type, spec } of autoScanTypes(previous.types)) {
       const prior = previous.sets.get(type);
       const stride = scanStride(spec, alignment);
       if (!prior || prior.stride !== stride) {
@@ -1081,7 +1121,7 @@
     const snapshot = condition === "exact"
       ? null
       : await captureAutoCandidateSnapshot({ requestId, record, sets });
-    return { multi: true, sets, snapshot, multiplier };
+    return { multi: true, sets, snapshot, multiplier, types: previous.types };
   }
 
   async function refineAutoSnapshotScan({
@@ -1105,7 +1145,7 @@
     const configurations = [];
     const valueCondition = condition === "exact" || condition === "range";
 
-    for (const { type, spec } of autoScanTypes()) {
+    for (const { type, spec } of autoScanTypes(previous.types)) {
       const prior = previous.sets.get(type);
       const stride = scanStride(spec, alignment);
       if (!prior || prior.stride !== stride) {
@@ -1235,7 +1275,13 @@
     for (const candidates of sets.values()) {
       candidates.snapshot = currentSnapshot;
     }
-    return { multi: true, sets, snapshot: currentSnapshot, multiplier };
+    return {
+      multi: true,
+      sets,
+      snapshot: currentSnapshot,
+      multiplier,
+      types: previous.types,
+    };
   }
 
   function sendAutoScanResults(requestId, record, group) {
@@ -1278,8 +1324,10 @@
       kind: "scanResults",
       requestId,
       instanceId: record.id,
-      type: "auto",
+      type: group.mode || "auto",
       multiplier: group.multiplier,
+      avmKind: record.looksLikeRuffle ? detectRuffleAvmKind() : "unknown",
+      searchedTypes: group.types,
       total,
       preview,
       allCandidates,
@@ -1292,6 +1340,7 @@
     const {
       requestId,
       instanceId,
+      type: mode = "auto",
       rawValue,
       rawMaxValue,
       multiplier: rawMultiplier = 1,
@@ -1304,7 +1353,7 @@
       throw new Error("The selected WASM instance no longer exists.");
     }
     const multiplier = parseMultiplier(rawMultiplier);
-    const key = scanKey(record.id, "auto");
+    const key = scanKey(record.id, mode);
     const previous = refine ? scans.get(key) : null;
     if (refine && !previous) {
       throw new Error("No previous scan exists. Run a first scan before filtering.");
@@ -1319,6 +1368,11 @@
       await clearInstanceScans(record.id);
       await yieldToPage(requestId);
     }
+    const types = refine
+      ? previous.types
+      : mode === "smart"
+        ? smartScanTypes(record, rawValue, rawMaxValue, multiplier, condition)
+        : AUTO_TYPES.slice();
     const group = refine
       ? previous.snapshot
         ? await refineAutoSnapshotScan({
@@ -1349,7 +1403,9 @@
         multiplier,
         condition,
         alignment,
+        types,
       });
+    group.mode = mode;
     scans.set(key, group);
     if (previous?.snapshot && previous.snapshot !== group.snapshot) {
       deleteSnapshot(previous.snapshot).catch(() => {});
@@ -1369,7 +1425,7 @@
     alignment = "aligned",
     refine,
   }) {
-    if (type === "auto") {
+    if (type === "auto" || type === "smart") {
       return autoMemoryScan({
         requestId,
         instanceId,
