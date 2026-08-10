@@ -5,6 +5,9 @@ const popupHarnessState = {
   popupWindows: [],
   queriedTabs: 0,
   retrievedTabs: [],
+  sidebarPanels: [],
+  sidebarOpenCount: 0,
+  sidebarCloseCount: 0,
   reloadedTabs: [],
   commands: [],
   closed: false,
@@ -158,6 +161,17 @@ globalThis.browser = {
     async update(windowId, options) {
       popupHarnessState.updatedWindows.push({ windowId, options });
       return popupHarnessState.popupWindows.find(({ id }) => id === windowId);
+    },
+  },
+  sidebarAction: {
+    async setPanel(options) {
+      popupHarnessState.sidebarPanels.push(options);
+    },
+    async open() {
+      popupHarnessState.sidebarOpenCount += 1;
+    },
+    async close() {
+      popupHarnessState.sidebarCloseCount += 1;
     },
   },
 };

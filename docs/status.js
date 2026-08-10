@@ -10,7 +10,7 @@ window.RUFFLE_MEMORY_STATUS = {
     },
     {
       title: "Type-free quick scan",
-      description: "Use a compact toolbar scan with Ruffle-guided formats, or pin it while interacting with the game.",
+      description: "Use a compact toolbar scan with Ruffle-guided formats, or dock it in Firefox's sidebar while interacting with the game.",
     },
     {
       title: "Comparison refinement",

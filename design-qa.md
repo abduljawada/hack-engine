@@ -22,7 +22,8 @@
 - Quick scan: the simple view exposes condition and value controls without a numeric-type selector, and explains the detected ActionScript strategy in one line.
 - Progressive disclosure: range maximum, cancellation/reset controls, results, and the candidate editor remain hidden until relevant.
 - Header efficiency: product name and pin share one row; the decorative product mark, subtitle, and active-tab block were removed.
-- Persistent mode: the active mint pin communicates that the utility window remains available while interacting with the inspected page.
+- Docked mode: the active mint pin communicates that the Firefox sidebar is open and remains visible while interacting with the inspected page.
+- Floating mode: **Pop out window** is a separate secondary action because an ordinary extension window cannot be forced to stay above Firefox.
 
 ## Interaction QA — Firefox
 
@@ -33,7 +34,8 @@
 - Popup harness completed without an uncaught runtime error.
 - ActionScript-guided first scans send the internal smart mode, while candidate writes and freezes retain the detected numeric type.
 - Quick scan state and completed results survive closing and reopening the toolbar popup.
-- Pinning creates or focuses one persistent utility window per inspected tab, retains that original tab target, and opens related tabs in the target's original browser window.
+- Pinning docks the controls in Firefox's sidebar, retains the original inspected-tab target, and the active pin closes the sidebar.
+- Pop out creates or focuses one floating utility window per inspected tab and opens related tabs in the target's original browser window.
 
 ## Iteration history
 
@@ -42,7 +44,7 @@
 - Quick-scan pass: P2 — author CSS overrode the native `hidden` attribute, exposing the range maximum and empty candidate editor during an exact first scan.
 - Resolution: made hidden state authoritative and added computed-style regression assertions.
 - Compact-header pass: removed redundant identity and tab context, saving roughly two full content rows before the scan controls.
-- Pinning pass: verified normal and pinned modes independently in Firefox, including target-tab preservation and unpin behavior.
+- Pinning pass: replaced the focus-sensitive floating pin behavior with Firefox sidebar docking and kept floating mode as a separate pop-out action.
 - Post-fix review: no remaining P0, P1, or P2 visual or interaction findings.
 
 final result: passed

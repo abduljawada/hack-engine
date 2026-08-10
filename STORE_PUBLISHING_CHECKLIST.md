@@ -8,6 +8,7 @@ Target: publish Hack Engine as a Firefox-first, cross-browser Manifest V3 extens
 
 - [ ] Update the local Git remote from the old `ruffle-memory-inspector` URL to the renamed `hack-engine` repository and verify fetch/push.
 - [ ] Add a Chrome-compatible background declaration. Chrome MV3 requires `background.service_worker`; Firefox currently uses `background.scripts`. A shared manifest can declare both against `background.js` after Chromium testing.
+- [ ] Add and validate a Chrome `side_panel` declaration corresponding to Firefox's current `sidebar_action`, or provide a clearly documented Chrome fallback.
 - [ ] Add Firefox's required data declaration under `browser_specific_settings.gecko.data_collection_permissions`. If the release still sends nothing outside the local browser, declare `required: ["none"]`.
 - [ ] Replace the development Firefox ID `ruffle-memory-inspector@example.local` with a deliberate, permanent Hack Engine add-on ID before the first AMO submission. Do not change it after release.
 - [ ] Publish a privacy page that accurately explains local access to tab URLs, page content, and WebAssembly memory; whether anything is stored; and that nothing is transmitted externally in the current build.
@@ -44,6 +45,7 @@ Target: publish Hack Engine as a Firefox-first, cross-browser Manifest V3 extens
 - [ ] Test popup reconnection and scan-session behavior after Chrome suspends and restarts the service worker.
 - [ ] Verify `world: "MAIN"`, `all_frames`, `match_about_blank`, and `match_origin_as_fallback` on current stable Chrome and Firefox.
 - [ ] Verify that `browser_specific_settings` is accepted/ignored appropriately by the Chrome package, or produce browser-specific manifests from one reviewed source.
+- [ ] Verify Firefox sidebar docking and Chrome side-panel docking against their store packages; confirm the separate pop-out fallback remains tab-bound in both browsers.
 - [ ] Test the toolbar popup, DevTools panel, capture, exact/range/unknown scans, comparison refinement, write, freeze, watches, cancellation, memory growth, and popup reopening in both browsers.
 - [ ] Test a Ruffle AVM1 game, a Ruffle AVM2 game, and a non-Ruffle WebAssembly control page in both browsers.
 - [ ] Test nested and cross-origin player frames where host permissions allow access.

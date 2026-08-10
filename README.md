@@ -8,7 +8,8 @@ Firefox-first WebExtension prototype for inspecting WebAssembly memory used by e
 - Captures exported or imported `WebAssembly.Memory` objects in every permitted frame.
 - Adds a **Hack Engine** Firefox DevTools panel.
 - Adds a compact toolbar popup with a type-free quick scan, candidate writing, and freezing; the full inspector retains explicit numeric controls.
-- Provides a pin control that moves the popup into a persistent extension window bound to the original game tab, allowing page interaction without losing the controls.
+- Provides a pin control that docks the popup in Firefox's sidebar, bound to the original game tab, so the controls remain visible while interacting with the page.
+- Provides a separate pop-out utility window for users who prefer a floating layout.
 - Reads Ruffle's public movie metadata when available to distinguish ActionScript 1/2 from ActionScript 3 and prioritize the relevant numeric representations automatically.
 - Supports exact, inclusive range, and unknown-value scans for signed/unsigned 8-, 16-, and 32-bit integers plus `f32` and `f64`.
 - Provides an **All numeric types** discovery mode whose candidates retain their detected representation.
@@ -39,7 +40,7 @@ Use **All numeric types** when the game representation is unknown. Results show 
 
 For the shortest workflow, open **Hack Engine** from the Firefox toolbar and use **Quick scan**. It does not ask for a numeric type. For an ActionScript 1/2 movie it starts with `f64`; for ActionScript 3 it starts with `i32`, `u32`, and `f64` as appropriate. If Ruffle does not expose usable metadata, it safely falls back to all eight supported representations. Results retain their detected type internally, so selecting, writing, and freezing a candidate remains type-correct. **Search all number formats** is available after a guided exact or range scan when the first pass does not find the desired value.
 
-Browser action popups close when focus returns to the page. Use the pin in the popup header to open the same controls in a small persistent browser window. Reopening the toolbar popup focuses the existing pinned window for that tab instead of creating a duplicate. The persistent window is not an operating-system always-on-top window, but it remains open until closed or unpinned.
+Browser action popups close when focus returns to the page. In Firefox, use the pin in the popup header to dock the same controls in the browser sidebar. The sidebar remains visible beside the inspected page and stays bound to the original game tab; use the active pin again to close it. **Pop out window** opens or focuses one floating utility window for that tab. A pop-out is an ordinary browser window, so the operating system may place it behind the main Firefox window when the page is clicked.
 
 ## Load in Firefox
 
@@ -86,7 +87,7 @@ With the extension loaded, scan the captured memory as `Float64` for `12345.5`. 
 
 `/test/panel-watchdog-harness.html` verifies that a matching result ends the 15-second request watchdog before candidate rendering and that malformed rows produce an immediate rendering error instead of a false timeout.
 
-`/test/popup-harness.html` verifies the toolbar's type-free scan and its type-correct candidate write/freeze actions. `/test/background-session-harness.html` verifies that the popup and full inspector can share one captured page and that a quick scan survives closing and reopening the popup.
+`/test/popup-harness.html` verifies the toolbar's type-free scan, type-correct candidate write/freeze actions, Firefox sidebar docking, and pop-out reuse. `/test/background-session-harness.html` verifies that the popup and full inspector can share one captured page and that a quick scan survives closing and reopening the popup.
 
 `/test/scan-cancellation-harness.html` verifies that cancellation interrupts an active scan and that a replacement scan succeeds immediately afterward.
 

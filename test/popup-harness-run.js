@@ -5,7 +5,9 @@ function delay() {
 }
 
 setTimeout(async () => {
-  const pinnedMode = new URLSearchParams(location.search).get("pinned") === "1";
+  const parameters = new URLSearchParams(location.search);
+  const sidebarMode = parameters.get("sidebar") === "1";
+  const popoutMode = parameters.get("popout") === "1";
   const rendered =
     document.querySelector(".popup-header h1").textContent === "Hack Engine" &&
     !document.querySelector(".brand-row") &&
@@ -21,12 +23,12 @@ setTimeout(async () => {
     !document.querySelector("#open-inspector").disabled &&
     !document.querySelector("#type");
 
-  if (pinnedMode) {
+  if (sidebarMode) {
     const pin = document.querySelector("#pin-popup");
     const boundToOriginalTab =
-      document.body.classList.contains("pinned-window") &&
+      document.body.classList.contains("sidebar-panel") &&
       pin.classList.contains("active") &&
-      pin.getAttribute("aria-label").includes("Close pinned") &&
+      pin.getAttribute("aria-label").includes("Close Hack Engine sidebar") &&
       popupHarnessState.retrievedTabs.length === 1 &&
       popupHarnessState.retrievedTabs[0] === 77 &&
       popupHarnessState.queriedTabs === 0;
@@ -39,30 +41,69 @@ setTimeout(async () => {
       !popupHarnessState.closed;
     pin.click();
     await delay();
-    popupHarnessResult.textContent = rendered && boundToOriginalTab && openedInOriginalWindow && popupHarnessState.closed
-      ? "PASS: pinned popup stays bound to its original inspected tab and exposes unpin behavior."
-      : "FAIL: pinned popup did not preserve its target tab or window state.";
+    const sidebarClosed = popupHarnessState.sidebarCloseCount === 1 && !popupHarnessState.closed;
+    popupHarnessResult.textContent = rendered && boundToOriginalTab && openedInOriginalWindow && sidebarClosed
+      ? "PASS: Firefox sidebar stays bound to its original inspected tab and exposes undock behavior."
+      : "FAIL: Firefox sidebar did not preserve its target tab or docked state.";
+    return;
+  }
+
+  if (popoutMode) {
+    const pin = document.querySelector("#pin-popup");
+    const boundToOriginalTab =
+      document.body.classList.contains("popout-window") &&
+      !pin.classList.contains("active") &&
+      pin.getAttribute("aria-label").includes("Dock Hack Engine") &&
+      document.querySelector("#pop-out-window").hidden &&
+      popupHarnessState.retrievedTabs.length === 1 &&
+      popupHarnessState.retrievedTabs[0] === 77 &&
+      popupHarnessState.queriedTabs === 0;
+    pin.click();
+    await delay();
+    const docked =
+      popupHarnessState.sidebarPanels.length === 1 &&
+      popupHarnessState.sidebarPanels[0].tabId === 77 &&
+      new URL(popupHarnessState.sidebarPanels[0].panel).searchParams.get("sidebar") === "1" &&
+      popupHarnessState.sidebarOpenCount === 1 &&
+      popupHarnessState.closed;
+    popupHarnessResult.textContent = rendered && boundToOriginalTab && docked
+      ? "PASS: pop-out mode remains tab-bound and can dock into the Firefox sidebar."
+      : "FAIL: pop-out mode did not preserve or dock its target tab.";
     return;
   }
 
   const pin = document.querySelector("#pin-popup");
   pin.click();
   await delay();
-  const pinnedUrl = new URL(popupHarnessState.createdWindows[0]?.url || location.href);
-  const firstPinOpened =
+  const sidebarUrl = new URL(popupHarnessState.sidebarPanels[0]?.panel || location.href);
+  const pinDocked =
+    popupHarnessState.sidebarPanels.length === 1 &&
+    popupHarnessState.sidebarPanels[0].tabId === 77 &&
+    sidebarUrl.pathname.endsWith("/popup/popup.html") &&
+    sidebarUrl.searchParams.get("sidebar") === "1" &&
+    sidebarUrl.searchParams.get("tabId") === "77" &&
+    popupHarnessState.sidebarOpenCount === 1 &&
+    popupHarnessState.closed;
+
+  popupHarnessState.closed = false;
+  const popOut = document.querySelector("#pop-out-window");
+  popOut.click();
+  await delay();
+  const popoutUrl = new URL(popupHarnessState.createdWindows[0]?.url || location.href);
+  const firstPopoutOpened =
     popupHarnessState.createdWindows.length === 1 &&
     popupHarnessState.createdWindows[0].type === "popup" &&
     popupHarnessState.createdWindows[0].width === 400 &&
     popupHarnessState.createdWindows[0].height === 680 &&
-    pinnedUrl.pathname.endsWith("/popup/popup.html") &&
-    pinnedUrl.searchParams.get("pinned") === "1" &&
-    pinnedUrl.searchParams.get("tabId") === "77" &&
+    popoutUrl.pathname.endsWith("/popup/popup.html") &&
+    popoutUrl.searchParams.get("popout") === "1" &&
+    popoutUrl.searchParams.get("tabId") === "77" &&
     popupHarnessState.closed;
 
   popupHarnessState.closed = false;
-  pin.click();
+  popOut.click();
   await delay();
-  const secondPinReused =
+  const secondPopoutReused =
     popupHarnessState.createdWindows.length === 1 &&
     popupHarnessState.updatedWindows.length === 1 &&
     popupHarnessState.updatedWindows[0].windowId === 91 &&
@@ -118,7 +159,7 @@ setTimeout(async () => {
     popupHarnessState.createdTabs.at(-1)?.windowId === 10;
 
   popupHarnessResult.textContent =
-    rendered && firstPinOpened && secondPinReused && automaticScan && typedActions && inspectorOpened && refreshed && helpOpened
-      ? "PASS: compact toolbar popup, persistent pinning, and typed quick-scan actions work."
+    rendered && pinDocked && firstPopoutOpened && secondPopoutReused && automaticScan && typedActions && inspectorOpened && refreshed && helpOpened
+      ? "PASS: compact toolbar popup, Firefox sidebar docking, pop-out reuse, and typed quick-scan actions work."
       : "FAIL: toolbar quick-scan behavior did not match the active Ruffle state.";
 }, 80);

@@ -3,12 +3,14 @@
 
   const extensionApi = globalThis.browser ?? globalThis.chrome;
   const popupParameters = new URLSearchParams(location.search);
-  const pinnedTabId = Number(popupParameters.get("tabId"));
-  const isPinnedWindow =
-    popupParameters.get("pinned") === "1" &&
+  const boundTabId = Number(popupParameters.get("tabId"));
+  const isSidebarPanel = popupParameters.get("sidebar") === "1";
+  const isPopoutWindow = popupParameters.get("popout") === "1";
+  const hasBoundTab =
+    (isSidebarPanel || isPopoutWindow) &&
     popupParameters.has("tabId") &&
-    Number.isInteger(pinnedTabId) &&
-    pinnedTabId >= 0;
+    Number.isInteger(boundTabId) &&
+    boundTabId >= 0;
   const instances = new Map();
   const frozenCandidates = new Set();
   let activeTab = null;
@@ -50,6 +52,7 @@
     write: document.querySelector("#quick-write"),
     freeze: document.querySelector("#quick-freeze"),
     openInspector: document.querySelector("#open-inspector"),
+    popOut: document.querySelector("#pop-out-window"),
     refreshConnection: document.querySelector("#refresh-connection"),
     howItWorks: document.querySelector("#how-it-works"),
   };
@@ -73,6 +76,73 @@
     return Number.isInteger(activeTab?.windowId)
       ? { url, windowId: activeTab.windowId }
       : { url };
+  }
+
+  function panelPath(mode) {
+    const parameters = new URLSearchParams({ [mode]: "1", tabId: String(activeTab.id) });
+    return `popup/popup.html?${parameters}`;
+  }
+
+  async function openDockedPanel() {
+    if (!activeTab?.id) {
+      return false;
+    }
+    const path = panelPath("sidebar");
+    if (extensionApi.sidebarAction) {
+      await extensionApi.sidebarAction.setPanel({
+        tabId: activeTab.id,
+        panel: extensionApi.runtime.getURL(path),
+      });
+      await extensionApi.sidebarAction.open();
+      return true;
+    }
+    if (extensionApi.sidePanel) {
+      await extensionApi.sidePanel.setOptions({
+        tabId: activeTab.id,
+        path,
+        enabled: true,
+      });
+      await extensionApi.sidePanel.open({ tabId: activeTab.id });
+      return true;
+    }
+    return false;
+  }
+
+  async function closeDockedPanel() {
+    if (extensionApi.sidebarAction) {
+      await extensionApi.sidebarAction.close();
+      return;
+    }
+    if (extensionApi.sidePanel?.close && activeTab?.id) {
+      await extensionApi.sidePanel.close({ tabId: activeTab.id });
+    }
+  }
+
+  async function openPopoutWindow() {
+    if (!activeTab?.id || !extensionApi.windows) {
+      throw new Error("A persistent extension window is not available in this browser.");
+    }
+    const url = new URL(extensionApi.runtime.getURL("popup/popup.html"));
+    url.searchParams.set("popout", "1");
+    url.searchParams.set("tabId", String(activeTab.id));
+    const browserWindows = await extensionApi.windows.getAll({
+      populate: true,
+      windowTypes: ["popup"],
+    });
+    const existing = browserWindows.find((browserWindow) =>
+      browserWindow.tabs?.some((tab) => tab.url === url.href),
+    );
+    if (existing?.id !== undefined) {
+      await extensionApi.windows.update(existing.id, { focused: true });
+    } else {
+      await extensionApi.windows.create({
+        url: url.href,
+        type: "popup",
+        width: 400,
+        height: 680,
+        focused: true,
+      });
+    }
   }
 
   function candidateKey(candidate) {
@@ -394,8 +464,8 @@
   }
 
   async function initialize() {
-    const tab = isPinnedWindow
-      ? await extensionApi.tabs.get(pinnedTabId)
+    const tab = hasBoundTab
+      ? await extensionApi.tabs.get(boundTabId)
       : (await extensionApi.tabs.query({ active: true, currentWindow: true }))[0];
     activeTab = tab || null;
     elements.pin.disabled = !activeTab?.id;
@@ -420,39 +490,31 @@
   elements.condition.addEventListener("change", updateConditionControls);
 
   elements.pin.addEventListener("click", async () => {
-    if (isPinnedWindow) {
-      window.close();
-      return;
-    }
-    if (!activeTab?.id || !extensionApi.windows) {
-      setQuickStatus("A persistent extension window is not available in this browser.", "error");
-      return;
-    }
-    const url = new URL(extensionApi.runtime.getURL("popup/popup.html"));
-    url.searchParams.set("pinned", "1");
-    url.searchParams.set("tabId", String(activeTab.id));
     try {
-      const browserWindows = await extensionApi.windows.getAll({
-        populate: true,
-        windowTypes: ["popup"],
-      });
-      const existing = browserWindows.find((browserWindow) =>
-        browserWindow.tabs?.some((tab) => tab.url === url.href),
-      );
-      if (existing?.id !== undefined) {
-        await extensionApi.windows.update(existing.id, { focused: true });
-      } else {
-        await extensionApi.windows.create({
-          url: url.href,
-          type: "popup",
-          width: 400,
-          height: 680,
-          focused: true,
-        });
+      if (isSidebarPanel) {
+        await closeDockedPanel();
+        return;
+      }
+      const docked = await openDockedPanel();
+      if (!docked) {
+        await openPopoutWindow();
       }
       window.close();
     } catch {
-      setQuickStatus("Hack Engine could not open the persistent window.", "error");
+      setQuickStatus("Hack Engine could not open its docked panel.", "error");
+    }
+  });
+
+  elements.popOut.addEventListener("click", async () => {
+    try {
+      await openPopoutWindow();
+      if (isSidebarPanel) {
+        await closeDockedPanel();
+      } else if (!isPopoutWindow) {
+        window.close();
+      }
+    } catch (error) {
+      setQuickStatus(error?.message || "Hack Engine could not open the utility window.", "error");
     }
   });
 
@@ -607,7 +669,7 @@
     url.searchParams.set("standalone", "1");
     url.searchParams.set("tabId", String(activeTab.id));
     await extensionApi.tabs.create(newTabOptions(url.href));
-    if (!isPinnedWindow) {
+    if (!isSidebarPanel && !isPopoutWindow) {
       window.close();
     }
   });
@@ -625,7 +687,7 @@
     await extensionApi.tabs.create(newTabOptions(
       "https://abduljawada.github.io/hack-engine/#capabilities",
     ));
-    if (!isPinnedWindow) {
+    if (!isSidebarPanel && !isPopoutWindow) {
       window.close();
     }
   });
@@ -637,11 +699,16 @@
 
   updateConditionControls();
   updateScanControls();
-  if (isPinnedWindow) {
-    document.body.classList.add("pinned-window");
+  if (isSidebarPanel) {
+    document.body.classList.add("sidebar-panel");
     elements.pin.classList.add("active");
-    elements.pin.setAttribute("aria-label", "Close pinned Hack Engine window");
-    elements.pin.title = "Close pinned window";
+    elements.pin.setAttribute("aria-label", "Close Hack Engine sidebar");
+    elements.pin.title = "Close sidebar";
+  } else if (isPopoutWindow) {
+    document.body.classList.add("popout-window");
+    elements.pin.setAttribute("aria-label", "Dock Hack Engine in the sidebar");
+    elements.pin.title = "Dock in sidebar";
+    elements.popOut.hidden = true;
   }
   initialize().catch(() => {
     elements.pin.disabled = true;

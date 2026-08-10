@@ -18,7 +18,8 @@ const allHarnesses = [
   ["bridge payload", "/test/bridge-payload-harness.html", 30_000],
   ["panel watchdog", "/test/panel-watchdog-harness.html", 30_000],
   ["toolbar popup", "/test/popup-harness.html", 30_000],
-  ["pinned toolbar popup", "/test/popup-harness.html?pinned=1&tabId=77", 30_000],
+  ["sidebar toolbar popup", "/test/popup-harness.html?sidebar=1&tabId=77", 30_000],
+  ["pop-out toolbar popup", "/test/popup-harness.html?popout=1&tabId=77", 30_000],
   ["background session", "/test/background-session-harness.html", 30_000],
   ["large unknown scan", "/test/large-unknown-harness.html", 240_000],
 ];
