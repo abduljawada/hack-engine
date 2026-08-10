@@ -50,14 +50,33 @@ The toolbar popup intentionally stays in **Simple** mode. In the persistent side
 
 Presentation state remains local to each surface. Candidate filters and sorting, expanded sections, Simple/Advanced choice, bulk checkbox selection, and unsubmitted write drafts do not move another window or overwrite work in progress.
 
-## Load in Firefox
+## Install a development build
+
+Generate reviewed browser-specific packages first:
+
+```sh
+npm install
+npm run build
+```
+
+Firefox:
 
 1. Open `about:debugging`.
 2. Select **This Firefox**.
 3. Choose **Load Temporary Add-on**.
-4. Select this folder's `manifest.json`.
+4. Select `dist/firefox/manifest.json`.
 5. Open or reload the page containing the embedded Ruffle player.
 6. Open Firefox Developer Tools and select **Hack Engine**.
+
+Chrome:
+
+1. Open `chrome://extensions`.
+2. Enable **Developer mode**.
+3. Choose **Load unpacked**.
+4. Select `dist/chrome`.
+5. Open or reload the page containing the embedded Ruffle player.
+
+Release validation is reproducible with `npm run release:verify`. The build writes Firefox and Chrome ZIPs plus `dist/SHA256SUMS.txt`; `dist` is intentionally ignored by Git.
 
 The extension needs permission on the player frame's URL. Reloading is required because the WASM hook must run before Ruffle initializes.
 
@@ -91,7 +110,7 @@ With the extension loaded, scan the captured memory as `Float64` for `12345.5`. 
 
 `/test/large-unknown-harness.html` reproduces Ruffle's 225.5 MiB memory scale and verifies that an unknown scan completes with a chunk-compressed snapshot instead of duplicating the entire heap.
 
-`/test/bridge-payload-harness.html` verifies that the content bridge makes an independent structured clone while retaining nested addresses and special numeric values. The final cross-realm check must still be run with the temporary extension loaded in Firefox.
+`/test/bridge-payload-harness.html` verifies that the content bridge makes an independent structured clone while retaining nested addresses and special numeric values. The live extension harness accepts Firefox's structured-clone preservation and Chrome's JSON conversion of non-finite numbers while verifying that nested candidate rows survive the complete page/content/background round trip.
 
 `/test/panel-watchdog-harness.html` verifies that a matching result ends the 15-second request watchdog before candidate rendering and that malformed rows produce an immediate rendering error instead of a false timeout.
 
@@ -99,7 +118,9 @@ With the extension loaded, scan the captured memory as `Float64` for `12345.5`. 
 
 `/test/scan-cancellation-harness.html` verifies that cancellation interrupts an active scan and that a replacement scan succeeds immediately afterward.
 
-`node test/run-browser-harnesses.mjs` runs all page-level harnesses in a real headless browser. With the local server running, `node test/run-firefox-extension-harness.mjs` starts an isolated headless Firefox profile, temporarily installs the extension through WebDriver BiDi, and verifies nested candidate data across the actual page/content/background bridge.
+`node test/run-browser-harnesses.mjs` runs all page-level harnesses in a real headless browser. With the local server running, `node test/run-firefox-extension-harness.mjs` starts an isolated headless Firefox profile and installs `dist/firefox` through WebDriver BiDi. `node test/run-chrome-extension-harness.mjs` loads `dist/chrome` through Chrome's extension-debugging protocol. Both verify nested candidate data across the actual page/content/background bridge.
+
+See [PRIVACY.md](PRIVACY.md), [USER_GUIDE.md](USER_GUIDE.md), [SECURITY.md](SECURITY.md), and [CHANGELOG.md](CHANGELOG.md) for store-facing documentation.
 
 ## Intentional limitations
 

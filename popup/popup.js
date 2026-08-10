@@ -18,7 +18,7 @@
   });
   const popupParameters = new URLSearchParams(location.search);
   const boundTabId = Number(popupParameters.get("tabId"));
-  const isSidebarPanel = popupParameters.get("sidebar") === "1";
+  const isSidebarPanel = popupParameters.get("sidebar") === "1" || location.pathname.endsWith("/sidebar.html");
   const isPopoutWindow = popupParameters.get("popout") === "1";
   const hasBoundTab =
     (isSidebarPanel || isPopoutWindow) &&

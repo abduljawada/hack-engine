@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Privacy policy for the Hack Engine browser extension." />
+    <meta name="theme-color" content="#10131a" />
+    <title>Hack Engine — Privacy</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="Hack Engine home"><span class="brand-mark" aria-hidden="true">HE</span><span>Hack Engine</span></a>
+      <nav aria-label="Primary navigation"><a href="./">Status</a><a href="privacy.html" aria-current="page">Privacy</a><a href="https://github.com/abduljawada/hack-engine/issues">Support</a></nav>
+    </header>
+    <main id="main">
+      <section class="section-block policy-page">
+        <div class="section-heading"><p class="eyebrow">Effective August 10, 2026</p><h1>Privacy policy</h1><p>Hack Engine processes inspected-tab data locally to provide user-requested WebAssembly memory tools.</p></div>
+        <h2>Information handled</h2>
+        <p>Hack Engine handles the inspected tab and frame URLs, public Ruffle metadata, numeric WebAssembly memory values and addresses, scan settings, watches, labels, groups, and values entered for writes or freezes. Workspace files are read or saved only when the user explicitly imports or exports them.</p>
+        <h2>Local use and storage</h2>
+        <p>The information is used only for capture, scans, live candidates and watches, writes, and freezes. Active state is held for the inspected tab. UI preferences, watch metadata, and up to 20 history entries use extension-page session storage. Unknown-value scans can temporarily place compressed snapshot chunks in the inspected origin's IndexedDB; reset, replacement, cancellation, refinement, or the next snapshot-storage initialization removes them.</p>
+        <h2>No external transmission</h2>
+        <p>Hack Engine does not send browsing activity, page content, memory values, scan results, or analytics to the developer or any third party. It has no accounts, advertising, telemetry, or remote configuration and does not sell or share user information.</p>
+        <h2>Permissions</h2>
+        <p><code>tabs</code> binds controls to the inspected tab. <code>&lt;all_urls&gt;</code> permits the document-start capture hook to run before arbitrary embedded Ruffle players instantiate WebAssembly, including in permitted child frames. Chrome's <code>sidePanel</code> permission keeps the user-requested controls visible beside the page.</p>
+        <h2>Retention and control</h2>
+        <p>Resetting or replacing a scan clears its active candidates and snapshot. Reloading closes active page memory state. Browser site-data controls remove origin snapshots, and normal extension-data removal applies when Hack Engine is uninstalled. Exported JSON remains only where the user saved it.</p>
+        <h2>Contact</h2>
+        <p>Use the <a href="https://github.com/abduljawada/hack-engine/issues">public issue tracker</a> for privacy questions and the <a href="https://github.com/abduljawada/hack-engine/security/advisories/new">private security advisory form</a> for vulnerabilities.</p>
+        <p>Use Hack Engine only with software and content you own or are authorized to inspect. Raw writes are experimental and can reset or crash the player.</p>
+      </section>
+    </main>
+    <footer><p>Hack Engine · Privacy</p><p><a href="./">Project status</a></p></footer>
+  </body>
+</html>

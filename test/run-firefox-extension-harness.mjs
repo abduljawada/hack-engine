@@ -5,10 +5,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const firefoxPath = "/Applications/Firefox.app/Contents/MacOS/firefox";
-const extensionDirectory = dirname(dirname(fileURLToPath(import.meta.url)));
+const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const extensionDirectory = join(projectRoot, "dist", "firefox");
 const harnessUrl = process.argv[2] ??
   "http://127.0.0.1:8765/test/firefox-extension-bridge-harness.html";
-const profileDirectory = mkdtempSync(join(tmpdir(), "ruffle-firefox-harness-"));
+const profileDirectory = mkdtempSync(join(tmpdir(), "hack-engine-firefox-harness-"));
 
 const firefox = spawn(firefoxPath, [
   "--headless",

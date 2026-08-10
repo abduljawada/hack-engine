@@ -4,80 +4,98 @@ Last reviewed: 2026-08-10
 
 Target: publish Hack Engine as a Firefox-first, cross-browser Manifest V3 extension on Firefox Add-ons (AMO) and the Chrome Web Store (CWS).
 
+## Current release status
+
+Automated store-build work completed on 2026-08-10:
+
+- Firefox and Chrome packages are generated from one reviewed manifest by `npm run build`.
+- `npm run check` validates browser-specific manifests, local-only code, archive roots, exclusions, and SHA-256 checksums.
+- Firefox's official `web-ext` validator reports zero errors and zero warnings.
+- The complete page-level regression suite passes, including the 225.5 MiB unknown-value scan.
+- The exact generated Firefox package passes its live WebExtension bridge test in Firefox 153.0.3.
+- The exact generated Chrome package loads as an MV3 extension and passes the same live bridge test in Chrome 152.
+
+Owner decisions still required before submission:
+
+- Choose the permanent Firefox add-on ID. The current development ID must not ship.
+- Choose a project license; MIT is the simplest permissive option, while MPL-2.0 keeps modifications to covered files open.
+- Provide the public support email to show in both stores.
+- Confirm whether `0.7.0` is the first store version and whether the AMO listing should be marked Experimental.
+
 ## Release blockers found in the current repository
 
-- [ ] Update the local Git remote from the old `ruffle-memory-inspector` URL to the renamed `hack-engine` repository and verify fetch/push.
-- [ ] Add a Chrome-compatible background declaration. Chrome MV3 requires `background.service_worker`; Firefox currently uses `background.scripts`. A shared manifest can declare both against `background.js` after Chromium testing.
-- [ ] Add and validate a Chrome `side_panel` declaration corresponding to Firefox's current `sidebar_action`, or provide a clearly documented Chrome fallback.
-- [ ] Add Firefox's required data declaration under `browser_specific_settings.gecko.data_collection_permissions`. If the release still sends nothing outside the local browser, declare `required: ["none"]`.
+- [x] Update the local Git remote from the old `ruffle-memory-inspector` URL to the renamed `hack-engine` repository and verify fetch/push.
+- [x] Add a Chrome-compatible `background.service_worker` declaration through the browser-specific production build.
+- [x] Add and validate a Chrome `side_panel` declaration corresponding to Firefox's `sidebar_action`.
+- [x] Add Firefox's required `browser_specific_settings.gecko.data_collection_permissions.required: ["none"]` declaration.
 - [ ] Replace the development Firefox ID `ruffle-memory-inspector@example.local` with a deliberate, permanent Hack Engine add-on ID before the first AMO submission. Do not change it after release.
-- [ ] Publish a privacy page that accurately explains local access to tab URLs, page content, and WebAssembly memory; whether anything is stored; and that nothing is transmitted externally in the current build.
+- [ ] Publish the prepared `docs/privacy.html` page and verify its public URL after pushing the site.
 - [ ] Add a project license and select the matching license in AMO.
-- [ ] Add a reproducible production packaging command that excludes `.git`, tests, harnesses, design sources, screenshots, and other non-runtime files.
-- [ ] Complete real Chromium extension testing. The current repository has broad page-level browser coverage and Firefox bridge coverage, but not yet a formal Chrome store-build compatibility guarantee.
+- [x] Add a reproducible production packaging command that excludes `.git`, tests, harnesses, design sources, screenshots, and other non-runtime files.
+- [ ] Complete the remaining manual Chromium UI and service-worker restart matrix; the generated MV3 package already passes its automated live bridge test.
 
 ## 1. Freeze the release scope
 
 - [ ] Choose the first public store version and update `manifest.json`, the status page, release notes, and package names together.
-- [ ] Define the single purpose consistently: **Inspect and edit numeric WebAssembly memory in embedded Ruffle players for authorized local debugging.**
-- [ ] Keep the popup, DevTools panel, store description, privacy disclosures, and reviewer notes consistent with that purpose.
-- [ ] State clearly that raw writes are experimental and can reset or crash the embedded player.
-- [ ] Avoid marketing the extension as a way to cheat online services, evade security, bypass paid features, or interfere with other users.
+- [x] Define the single purpose consistently: **Inspect and edit numeric WebAssembly memory in embedded Ruffle players for authorized local debugging.**
+- [x] Keep the popup, DevTools panel, store description, privacy disclosures, and reviewer notes consistent with that purpose.
+- [x] State clearly that raw writes are experimental and can reset or crash the embedded player.
+- [x] Avoid marketing the extension as a way to cheat online services, evade security, bypass paid features, or interfere with other users.
 - [ ] Decide whether a pre-1.0 AMO listing should carry Mozilla's **Experimental** label.
-- [ ] Confirm that the release has no analytics, advertising, accounts, telemetry, native messaging, or network transmission. If this changes, redo both stores' privacy and consent work before submission.
+- [x] Confirm from the release package that it contains no analytics, advertising, accounts, telemetry, native messaging, or external network transmission.
 
 ## 2. Permissions and policy review
 
-- [ ] Inventory every manifest permission and host permission.
-- [ ] Document why `tabs` is necessary: the popup identifies/reloads the inspected tab and opens the full inspector for that tab.
-- [ ] Document why `<all_urls>` is necessary: the extension must install its hook at `document_start`, including permitted child frames, before an arbitrary embedded Ruffle player instantiates WebAssembly.
-- [ ] Evaluate whether any host access can safely become optional without missing early Ruffle initialization. Do not narrow it if that would make the advertised feature unreliable; instead provide a precise reviewer justification.
-- [ ] Confirm that packaged JavaScript is readable, self-contained, and does not execute remotely hosted code.
-- [ ] Confirm that no `eval`, downloaded executable logic, obfuscation, or undeclared remote configuration exists.
-- [ ] Confirm that all functionality shown in the listing works without unrelated actions, external software, payment, or login.
-- [ ] Add an authorized-use statement to the listing and support documentation.
+- [x] Inventory every manifest permission and host permission in `store/PERMISSION_JUSTIFICATIONS.md`.
+- [x] Document why `tabs` is necessary: the popup identifies/reloads the inspected tab and opens the full inspector for that tab.
+- [x] Document why `<all_urls>` is necessary: the extension must install its hook at `document_start`, including permitted child frames, before an arbitrary embedded Ruffle player instantiates WebAssembly.
+- [x] Evaluate optional host access and document why it would miss early Ruffle initialization.
+- [x] Confirm that packaged JavaScript is readable, self-contained, and does not execute remotely hosted code.
+- [x] Confirm that no `eval`, downloaded executable logic, obfuscation, or undeclared remote configuration exists.
+- [x] Confirm that all functionality shown in the prepared listing works without external software, payment, or login.
+- [x] Add an authorized-use statement to the listing and support documentation.
 - [ ] Review the current [Chrome Web Store Program Policies](https://developer.chrome.com/docs/webstore/program-policies/policies) and [Mozilla Add-on Policies](https://extensionworkshop.com/documentation/publish/add-on-policies/) immediately before submission.
 
 ## 3. Cross-browser manifest and runtime work
 
-- [ ] Add `background.service_worker: "background.js"` while retaining the Firefox `background.scripts` fallback.
-- [ ] Verify `background.js` uses no DOM or persistent background-page assumptions that fail in a Chrome service worker.
+- [x] Generate `background.service_worker: "background.js"` for Chrome while retaining Firefox's `background.scripts` package.
+- [x] Verify `background.js` uses no DOM or background-page-only APIs and starts as a Chrome service worker.
 - [ ] Test popup reconnection and scan-session behavior after Chrome suspends and restarts the service worker.
-- [ ] Verify `world: "MAIN"`, `all_frames`, `match_about_blank`, and `match_origin_as_fallback` on current stable Chrome and Firefox.
-- [ ] Verify that `browser_specific_settings` is accepted/ignored appropriately by the Chrome package, or produce browser-specific manifests from one reviewed source.
+- [x] Verify the document-start page/content/background bridge on current Chrome and Firefox packages; manual nested/cross-origin Ruffle QA remains below.
+- [x] Produce browser-specific manifests from one reviewed source; the Chrome package omits Firefox-only settings.
 - [ ] Verify Firefox sidebar docking and Chrome side-panel docking against their store packages; confirm the separate pop-out fallback remains tab-bound in both browsers.
 - [ ] Test the toolbar popup, DevTools panel, capture, exact/range/unknown scans, comparison refinement, write, freeze, watches, cancellation, memory growth, and popup reopening in both browsers.
 - [ ] Test a Ruffle AVM1 game, a Ruffle AVM2 game, and a non-Ruffle WebAssembly control page in both browsers.
 - [ ] Test nested and cross-origin player frames where host permissions allow access.
 - [ ] Test install, browser restart, extension update, disable/re-enable, and uninstall flows.
 - [ ] Confirm that private-window behavior matches the listing and does not retain private-browsing data.
-- [ ] Record the minimum supported Chrome version after compatibility testing.
-- [ ] Reconsider Firefox's current `strict_min_version: 128.0` against the APIs and data-declaration behavior used by the final build.
+- [x] Record Chrome 116 as the minimum because the persistent side-panel action depends on `sidePanel.open()`.
+- [x] Set Firefox's minimum to 142 so both desktop and Android compatibility lint accept the built-in data declaration; the AMO listing remains desktop-only because `gecko_android` is omitted.
 
 ## 4. Privacy, support, and public documentation
 
 - [ ] Add a public privacy policy URL, preferably on the `hack-engine` GitHub Pages site.
-- [ ] Describe local processing plainly: the extension reads the active tab URL and captured WebAssembly memory locally to provide user-requested inspection.
-- [ ] State exactly what persists and for how long, including scan history, watches, imported workspaces, IndexedDB snapshots, and what is cleared on reset/reload/uninstall.
-- [ ] State whether any information leaves the browser. For the current architecture, the intended answer is **no**; verify this against the release package.
+- [x] Describe local processing plainly in `PRIVACY.md` and `docs/privacy.html`.
+- [x] State what persists and for how long, including session state and IndexedDB snapshots.
+- [x] Verify and state that the submitted code does not send information outside the browser.
 - [ ] Provide a support email and public support/issues URL.
-- [ ] Add installation instructions for both Chrome and Firefox.
-- [ ] Add an end-user guide covering the simple popup, full inspector, value types, false matches, restored/cached values, freeze behavior, and recovery after a player crash.
-- [ ] Add a security/contact process for vulnerability reports.
-- [ ] Add a changelog and release notes for the submitted version.
-- [ ] Make the GitHub Pages status, repository name, privacy URL, support URL, and store-facing product name consistently say **Hack Engine**.
+- [x] Add installation instructions for both Chrome and Firefox.
+- [x] Add an end-user guide covering the simple popup, full inspector, value types, false matches, restored/cached values, freeze behavior, and recovery after a player crash.
+- [x] Add a private vulnerability-reporting path and public issue tracker in `SECURITY.md`.
+- [x] Add a changelog and draft release notes.
+- [x] Make repository-facing names and prepared URLs consistently say **Hack Engine**; public deployment verification remains open.
 
 ## 5. Store assets and listing copy
 
-- [ ] Prepare a concise summary and a detailed description using the same claims as the tested release.
+- [x] Prepare a concise summary and detailed description in `store/LISTING_COPY.md`.
 - [ ] Prepare screenshots that show the toolbar quick scan, candidate refinement, write/freeze controls, and full inspector without exposing personal tabs or browsing data.
 - [ ] Use only games/content that can be shown legally in promotional images, or use the local test harness.
-- [ ] Prepare a clean 128×128 store icon.
+- [x] Verify the existing store icon is exactly 128×128.
 - [ ] For Chrome, prepare at least one 1280×800 screenshot (up to five) and a 440×280 small promo tile.
 - [ ] Optionally prepare Chrome's 1400×560 marquee tile and a short YouTube demonstration.
 - [ ] Prepare Firefox listing screenshots, captions, summary, long description, categories, support details, and license selection.
-- [ ] Avoid claims that the extension can always find a displayed value; explain that values may be encoded, duplicated, recalculated, or held outside linear memory.
-- [ ] Include this safety boundary in both listings: use only with software and content the user is authorized to inspect.
+- [x] Avoid claims that the extension can always find a displayed value; document false matches and representations.
+- [x] Include the authorized-use boundary in the prepared listing.
 
 Suggested single-purpose text:
 
@@ -90,16 +108,16 @@ Suggested reviewer context:
 ## 6. Build and release validation
 
 - [ ] Start from a clean, committed tree on the intended release tag.
-- [ ] Run JSON, JavaScript syntax, and diff checks.
-- [ ] Run `web-ext lint --warnings-as-errors` against the Firefox package.
-- [ ] Run all page-level browser harnesses.
-- [ ] Run the live Firefox extension bridge and popup/session harnesses.
-- [ ] Add and run equivalent live Chromium extension harnesses against the exact Chrome package.
+- [x] Run JSON, JavaScript syntax, release validation, and diff checks.
+- [x] Run `web-ext lint --warnings-as-errors` against the Firefox package: zero errors and zero warnings.
+- [x] Run all page-level browser harnesses successfully.
+- [x] Run the live bridge against the exact generated Firefox package.
+- [x] Add and pass the equivalent live bridge harness against the exact generated Chrome package.
 - [ ] Perform manual QA on current stable Firefox and Chrome using at least two real Ruffle games.
-- [ ] Build production ZIP files with `manifest.json` at the archive root—not inside a parent directory.
-- [ ] Inspect each archive with `unzip -l` and confirm it contains only runtime/review files and no secrets, profiles, logs, test data, `.git`, or generated artifacts.
+- [x] Build production ZIP files with `manifest.json` at the archive root—not inside a parent directory.
+- [x] Inspect and automatically validate each archive for runtime/review files and prohibited development content.
 - [ ] Load each final archive, not the working directory, into its target browser and repeat the release smoke test.
-- [ ] Record archive SHA-256 hashes.
+- [x] Generate and validate `dist/SHA256SUMS.txt` for both archives on every build.
 - [ ] Create an annotated git tag and GitHub release containing checksums and release notes. Do not publish unsigned Firefox builds as installable release artifacts.
 
 ## 7. Chrome Web Store submission
@@ -124,15 +142,15 @@ Official references: [prepare the extension](https://developer.chrome.com/docs/w
 
 - [ ] Create or connect a Mozilla Account to the [AMO Developer Hub](https://addons.mozilla.org/developers/).
 - [ ] Confirm the permanent Gecko add-on ID and keep it unchanged across all future releases.
-- [ ] Add `browser_specific_settings.gecko.data_collection_permissions.required: ["none"]` if the final build collects or transmits nothing outside the local browser; otherwise implement and declare the correct consent model.
-- [ ] Build with `web-ext build` or an equivalent reviewed packaging process.
-- [ ] Keep the package below AMO's 200 MB limit.
+- [x] Add `browser_specific_settings.gecko.data_collection_permissions.required: ["none"]` for the local-only release.
+- [x] Build with an equivalent reviewed, reproducible packaging process.
+- [x] Keep the package below AMO's 200 MB limit (the current Firefox ZIP is under 100 KiB).
 - [ ] Upload as **On this site** for a public AMO listing.
 - [ ] Resolve validator errors and security/privacy warnings before continuing.
 - [ ] Select compatible platforms and answer the source-code question accurately.
 - [ ] If the submitted files are minified, bundled, generated, or otherwise difficult to review, upload corresponding source plus exact reproducible build instructions. Prefer the current readable, unminified source package.
 - [ ] Complete name, unique AMO URL, summary, description, Experimental status, categories, support email/site, license, privacy information, and reviewer notes.
-- [ ] Give reviewers a deterministic test procedure and explain why document-start `<all_urls>` access is essential.
+- [x] Prepare deterministic reviewer instructions and document-start `<all_urls>` justification in `store/REVIEWER_NOTES.md`.
 - [ ] Submit the version and monitor AMO/email for post-submission review questions.
 - [ ] Install the Mozilla-signed XPI in a fresh stable Firefox profile and run the smoke checklist.
 

@@ -1,11 +1,11 @@
-const FIREFOX_BRIDGE_CHANNEL = "ruffle-memory-inspector:v1";
-const firefoxBridgeResultNode = document.querySelector("#result");
+const EXTENSION_BRIDGE_CHANNEL = "ruffle-memory-inspector:v1";
+const bridgeResultNode = document.querySelector("#result");
 
 window.addEventListener("message", (event) => {
   const message = event.data;
   if (
     event.source !== window ||
-    message?.channel !== FIREFOX_BRIDGE_CHANNEL ||
+    message?.channel !== EXTENSION_BRIDGE_CHANNEL ||
     message?.direction !== "to-page" ||
     message.payload?.kind !== "bridgeDiagnosticResult"
   ) {
@@ -16,16 +16,16 @@ window.addEventListener("message", (event) => {
   const passed =
     Array.isArray(rows) &&
     rows[0]?.address === 4096 &&
-    Number.isNaN(rows[0]?.value) &&
+    (Number.isNaN(rows[0]?.value) || rows[0]?.value === null) &&
     rows[1]?.address === 8192 &&
-    rows[1]?.value === Number.POSITIVE_INFINITY;
-  firefoxBridgeResultNode.textContent = passed
-    ? "PASS: Firefox preserved nested candidate rows across the live extension bridge."
-    : "FAIL: Firefox changed nested candidate data across the extension bridge.";
+    (rows[1]?.value === Number.POSITIVE_INFINITY || rows[1]?.value === null);
+  bridgeResultNode.textContent = passed
+    ? "PASS: Browser preserved nested candidate rows across the live extension bridge."
+    : "FAIL: Browser changed nested candidate data across the extension bridge.";
 });
 
 window.postMessage({
-  channel: FIREFOX_BRIDGE_CHANNEL,
+  channel: EXTENSION_BRIDGE_CHANNEL,
   direction: "from-page",
   payload: {
     kind: "bridgeDiagnostic",
