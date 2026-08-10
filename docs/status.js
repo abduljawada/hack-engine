@@ -22,7 +22,7 @@ window.RUFFLE_MEMORY_STATUS = {
     },
     {
       title: "Live watches",
-      description: "Automatically watch interacted values and distinguish persistent writes from game-restored copies.",
+      description: "Share watched values, metadata, selection, and freeze state across the sidebar and full inspector.",
     },
     {
       title: "Large-memory resilience",

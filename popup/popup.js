@@ -4,7 +4,8 @@
   const extensionApi = globalThis.browser ?? globalThis.chrome;
   const CANDIDATE_REFRESH_MS = 250;
   const MAX_ADVANCED_CANDIDATES = 200;
-  const MAX_SIDEBAR_WATCHES = 56;
+  const MAX_SHARED_WATCHES = 256;
+  const MAX_LIVE_READS = 256;
   const NUMERIC_LIMITS = Object.freeze({
     i8: ["-128", "127"],
     u8: ["0", "255"],
@@ -220,9 +221,14 @@
   }
 
   function refreshCandidateValues() {
-    const liveRecords = new Map(watchedCandidates);
+    const liveRecords = new Map();
     for (const [key, entry] of candidateRecords) {
       liveRecords.set(key, entry);
+    }
+    for (const [key, entry] of watchedCandidates) {
+      if (!liveRecords.has(key) && liveRecords.size < MAX_LIVE_READS) {
+        liveRecords.set(key, entry);
+      }
     }
     if (
       !port ||
@@ -295,6 +301,18 @@
       return true;
     } catch {
       setQuickStatus("The extension connection was lost.", "error");
+      return false;
+    }
+  }
+
+  function sendWorkspace(action, options = {}) {
+    if (!port) {
+      return false;
+    }
+    try {
+      port.postMessage({ kind: "workspaceCommand", action, ...options });
+      return true;
+    } catch {
       return false;
     }
   }
@@ -455,7 +473,8 @@
   }
 
   function candidateValueText(candidate) {
-    return String(candidate.displayValue ?? displayCandidateValue(candidate.value, candidate.multiplier));
+    const value = candidate.displayValue ?? displayCandidateValue(candidate.value, candidate.multiplier);
+    return value === undefined ? "—" : String(value);
   }
 
   function updateSelectionUI() {
@@ -482,21 +501,71 @@
     }
   }
 
-  function addWatch(candidate) {
+  function sharedWatch(candidate) {
+    const instance = instances.get(`${candidate.frameId}:${candidate.instanceId}`);
+    return {
+      frameId: candidate.frameId,
+      instanceId: String(candidate.instanceId),
+      type: candidate.type,
+      multiplier: Number(candidate.multiplier) || 1,
+      address: candidate.address,
+      hint: instance?.hint || "",
+      url: instance?.url || "",
+    };
+  }
+
+  function addWatch(candidate, { broadcast = true } = {}) {
     const key = candidateKey(candidate);
-    if (!watchedCandidates.has(key) && watchedCandidates.size >= MAX_SIDEBAR_WATCHES) {
-      setQuickStatus(`The sidebar watch list is limited to ${MAX_SIDEBAR_WATCHES} values.`, "error");
+    if (!watchedCandidates.has(key) && watchedCandidates.size >= MAX_SHARED_WATCHES) {
+      setQuickStatus(`The shared watch list is limited to ${MAX_SHARED_WATCHES} values.`, "error");
       return;
     }
     const existing = watchedCandidates.get(key);
     watchedCandidates.set(key, existing || { candidate, valueCells: new Set() });
     renderWatches();
+    if (broadcast) {
+      sendWorkspace("upsertWatch", { watch: sharedWatch(candidate), select: true });
+    }
   }
 
   function selectCandidate(candidate) {
     selectedCandidate = candidate;
     addWatch(candidate);
     updateSelectionUI();
+  }
+
+  function applySharedWorkspace(workspace) {
+    const incoming = new Map();
+    for (const watch of Array.isArray(workspace?.watches) ? workspace.watches : []) {
+      const key = candidateKey(watch);
+      const existing = watchedCandidates.get(key);
+      const candidateEntry = candidateRecords.get(key);
+      const candidate = existing?.candidate || candidateEntry?.candidate || {
+        ...watch,
+        displayValue: undefined,
+        value: undefined,
+      };
+      candidate.multiplier = Number(watch.multiplier) || 1;
+      incoming.set(key, existing || { candidate, valueCells: new Set() });
+    }
+    watchedCandidates.clear();
+    for (const [key, entry] of incoming) {
+      watchedCandidates.set(key, entry);
+    }
+    frozenCandidates.clear();
+    for (const key of Array.isArray(workspace?.frozenKeys) ? workspace.frozenKeys : []) {
+      frozenCandidates.add(key);
+    }
+    const selectedKey = typeof workspace?.selectedKey === "string" ? workspace.selectedKey : null;
+    const selected = candidateRecords.get(selectedKey)?.candidate || watchedCandidates.get(selectedKey)?.candidate;
+    if (selected) {
+      selectedCandidate = selected;
+    } else {
+      selectedCandidate = null;
+    }
+    renderWatches();
+    updateSelectionUI();
+    refreshCandidateValues();
   }
 
   function makeValueCell(entry) {
@@ -596,6 +665,7 @@
         }
         watchedCandidates.delete(key);
         renderWatches();
+        sendWorkspace("removeWatch", { key });
       });
       row.append(select, remove);
       elements.advancedWatches.append(row);
@@ -815,6 +885,8 @@
   function handlePortMessage(message) {
     if (message?.kind === "quickSession") {
       applyQuickSession(message.session);
+    } else if (message?.kind === "workspaceState") {
+      applySharedWorkspace(message.workspace);
     } else if (message?.kind === "frameConnected") {
       send({ kind: "listInstances", requestId: nextRequestId("instances") }, message.frameId);
     } else if (message?.kind === "frameDisconnected") {

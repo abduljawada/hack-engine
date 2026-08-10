@@ -10,6 +10,7 @@ Firefox-first WebExtension prototype for inspecting WebAssembly memory used by e
 - Adds a compact toolbar popup with a type-free quick scan, live candidate values, writing, and freezing.
 - Provides a pin control that docks the popup in Firefox's sidebar, bound to the original game tab, so the controls remain visible while interacting with the page.
 - Adds a persistent **Advanced** sidebar view with explicit type, alignment, multiplier, and captured-memory controls; searchable and sortable live candidates; and an automatic watch list.
+- Shares the active tab's scan configuration, progress, results, candidates, watches, primary selection, and freeze state between the toolbar/sidebar and full inspector.
 - Provides a separate pop-out utility window for users who prefer a floating layout.
 - Reads Ruffle's public movie metadata when available to distinguish ActionScript 1/2 from ActionScript 3 and prioritize the relevant numeric representations automatically.
 - Supports exact, inclusive range, and unknown-value scans for signed/unsigned 8-, 16-, and 32-bit integers plus `f32` and `f64`.
@@ -45,7 +46,9 @@ For the shortest workflow, open **Hack Engine** from the Firefox toolbar and use
 
 Browser action popups close when focus returns to the page. In Firefox, use the pin in the popup header to dock the same controls in the browser sidebar. The sidebar remains visible beside the inspected page and stays bound to the original game tab; use the active pin again to close it. **Pop out window** opens or focuses one floating utility window for that tab. A pop-out is an ordinary browser window, so the operating system may place it behind the main Firefox window when the page is clicked.
 
-The toolbar popup intentionally stays in **Simple** mode. In the persistent sidebar or pop-out window, switch to **Advanced** for explicit number format, alignment, multiplier, and captured-memory selection. Simple and Advanced are two views of the same scan session: switching does not reset or repeat a scan. Advanced displays up to 200 live candidates with filtering and sorting. Selecting a candidate adds it to **Watches** automatically; watches remain live across later scans for as long as that sidebar or utility window stays open. Resetting the scan clears candidates but keeps those watches.
+The toolbar popup intentionally stays in **Simple** mode. In the persistent sidebar or pop-out window, switch to **Advanced** for explicit number format, alignment, multiplier, and captured-memory selection. Simple, Advanced, and the full inspector are views of the same tab-scoped scan session: switching or opening another view does not reset or repeat a scan. A scan started anywhere exposes its configuration, progress, and candidates everywhere. Advanced displays up to 200 live candidates with filtering and sorting. Selecting a candidate adds it to the shared **Watches** list automatically; watch labels, groups, primary selection, and frozen addresses synchronize between open views. Resetting the scan clears candidates but keeps those watches.
+
+Presentation state remains local to each surface. Candidate filters and sorting, expanded sections, Simple/Advanced choice, bulk checkbox selection, and unsubmitted write drafts do not move another window or overwrite work in progress.
 
 ## Load in Firefox
 
@@ -92,7 +95,7 @@ With the extension loaded, scan the captured memory as `Float64` for `12345.5`. 
 
 `/test/panel-watchdog-harness.html` verifies that a matching result ends the 15-second request watchdog before candidate rendering and that malformed rows produce an immediate rendering error instead of a false timeout.
 
-`/test/popup-harness.html` verifies the toolbar's type-free scan, batched live candidate refresh, type-correct candidate write/freeze actions, Firefox sidebar docking, pop-out reuse, shared Simple/Advanced scan state, typed Advanced scans, live filtering, and automatic watches. `/test/background-session-harness.html` verifies that the popup and full inspector can share one captured page and that a quick scan survives closing and reopening the popup.
+`/test/popup-harness.html` verifies the toolbar's type-free scan, batched live candidate refresh, type-correct candidate write/freeze actions, Firefox sidebar docking, pop-out reuse, shared Simple/Advanced scan state, typed Advanced scans, live filtering, and automatic watches. `/test/background-session-harness.html` verifies bidirectional popup/inspector synchronization for scans, candidates, watches, selection, and reconnects.
 
 `/test/scan-cancellation-harness.html` verifies that cancellation interrupts an active scan and that a replacement scan succeeds immediately afterward.
 

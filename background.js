@@ -5,6 +5,8 @@
   const clients = new Map();
   const bridges = new Map();
   const quickSessions = new Map();
+  const workspaces = new Map();
+  const MAX_SHARED_WATCHES = 256;
 
   function bridgeKey(tabId, frameId) {
     return `${tabId}:${frameId}`;
@@ -32,10 +34,94 @@
     return quickSessions.get(Number(tabId)) || null;
   }
 
-  function rememberQuickCommand(tabId, frameId, payload) {
-    if (!String(payload?.requestId || "").startsWith("quick:")) {
-      return;
+  function workspaceFor(tabId) {
+    const numericTabId = Number(tabId);
+    if (!workspaces.has(numericTabId)) {
+      workspaces.set(numericTabId, {
+        watches: new Map(),
+        selectedKey: null,
+        frozenKeys: new Set(),
+      });
     }
+    return workspaces.get(numericTabId);
+  }
+
+  function workspaceSnapshot(tabId) {
+    const workspace = workspaceFor(tabId);
+    return {
+      watches: [...workspace.watches.values()],
+      selectedKey: workspace.selectedKey,
+      frozenKeys: [...workspace.frozenKeys],
+    };
+  }
+
+  function watchKey(watch) {
+    return `${watch.frameId}:${watch.instanceId}:${watch.type}:${watch.address}`;
+  }
+
+  function normalizeWatch(watch) {
+    const multiplier = Number(watch?.multiplier);
+    if (
+      !Number.isInteger(watch?.frameId) ||
+      typeof watch.instanceId !== "string" ||
+      !["i8", "u8", "i16", "u16", "i32", "u32", "f32", "f64"].includes(watch.type) ||
+      !Number.isSafeInteger(watch.address) ||
+      watch.address < 0 ||
+      !Number.isFinite(multiplier) ||
+      multiplier <= 0
+    ) {
+      return null;
+    }
+    return {
+      key: watchKey(watch),
+      frameId: watch.frameId,
+      instanceId: watch.instanceId,
+      type: watch.type,
+      multiplier,
+      address: watch.address,
+      label: typeof watch.label === "string" ? watch.label.slice(0, 80) : "",
+      group: typeof watch.group === "string" ? watch.group.slice(0, 80) : "",
+      hint: typeof watch.hint === "string" ? watch.hint : "",
+      url: typeof watch.url === "string" ? watch.url : "",
+    };
+  }
+
+  function broadcastWorkspace(tabId) {
+    broadcast(tabId, { kind: "workspaceState", workspace: workspaceSnapshot(tabId) });
+  }
+
+  function updateWorkspace(tabId, message) {
+    const workspace = workspaceFor(tabId);
+    const watch = normalizeWatch(message.watch);
+    if (message.action === "upsertWatch" && watch) {
+      if (workspace.watches.has(watch.key) || workspace.watches.size < MAX_SHARED_WATCHES) {
+        workspace.watches.set(watch.key, watch);
+        if (message.select) {
+          workspace.selectedKey = watch.key;
+        }
+      }
+    } else if (message.action === "mergeWatches" && Array.isArray(message.watches)) {
+      for (const value of message.watches) {
+        const merged = normalizeWatch(value);
+        if (!merged || (!workspace.watches.has(merged.key) && workspace.watches.size >= MAX_SHARED_WATCHES)) {
+          continue;
+        }
+        workspace.watches.set(merged.key, merged);
+      }
+    } else if (message.action === "removeWatch" && typeof message.key === "string") {
+      if (!workspace.frozenKeys.has(message.key)) {
+        workspace.watches.delete(message.key);
+        if (workspace.selectedKey === message.key) {
+          workspace.selectedKey = null;
+        }
+      }
+    } else if (message.action === "select" && typeof message.key === "string") {
+      workspace.selectedKey = workspace.watches.has(message.key) ? message.key : null;
+    }
+    broadcastWorkspace(tabId);
+  }
+
+  function rememberQuickCommand(tabId, frameId, payload) {
     const numericTabId = Number(tabId);
     if (payload.kind === "resetScan") {
       quickSessions.delete(numericTabId);
@@ -64,6 +150,10 @@
       results: null,
       error: null,
     });
+    broadcast(numericTabId, {
+      kind: "quickSession",
+      session: quickSessionSnapshot(numericTabId),
+    });
   }
 
   function rememberQuickPayload(entry, payload) {
@@ -86,6 +176,26 @@
       session.error = payload.message || "The scan failed.";
       session.progress = null;
     }
+    broadcast(entry.tabId, { kind: "quickSession", session });
+  }
+
+  function rememberWorkspacePayload(entry, payload) {
+    if (payload?.kind !== "freezeChanged") {
+      return;
+    }
+    const workspace = workspaceFor(entry.tabId);
+    const key = watchKey({
+      frameId: entry.frameId,
+      instanceId: String(payload.instanceId),
+      type: payload.type,
+      address: payload.address,
+    });
+    if (payload.enabled) {
+      workspace.frozenKeys.add(key);
+    } else {
+      workspace.frozenKeys.delete(key);
+    }
+    broadcastWorkspace(entry.tabId);
   }
 
   function rememberInstances(entry, payload) {
@@ -136,6 +246,10 @@
       tabClients.add(port);
 
       port.onMessage.addListener((message) => {
+        if (message?.kind === "workspaceCommand") {
+          updateWorkspace(tabId, message);
+          return;
+        }
         if (message?.kind !== "routeCommand") {
           return;
         }
@@ -159,6 +273,7 @@
       });
 
       port.postMessage({ kind: "quickSession", session: quickSessionSnapshot(tabId) });
+      port.postMessage({ kind: "workspaceState", workspace: workspaceSnapshot(tabId) });
 
       for (const entry of bridges.values()) {
         if (entry.tabId === tabId) {
@@ -191,6 +306,7 @@
       } else if (message?.kind === "pageMessage") {
         rememberInstances(entry, message.payload);
         rememberQuickPayload(entry, message.payload);
+        rememberWorkspacePayload(entry, message.payload);
         if (message.payload?.kind === "bridgeDiagnostic") {
           entry.port.postMessage({
             kind: "pageCommand",
@@ -226,5 +342,6 @@
   extensionApi.tabs?.onRemoved?.addListener((tabId) => {
     clients.delete(Number(tabId));
     quickSessions.delete(Number(tabId));
+    workspaces.delete(Number(tabId));
   });
 })();

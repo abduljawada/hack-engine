@@ -26,6 +26,8 @@
   let reconnectTimer = null;
   let scanWatchdog = null;
   let activeScanRequestId = null;
+  let pendingSharedInstanceKey = null;
+  let appliedSharedResultId = null;
   const SCAN_WATCHDOG_MS = 15_000;
   const WATCH_REFRESH_MS = 250;
   const MAX_WATCH_ADDRESSES = 256;
@@ -199,6 +201,18 @@
     }
   }
 
+  function sendWorkspace(action, options = {}) {
+    if (!port) {
+      return false;
+    }
+    try {
+      port.postMessage({ kind: "workspaceCommand", action, ...options });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function setStatus(message, state = "working") {
     elements.status.textContent = message;
     elements.statusDot.className = state === "ready" ? "ready" : state === "error" ? "error" : "";
@@ -307,6 +321,20 @@
     }
   }
 
+  function sharedWatch(entry) {
+    return {
+      frameId: entry.frameId,
+      instanceId: String(entry.instanceId),
+      type: entry.type,
+      multiplier: Number(entry.multiplier) || 1,
+      address: entry.address,
+      label: entry.label || "",
+      group: entry.group || "",
+      hint: entry.hint || "",
+      url: entry.url || "",
+    };
+  }
+
   function restoreWatches() {
     let stored;
     try {
@@ -376,10 +404,13 @@
     }
   }
 
-  function selectWatch(entry) {
+  function selectWatch(entry, { broadcast = true } = {}) {
     const instanceKey = `${entry.frameId}:${entry.instanceId}`;
     if (instances.has(instanceKey)) {
       elements.instance.value = instanceKey;
+      pendingSharedInstanceKey = null;
+    } else {
+      pendingSharedInstanceKey = instanceKey;
     }
     elements.type.value = entry.type;
     elements.multiplier.value = String(entry.multiplier);
@@ -395,6 +426,9 @@
       : null;
     elements.writeValue.value = numericValue === null ? "" : String(numericValue);
     updateFreezeButton();
+    if (broadcast) {
+      sendWorkspace("select", { key: entry.key });
+    }
   }
 
   function renderWatches() {
@@ -428,6 +462,7 @@
         input.addEventListener("change", () => {
           entry[field] = input.value.trim().slice(0, 80);
           persistWatches();
+          sendWorkspace("upsertWatch", { watch: sharedWatch(entry), select: false });
         });
       }
       labelCell.append(label);
@@ -450,6 +485,7 @@
         watchedAddresses.delete(entry.key);
         persistWatches();
         renderWatches();
+        sendWorkspace("removeWatch", { key: entry.key });
       });
       actions.append(remove);
       row.append(address, type, labelCell, groupCell, value, state, actions);
@@ -484,7 +520,7 @@
     type,
     address,
     multiplier = 1,
-    { select = true, quiet = false, label = "", group = "" } = {},
+    { select = true, quiet = false, label = "", group = "", broadcast = true } = {},
   ) {
     multiplier = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
     if (!Number.isSafeInteger(address) || address < 0) {
@@ -503,8 +539,11 @@
       }
       persistWatches();
       renderWatches();
+      if (broadcast) {
+        sendWorkspace("upsertWatch", { watch: sharedWatch(existing), select });
+      }
       if (select) {
-        selectWatch(existing);
+        selectWatch(existing, { broadcast: false });
       }
       if (!quiet) {
         setStatus(`${formatAddress(address)} is already on the watch list.`, "ready");
@@ -535,8 +574,11 @@
     watchedAddresses.set(key, entry);
     persistWatches();
     renderWatches();
+    if (broadcast) {
+      sendWorkspace("upsertWatch", { watch: sharedWatch(entry), select });
+    }
     if (select) {
-      selectWatch(entry);
+      selectWatch(entry, { broadcast: false });
     }
     refreshWatchValues();
     if (!quiet) {
@@ -599,7 +641,10 @@
       elements.instance.append(option);
     }
 
-    if (instances.has(previous)) {
+    if (pendingSharedInstanceKey && instances.has(pendingSharedInstanceKey)) {
+      elements.instance.value = pendingSharedInstanceKey;
+      pendingSharedInstanceKey = null;
+    } else if (instances.has(previous)) {
       elements.instance.value = previous;
     }
 
@@ -749,7 +794,7 @@
     return records;
   }
 
-  function watchCandidate(candidate, quiet = true) {
+  function watchCandidate(candidate, quiet = true, broadcast = true) {
     const record = selectedInstance();
     if (!record) {
       return;
@@ -757,6 +802,7 @@
     addWatch(record, candidate.type, candidate.address, candidate.multiplier, {
       select: false,
       quiet,
+      broadcast,
       label: elements.candidateLabel.value.trim(),
       group: elements.candidateGroup.value.trim(),
     });
@@ -772,6 +818,12 @@
     elements.writeAddress.value = formatAddress(candidate.address);
     elements.writeValue.value = String(candidate.displayValue);
     watchCandidate(candidate);
+    const record = selectedInstance();
+    if (record) {
+      sendWorkspace("select", {
+        key: watchIdentity(record.frameId, String(record.id), candidate.type, candidate.address),
+      });
+    }
     updateFreezeButton();
   }
 
@@ -900,7 +952,157 @@
     return "The write could not be classified.";
   }
 
+  function sharedScanMeta(session) {
+    return {
+      requestId: session.requestId,
+      startedAt: Date.now(),
+      refine: Boolean(session.request?.refine),
+      type: session.request?.type || "smart",
+      condition: session.request?.condition || "exact",
+      alignment: session.request?.alignment || "aligned",
+      multiplier: Number(session.request?.multiplier) || 1,
+      instanceKey: `${session.frameId}:${session.instanceId}`,
+    };
+  }
+
+  function applySharedScanSession(session) {
+    if (!session) {
+      activeScanRequestId = null;
+      activeScanMeta = null;
+      appliedSharedResultId = null;
+      clearScanWatchdog();
+      setScanButtonsDisabled(false);
+      candidateRecords = [];
+      selectedCandidates.clear();
+      renderCandidateWorkspace();
+      elements.resultCount.textContent = "0";
+      setStatus("Scan state reset.", "ready");
+      return;
+    }
+    if (session.request) {
+      const { request } = session;
+      if ([...elements.type.options].some((option) => option.value === request.type)) {
+        elements.type.value = request.type;
+      }
+      elements.condition.value = request.condition || "exact";
+      elements.scanValue.value = request.rawValue ?? "";
+      elements.scanMaxValue.value = request.rawMaxValue ?? "";
+      elements.alignment.value = request.alignment || "aligned";
+      elements.multiplier.value = String(Number(request.multiplier) || 1);
+      pendingSharedInstanceKey = `${session.frameId}:${session.instanceId}`;
+      if (instances.has(pendingSharedInstanceKey)) {
+        elements.instance.value = pendingSharedInstanceKey;
+        pendingSharedInstanceKey = null;
+      }
+      updateConditionControls();
+    }
+    if (session.status === "scanning") {
+      if (activeScanRequestId !== session.requestId) {
+        activeScanRequestId = session.requestId;
+        activeScanMeta = sharedScanMeta(session);
+      }
+      setScanButtonsDisabled(true);
+      if (session.progress?.total) {
+        setStatus(
+          `Scanning… ${Number(session.progress.inspected).toLocaleString()} / ${Number(session.progress.total).toLocaleString()}`,
+        );
+      } else {
+        setStatus("Scanning shared memory session…");
+      }
+      armScanWatchdog(session.requestId);
+      return;
+    }
+    if (session.status === "complete" && session.results && appliedSharedResultId !== session.requestId) {
+      if (!activeScanMeta) {
+        activeScanMeta = sharedScanMeta(session);
+      }
+      activeScanRequestId = null;
+      clearScanWatchdog();
+      setScanButtonsDisabled(false);
+      completeScanHistory("completed", session.results.total);
+      try {
+        validateScanResults(session.results);
+        renderCandidates(session.results);
+        appliedSharedResultId = session.requestId;
+      } catch (error) {
+        setStatus(`Unable to render shared scan results: ${error instanceof Error ? error.message : String(error)}`, "error");
+      }
+      return;
+    }
+    if (session.status === "cancelled") {
+      activeScanRequestId = null;
+      clearScanWatchdog();
+      setScanButtonsDisabled(false);
+      completeScanHistory("cancelled", null);
+      setStatus("Shared scan cancelled.", "ready");
+    } else if (session.status === "error" || session.status === "disconnected") {
+      activeScanRequestId = null;
+      clearScanWatchdog();
+      setScanButtonsDisabled(false);
+      completeScanHistory("error", null);
+      setStatus(session.error || "The shared scan could not continue.", "error");
+    }
+  }
+
+  function applySharedWorkspace(workspace) {
+    const incoming = new Map();
+    for (const value of Array.isArray(workspace?.watches) ? workspace.watches : []) {
+      const key = watchIdentity(value.frameId, String(value.instanceId), value.type, value.address);
+      const existing = watchedAddresses.get(key);
+      incoming.set(key, existing || {
+        key,
+        frameId: value.frameId,
+        instanceId: String(value.instanceId),
+        type: value.type,
+        multiplier: Number(value.multiplier) || 1,
+        address: value.address,
+        label: value.label || "",
+        group: value.group || "",
+        hint: value.hint || "",
+        url: value.url || "",
+        value: undefined,
+        state: "waiting",
+        detail: "Waiting for the first live refresh.",
+        diagnosticState: null,
+        diagnosticDetail: "",
+      });
+      const entry = incoming.get(key);
+      entry.multiplier = Number(value.multiplier) || 1;
+      entry.label = value.label || "";
+      entry.group = value.group || "";
+    }
+    watchedAddresses.clear();
+    for (const [key, entry] of incoming) {
+      watchedAddresses.set(key, entry);
+    }
+    frozenAddresses.clear();
+    for (const key of Array.isArray(workspace?.frozenKeys) ? workspace.frozenKeys : []) {
+      frozenAddresses.add(key);
+    }
+    persistWatches();
+    renderWatches();
+    const selected = watchedAddresses.get(workspace?.selectedKey);
+    if (selected) {
+      selectWatch(selected, { broadcast: false });
+    } else {
+      selectedCandidateRow?.classList.remove("selected");
+      selectedCandidateRow = null;
+      selectedAddress = null;
+      selectedValueType = null;
+      updateFreezeButton();
+    }
+    refreshWatchValues();
+  }
+
   function handlePortMessage(message) {
+    if (message?.kind === "quickSession") {
+      applySharedScanSession(message.session);
+      return;
+    }
+    if (message?.kind === "workspaceState") {
+      applySharedWorkspace(message.workspace);
+      return;
+    }
     if (message?.kind === "frameConnected") {
       send({ kind: "listInstances", requestId: requestId() }, message.frameId);
       return;
@@ -1183,6 +1385,7 @@
         );
         reconnectTimer = setTimeout(connectPanel, 750);
       });
+      sendWorkspace("mergeWatches", { watches: serializableWatches() });
       listInstances();
     } catch {
       port = null;
@@ -1202,8 +1405,9 @@
 
   function watchCandidates(candidates) {
     for (const candidate of candidates) {
-      watchCandidate(candidate);
+      watchCandidate(candidate, true, false);
     }
+    sendWorkspace("mergeWatches", { watches: serializableWatches() });
     setStatus(`Watching ${candidates.length.toLocaleString()} selected candidate(s).`, "ready");
   }
 
@@ -1271,8 +1475,10 @@
         quiet: true,
         label,
         group,
+        broadcast: false,
       });
     }
+    sendWorkspace("mergeWatches", { watches: serializableWatches() });
     setStatus(`Updated metadata for ${candidates.length.toLocaleString()} candidate(s).`, "ready");
   }
 
@@ -1337,6 +1543,7 @@
           quiet: true,
           label: typeof watch.label === "string" ? watch.label : "",
           group: typeof watch.group === "string" ? watch.group : "",
+          broadcast: false,
         });
       }
     }
@@ -1371,6 +1578,7 @@
       renderScanHistory();
     }
     persistWatches();
+    sendWorkspace("mergeWatches", { watches: serializableWatches() });
     renderWatches();
     refreshWatchValues();
     setStatus("Workspace imported. Verify addresses before writing or freezing.", "ready");
@@ -1494,8 +1702,9 @@
     const candidates = visibleCandidateRecords();
     for (const candidate of candidates) {
       selectedCandidates.add(candidate.key);
-      watchCandidate(candidate);
+      watchCandidate(candidate, true, false);
     }
+    sendWorkspace("mergeWatches", { watches: serializableWatches() });
     renderCandidateWorkspace();
     setStatus(`Selected and watched ${candidates.length.toLocaleString()} visible candidate(s).`, "ready");
   });

@@ -38,6 +38,8 @@
 - Quick scan state and completed results survive closing and reopening the toolbar popup.
 - Visible simple-view candidates refresh in one batched read every 250 ms without changing the retained scan set.
 - Simple and Advanced views share one scan session; switching views neither resets nor repeats the scan.
+- The full inspector joins that same tab-scoped session, so opening it inherits the active scan, candidates, watches, primary selection, and freeze state.
+- Filters, sorting, expanded sections, bulk checkbox selection, and unsubmitted write drafts remain local, preventing disruptive cross-window UI changes.
 - Advanced mode exposes number format, alignment, stored-value multiplier, and captured-memory selection before the first scan, then locks representation controls during refinement.
 - The Advanced candidate list displays up to 200 live values, supports filtering and sorting, and automatically watches a value when it is selected.
 - Both candidate editors expose compact type-aware minimum and maximum presets without writing until the user confirms **Write value**.
