@@ -76,7 +76,7 @@ Chrome:
 4. Select `dist/chrome`.
 5. Open or reload the page containing the embedded Ruffle player.
 
-Release validation is reproducible with `npm run release:verify`. The build writes Firefox and Chrome ZIPs plus `dist/SHA256SUMS.txt`; `dist` is intentionally ignored by Git.
+Release validation is reproducible with `npm run release:verify`. It writes Firefox and Chrome ZIPs, the Mozilla reviewer source archive, and their checksum files under `dist`; `dist` is intentionally ignored by Git. Reviewer-specific environment and clean-build instructions are in [SOURCE_BUILD.md](SOURCE_BUILD.md).
 
 The extension needs permission on the player frame's URL. Reloading is required because the WASM hook must run before Ruffle initializes.
 

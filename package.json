@@ -6,12 +6,13 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build-release.mjs",
+    "build:source": "npm run build && node scripts/build-source.mjs",
     "check": "node scripts/validate-release.mjs",
     "lint:firefox": "web-ext lint --source-dir dist/firefox --warnings-as-errors",
     "test:browser": "node test/run-browser-harnesses.mjs",
     "test:firefox": "node test/run-firefox-extension-harness.mjs",
     "test:chrome": "node test/run-chrome-extension-harness.mjs",
-    "release:verify": "npm run build && npm run check && npm run lint:firefox"
+    "release:verify": "npm run build:source && npm run check && npm run lint:firefox"
   },
   "devDependencies": {
     "web-ext": "10.6.0"

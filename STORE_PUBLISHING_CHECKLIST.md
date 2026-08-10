@@ -15,6 +15,7 @@ Automated store-build work completed on 2026-08-10:
 - The exact generated Firefox package passes its live WebExtension bridge test in Firefox 153.0.3.
 - The exact generated Chrome package loads as an MV3 extension and passes the same live bridge test in Chrome 152.
 - The public privacy policy is deployed at <https://abduljawada.github.io/hack-engine/privacy.html>.
+- A dedicated Mozilla source archive includes locked dependencies, build scripts, environment requirements, and clean-room reproduction instructions.
 
 Release decisions confirmed on 2026-08-10:
 
@@ -149,7 +150,7 @@ Official references: [prepare the extension](https://developer.chrome.com/docs/w
 - [ ] Upload as **On this site** for a public AMO listing.
 - [ ] Resolve validator errors and security/privacy warnings before continuing.
 - [ ] Select compatible platforms and answer the source-code question accurately.
-- [ ] If the submitted files are minified, bundled, generated, or otherwise difficult to review, upload corresponding source plus exact reproducible build instructions. Prefer the current readable, unminified source package.
+- [x] Prepare `hack-engine-source-v0.7.0.zip` with `SOURCE_BUILD.md`, locked dependencies, build scripts, and byte-for-byte clean-room reproduction verification.
 - [ ] Complete name, unique AMO URL, summary, description, Experimental status, categories, support email/site, license, privacy information, and reviewer notes.
 - [x] Prepare deterministic reviewer instructions and document-start `<all_urls>` justification in `store/REVIEWER_NOTES.md`.
 - [ ] Submit the version and monitor AMO/email for post-submission review questions.

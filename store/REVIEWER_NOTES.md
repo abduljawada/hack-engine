@@ -13,3 +13,9 @@ Hack Engine installs a document-start hook because Ruffle may instantiate WebAss
 7. Use the pin to open the persistent sidebar/side panel and **Open full inspector** to confirm that the scan and watch are shared.
 
 No account, payment, network service, or proprietary test content is required. Automated harness instructions are in `README.md` and the package is produced by `npm run build` from an explicit runtime-file allowlist.
+
+## Source build
+
+Upload `hack-engine-source-v0.7.0.zip` as the matching source archive. Its root `SOURCE_BUILD.md` gives the operating-system and tool-version requirements, installation steps, exact build command, validation commands, and unpacked-tree comparison procedure. The source includes `package-lock.json` and every build script. It excludes `node_modules`, `dist`, and repository internals.
+
+The release JavaScript is not minified, bundled, transpiled, or obfuscated. A clean extraction followed by `npm ci --ignore-scripts` and `npm run build` was verified to produce a byte-for-byte identical `hack-engine-firefox-v0.7.0.zip` in the reference environment.
