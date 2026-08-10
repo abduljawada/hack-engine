@@ -123,6 +123,11 @@ setTimeout(async () => {
     document.querySelector("#quick-result-count").textContent === "1" &&
     document.querySelectorAll(".quick-candidate").length === 1 &&
     document.querySelector("#quick-scan").textContent === "Next scan";
+  await delay();
+  const liveCandidateRefresh =
+    popupHarnessState.candidateReadCount >= 1 &&
+    popupHarnessState.commands.some(({ payload }) => payload.kind === "readValues") &&
+    document.querySelector(".candidate-value").textContent === "9";
 
   document.querySelector(".quick-candidate").click();
   document.querySelector("#quick-write-value").value = "999";
@@ -161,7 +166,7 @@ setTimeout(async () => {
     popupHarnessState.createdTabs.at(-1)?.windowId === 10;
 
   popupHarnessResult.textContent =
-    rendered && pinDocked && firstPopoutOpened && secondPopoutReused && automaticScan && typedActions && inspectorOpened && refreshed && helpOpened
-      ? "PASS: compact toolbar popup, Firefox sidebar docking, pop-out reuse, and typed quick-scan actions work."
+    rendered && pinDocked && firstPopoutOpened && secondPopoutReused && automaticScan && liveCandidateRefresh && typedActions && inspectorOpened && refreshed && helpOpened
+      ? "PASS: compact toolbar popup, live candidates, Firefox sidebar docking, pop-out reuse, and typed quick-scan actions work."
       : "FAIL: toolbar quick-scan behavior did not match the active Ruffle state.";
 }, 80);

@@ -34,6 +34,7 @@
 - Popup harness completed without an uncaught runtime error.
 - ActionScript-guided first scans send the internal smart mode, while candidate writes and freezes retain the detected numeric type.
 - Quick scan state and completed results survive closing and reopening the toolbar popup.
+- Visible simple-view candidates refresh in one batched read every 250 ms without changing the retained scan set.
 - Pinning docks the controls in Firefox's sidebar, retains the original inspected-tab target, and the active pin closes the sidebar.
 - Pop out creates or focuses one floating utility window per inspected tab and opens related tabs in the target's original browser window.
 

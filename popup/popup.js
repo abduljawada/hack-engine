@@ -2,6 +2,7 @@
   "use strict";
 
   const extensionApi = globalThis.browser ?? globalThis.chrome;
+  const CANDIDATE_REFRESH_MS = 250;
   const popupParameters = new URLSearchParams(location.search);
   const boundTabId = Number(popupParameters.get("tabId"));
   const isSidebarPanel = popupParameters.get("sidebar") === "1";
@@ -13,9 +14,13 @@
     boundTabId >= 0;
   const instances = new Map();
   const frozenCandidates = new Set();
+  const candidateRecords = new Map();
+  const candidateReadRequests = new Map();
+  const pendingCandidateInstances = new Set();
   let activeTab = null;
   let port = null;
   let pollTimer = null;
+  let candidateRefreshTimer = null;
   let requestSequence = 1;
   let quickSession = null;
   let selectedCandidate = null;
@@ -138,6 +143,68 @@
     return `${candidate.frameId}:${candidate.instanceId}:${candidate.type}:${candidate.address}`;
   }
 
+  function displayCandidateValue(value, multiplier = 1) {
+    return typeof value === "number" ? value / multiplier : value;
+  }
+
+  function clearCandidateRefreshState() {
+    candidateRecords.clear();
+    candidateReadRequests.clear();
+    pendingCandidateInstances.clear();
+  }
+
+  function updateCandidateValue(entry, rawValue) {
+    const displayValue = displayCandidateValue(rawValue, entry.candidate.multiplier);
+    entry.candidate.value = rawValue;
+    entry.candidate.displayValue = displayValue;
+    entry.valueCell.textContent = String(displayValue);
+  }
+
+  function refreshCandidateValues() {
+    if (
+      !port ||
+      candidateRecords.size === 0 ||
+      quickSession?.status === "scanning" ||
+      document.visibilityState === "hidden"
+    ) {
+      return;
+    }
+    const groups = new Map();
+    for (const [key, entry] of candidateRecords) {
+      const instanceKey = `${entry.candidate.frameId}:${entry.candidate.instanceId}`;
+      if (!groups.has(instanceKey)) {
+        groups.set(instanceKey, []);
+      }
+      groups.get(instanceKey).push({ key, entry });
+    }
+    for (const [instanceKey, entries] of groups) {
+      if (pendingCandidateInstances.has(instanceKey)) {
+        continue;
+      }
+      const first = entries[0]?.entry.candidate;
+      if (!first) {
+        continue;
+      }
+      const requestId = nextRequestId("candidate-values");
+      pendingCandidateInstances.add(instanceKey);
+      candidateReadRequests.set(requestId, instanceKey);
+      const sent = send({
+        kind: "readValues",
+        requestId,
+        instanceId: first.instanceId,
+        entries: entries.map(({ key, entry }) => ({
+          id: key,
+          type: entry.candidate.type,
+          address: entry.candidate.address,
+        })),
+      }, first.frameId);
+      if (!sent) {
+        pendingCandidateInstances.delete(instanceKey);
+        candidateReadRequests.delete(requestId);
+      }
+    }
+  }
+
   function selectedInstance() {
     const records = [...instances.values()];
     return records.find((record) => record.looksLikeRuffle) || records[0] || null;
@@ -242,6 +309,7 @@
     elements.results.hidden = false;
     elements.resultCount.textContent = Number(payload?.total || 0).toLocaleString();
     elements.candidates.replaceChildren();
+    clearCandidateRefreshState();
     selectedCandidate = null;
     elements.editor.hidden = true;
 
@@ -264,6 +332,7 @@
       row.append(address, value);
       row.addEventListener("click", () => selectCandidate(record, row));
       elements.candidates.append(row);
+      candidateRecords.set(candidateKey(record), { candidate: record, valueCell: value });
     }
 
     const searchedTypes = Array.isArray(payload?.searchedTypes) ? payload.searchedTypes : [];
@@ -284,6 +353,7 @@
         "ready",
       );
     }
+    refreshCandidateValues();
   }
 
   function applyQuickSession(session) {
@@ -307,6 +377,7 @@
     } else if (session?.results) {
       renderResults(session.results, session.frameId);
     } else if (!session) {
+      clearCandidateRefreshState();
       elements.results.hidden = true;
       elements.editor.hidden = true;
       setQuickStatus("Ready to scan this memory.");
@@ -333,7 +404,17 @@
     if (!String(payload?.requestId || "").startsWith("quick:")) {
       return;
     }
-    if (payload.kind === "scanProgress") {
+    if (payload.kind === "watchValues" && candidateReadRequests.has(payload.requestId)) {
+      const instanceKey = candidateReadRequests.get(payload.requestId);
+      candidateReadRequests.delete(payload.requestId);
+      pendingCandidateInstances.delete(instanceKey);
+      for (const value of Array.isArray(payload.values) ? payload.values : []) {
+        const entry = candidateRecords.get(value.id);
+        if (entry && !value.error) {
+          updateCandidateValue(entry, value.value);
+        }
+      }
+    } else if (payload.kind === "scanProgress") {
       if (quickSession) {
         quickSession.status = "scanning";
         quickSession.progress = payload;
@@ -360,6 +441,16 @@
       setQuickStatus("Scan cancelled.");
       updateScanControls();
     } else if (payload.kind === "writeComplete" || payload.kind === "writeVerified") {
+      const entry = candidateRecords.get(candidateKey({
+        frameId: message.frameId,
+        instanceId: String(payload.instanceId),
+        type: payload.type,
+        address: payload.address,
+      }));
+      const refreshedValue = payload.value ?? payload.actualValue;
+      if (entry && refreshedValue !== undefined) {
+        updateCandidateValue(entry, refreshedValue);
+      }
       setQuickStatus(
         payload.kind === "writeVerified" && payload.persisted === false
           ? "The game restored the old value. Freeze it to keep the replacement."
@@ -384,6 +475,12 @@
       }
       setQuickStatus(payload.enabled ? "Value frozen." : "Value unfrozen.", "ready");
     } else if (payload.kind === "error") {
+      if (candidateReadRequests.has(payload.requestId)) {
+        const instanceKey = candidateReadRequests.get(payload.requestId);
+        candidateReadRequests.delete(payload.requestId);
+        pendingCandidateInstances.delete(instanceKey);
+        return;
+      }
       if (quickSession?.requestId === payload.requestId) {
         quickSession.status = "error";
       }
@@ -451,6 +548,7 @@
     }
     await refreshSummary();
     pollTimer = setInterval(refreshSummary, 1000);
+    candidateRefreshTimer = setInterval(refreshCandidateValues, CANDIDATE_REFRESH_MS);
   }
 
   elements.condition.addEventListener("change", updateConditionControls);
@@ -663,6 +761,7 @@
 
   window.addEventListener("unload", () => {
     clearInterval(pollTimer);
+    clearInterval(candidateRefreshTimer);
     port?.disconnect?.();
   });
 

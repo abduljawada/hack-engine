@@ -10,6 +10,7 @@ const popupHarnessState = {
   sidebarCloseCount: 0,
   sidebarSetPanelSettled: false,
   sidebarOpenedDuringUserAction: false,
+  candidateReadCount: 0,
   reloadedTabs: [],
   commands: [],
   closed: false,
@@ -99,6 +100,17 @@ function createPopupPort() {
           type: payload.type,
           address: payload.address,
           enabled: payload.enabled,
+        }));
+      } else if (payload.kind === "readValues") {
+        popupHarnessState.candidateReadCount += 1;
+        queueMicrotask(() => emitPayload({
+          kind: "watchValues",
+          requestId: payload.requestId,
+          instanceId: instance.id,
+          values: payload.entries.map((entry) => ({
+            ...entry,
+            value: 9,
+          })),
         }));
       }
     },
