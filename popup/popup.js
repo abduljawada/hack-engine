@@ -89,20 +89,22 @@
     }
     const path = panelPath("sidebar");
     if (extensionApi.sidebarAction) {
-      await extensionApi.sidebarAction.setPanel({
+      const settingPanel = extensionApi.sidebarAction.setPanel({
         tabId: activeTab.id,
         panel: extensionApi.runtime.getURL(path),
       });
-      await extensionApi.sidebarAction.open();
+      const openingPanel = extensionApi.sidebarAction.open();
+      await Promise.all([settingPanel, openingPanel]);
       return true;
     }
     if (extensionApi.sidePanel) {
-      await extensionApi.sidePanel.setOptions({
+      const settingPanel = extensionApi.sidePanel.setOptions({
         tabId: activeTab.id,
         path,
         enabled: true,
       });
-      await extensionApi.sidePanel.open({ tabId: activeTab.id });
+      const openingPanel = extensionApi.sidePanel.open({ tabId: activeTab.id });
+      await Promise.all([settingPanel, openingPanel]);
       return true;
     }
     return false;
@@ -507,10 +509,14 @@
 
   elements.popOut.addEventListener("click", async () => {
     try {
-      await openPopoutWindow();
+      const openingWindow = openPopoutWindow();
       if (isSidebarPanel) {
-        await closeDockedPanel();
-      } else if (!isPopoutWindow) {
+        const closingPanel = closeDockedPanel();
+        await Promise.all([openingWindow, closingPanel]);
+      } else {
+        await openingWindow;
+      }
+      if (!isSidebarPanel && !isPopoutWindow) {
         window.close();
       }
     } catch (error) {

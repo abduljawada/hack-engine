@@ -65,6 +65,7 @@ setTimeout(async () => {
       popupHarnessState.sidebarPanels[0].tabId === 77 &&
       new URL(popupHarnessState.sidebarPanels[0].panel).searchParams.get("sidebar") === "1" &&
       popupHarnessState.sidebarOpenCount === 1 &&
+      popupHarnessState.sidebarOpenedDuringUserAction &&
       popupHarnessState.closed;
     popupHarnessResult.textContent = rendered && boundToOriginalTab && docked
       ? "PASS: pop-out mode remains tab-bound and can dock into the Firefox sidebar."
@@ -83,6 +84,7 @@ setTimeout(async () => {
     sidebarUrl.searchParams.get("sidebar") === "1" &&
     sidebarUrl.searchParams.get("tabId") === "77" &&
     popupHarnessState.sidebarOpenCount === 1 &&
+    popupHarnessState.sidebarOpenedDuringUserAction &&
     popupHarnessState.closed;
 
   popupHarnessState.closed = false;

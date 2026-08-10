@@ -8,6 +8,8 @@ const popupHarnessState = {
   sidebarPanels: [],
   sidebarOpenCount: 0,
   sidebarCloseCount: 0,
+  sidebarSetPanelSettled: false,
+  sidebarOpenedDuringUserAction: false,
   reloadedTabs: [],
   commands: [],
   closed: false,
@@ -164,10 +166,17 @@ globalThis.browser = {
     },
   },
   sidebarAction: {
-    async setPanel(options) {
+    setPanel(options) {
       popupHarnessState.sidebarPanels.push(options);
+      return new Promise((resolve) => {
+        queueMicrotask(() => {
+          popupHarnessState.sidebarSetPanelSettled = true;
+          resolve();
+        });
+      });
     },
     async open() {
+      popupHarnessState.sidebarOpenedDuringUserAction = !popupHarnessState.sidebarSetPanelSettled;
       popupHarnessState.sidebarOpenCount += 1;
     },
     async close() {
