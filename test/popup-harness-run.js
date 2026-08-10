@@ -13,13 +13,13 @@ setTimeout(async () => {
     !document.querySelector(".brand-row") &&
     !document.querySelector(".tab-context") &&
     !document.querySelector("#hostname") &&
-    document.querySelector("#status-title").textContent === "Ruffle memory detected" &&
-    document.querySelector("#memory-count").textContent === "1 captured memory" &&
-    document.querySelector("#memory-size").textContent === "4.5 MiB available" &&
+    document.querySelector(".popup-header #status-title")?.textContent === "Ruffle memory detected" &&
+    !document.querySelector(".connection-state") &&
+    !document.querySelector("#memory-summary") &&
     !document.querySelector("#quick-tools").hidden &&
     getComputedStyle(document.querySelector("#quick-max-label")).display === "none" &&
     getComputedStyle(document.querySelector("#quick-editor")).display === "none" &&
-    document.querySelector("#scan-strategy").textContent.includes("ActionScript 3") &&
+    !document.querySelector("#scan-strategy") &&
     !document.querySelector("#open-inspector").disabled &&
     !document.querySelector("#type");
 

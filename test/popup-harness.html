@@ -8,19 +8,14 @@
   <body>
     <main>
       <header class="popup-header">
-        <h1>Hack Engine</h1>
+        <div class="header-copy">
+          <h1>Hack Engine</h1>
+          <div class="header-status"><span id="status-dot" class="status-dot searching"></span><span id="status-title">Looking for Ruffle memory…</span></div>
+        </div>
         <button id="pin-popup" class="pin-action" type="button" aria-label="Keep Hack Engine open" title="Keep open while using the page" disabled>
           <img src="../assets/ui-icons/pin.svg" alt="" />
         </button>
       </header>
-      <section class="connection-state">
-        <span id="status-dot" class="status-dot searching"></span>
-        <div><h2 id="status-title">Looking for Ruffle memory…</h2><p id="status-detail"></p></div>
-      </section>
-      <section id="memory-summary" class="memory-summary" hidden>
-        <img src="../assets/icons/icon-48.png" alt="" width="36" height="36" />
-        <div><strong id="memory-count"></strong><span id="memory-size"></span></div>
-      </section>
       <section id="quick-tools" class="quick-tools" hidden>
         <div class="quick-heading">
           <div><span class="context-label">Simple view</span><h2>Quick scan</h2></div>
@@ -44,7 +39,6 @@
             <label id="quick-max-label" hidden>Maximum<input id="quick-max-value" type="number" step="any" value="200" /></label>
           </div>
         </div>
-        <p id="scan-strategy" class="scan-strategy">The number format will be detected automatically.</p>
         <div class="scan-actions">
           <button id="quick-scan" class="primary-action" type="button">First scan</button>
           <button id="cancel-quick-scan" class="compact-action danger" type="button" hidden>Cancel</button>

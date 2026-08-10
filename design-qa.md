@@ -13,15 +13,15 @@
 ## Visual comparison
 
 - Typography: hierarchy, weight, and muted supporting copy match the selected direction.
-- Spacing: header, active-tab section, status block, memory summary, and actions retain the reference rhythm at the popup viewport.
+- Spacing: the header, quick-scan controls, and actions retain a compact, consistent rhythm at the popup viewport.
 - Color and tokens: near-black surface, cool dividers, mint status/accent, and subtle outlined secondary actions are consistent.
 - Iconography: generated Hack Engine brand mark is used for the product; standard actions use official Heroicons.
 - Image quality: extension icon source is clean at the toolbar sizes and the popup mark remains legible.
 - Copy: visible product naming is consistently “Hack Engine”; runtime-specific wording remains concise.
-- Intentional differences: the browser owns the popup's outer frame; live test data replaces mock domain and memory values; a compact subtitle clarifies the extension purpose.
-- Quick scan: the simple view exposes condition and value controls without a numeric-type selector, and explains the detected ActionScript strategy in one line.
+- Intentional differences: the browser owns the popup's outer frame, and the live connection state appears as a compact subtitle under the product name.
+- Quick scan: the simple view exposes condition and value controls without numeric-type or ActionScript-detail rows; runtime guidance remains automatic internally.
 - Progressive disclosure: range maximum, cancellation/reset controls, results, and the candidate editor remain hidden until relevant.
-- Header efficiency: product name and pin share one row; the decorative product mark, subtitle, and active-tab block were removed.
+- Header efficiency: product name, live connection subtitle, and pin occupy one compact header; the decorative mark, active-tab block, separate status card, and captured-memory card are removed.
 - Docked mode: the active mint pin communicates that the Firefox sidebar is open and remains visible while interacting with the inspected page.
 - Floating mode: **Pop out window** is a separate secondary action because an ordinary extension window cannot be forced to stay above Firefox.
 
@@ -43,7 +43,7 @@
 - Resolution: added official Heroicons for tab, inspect, refresh, help, and navigation actions.
 - Quick-scan pass: P2 — author CSS overrode the native `hidden` attribute, exposing the range maximum and empty candidate editor during an exact first scan.
 - Resolution: made hidden state authoritative and added computed-style regression assertions.
-- Compact-header pass: removed redundant identity and tab context, saving roughly two full content rows before the scan controls.
+- Compact-header pass: reduced connection state to a subtitle and removed captured-memory and ActionScript-detail rows, bringing scan controls directly below the header.
 - Pinning pass: replaced the focus-sensitive floating pin behavior with Firefox sidebar docking and kept floating mode as a separate pop-out action.
 - Post-fix review: no remaining P0, P1, or P2 visual or interaction findings.
 

@@ -24,20 +24,14 @@
     pin: document.querySelector("#pin-popup"),
     statusDot: document.querySelector("#status-dot"),
     statusTitle: document.querySelector("#status-title"),
-    statusDetail: document.querySelector("#status-detail"),
-    connectionState: document.querySelector(".connection-state"),
-    memorySummary: document.querySelector("#memory-summary"),
-    memoryCount: document.querySelector("#memory-count"),
-    memorySize: document.querySelector("#memory-size"),
+    connectionState: document.querySelector(".header-status"),
     quickTools: document.querySelector("#quick-tools"),
-    automaticBadge: document.querySelector("#automatic-badge"),
     condition: document.querySelector("#quick-condition"),
     value: document.querySelector("#quick-value"),
     valueLabel: document.querySelector("#quick-value-label"),
     valueText: document.querySelector("#quick-value-text"),
     maxValue: document.querySelector("#quick-max-value"),
     maxLabel: document.querySelector("#quick-max-label"),
-    strategy: document.querySelector("#scan-strategy"),
     scan: document.querySelector("#quick-scan"),
     cancel: document.querySelector("#cancel-quick-scan"),
     reset: document.querySelector("#reset-quick-scan"),
@@ -59,13 +53,6 @@
 
   function nextRequestId(action = "scan") {
     return `quick:${action}:${Date.now()}:${requestSequence++}`;
-  }
-
-  function formatBytes(bytes) {
-    if (bytes >= 1024 * 1024) {
-      return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
-    }
-    return `${Math.max(0, Math.round(bytes / 1024))} KiB`;
   }
 
   function formatAddress(address) {
@@ -189,37 +176,16 @@
     }`;
     elements.connectionState.classList.toggle("offline", !summary.connected);
     elements.openInspector.disabled = !activeTab?.id;
-    elements.memorySummary.hidden = !detected;
     elements.quickTools.hidden = !detected;
 
     if (detected) {
       elements.statusTitle.textContent = summary.ruffleCount > 0
         ? "Ruffle memory detected"
         : "WebAssembly memory detected";
-      elements.statusDetail.textContent = "Memory is available for inspection on this tab.";
-      elements.memoryCount.textContent = `${summary.instanceCount} captured memor${
-        summary.instanceCount === 1 ? "y" : "ies"
-      }`;
-      elements.memorySize.textContent = `${formatBytes(summary.totalMemoryBytes)} available`;
     } else if (summary.connected) {
       elements.statusTitle.textContent = "Connected to this tab";
-      elements.statusDetail.textContent = "Waiting for an embedded WebAssembly memory to initialize.";
     } else {
       elements.statusTitle.textContent = "No connection yet";
-      elements.statusDetail.textContent = "Reload this tab after installing or updating Hack Engine.";
-    }
-  }
-
-  function renderStrategy() {
-    const record = selectedInstance();
-    const avmKind = record?.avmKind || "unknown";
-    elements.automaticBadge.textContent = "Automatic";
-    if (avmKind === "avm1") {
-      elements.strategy.textContent = "ActionScript 1/2 detected; its common number format will be searched first.";
-    } else if (avmKind === "avm2") {
-      elements.strategy.textContent = "ActionScript 3 detected; its common number formats will be searched first.";
-    } else {
-      elements.strategy.textContent = "Runtime metadata is unavailable, so all number formats will be searched.";
     }
   }
 
@@ -352,7 +318,6 @@
     for (const instance of Array.isArray(list) ? list : []) {
       instances.set(`${frameId}:${instance.id}`, { ...instance, frameId, url });
     }
-    renderStrategy();
     updateScanControls();
   }
 
@@ -438,7 +403,6 @@
           instances.delete(key);
         }
       }
-      renderStrategy();
       updateScanControls();
     } else if (message?.kind === "pageMessage") {
       handlePagePayload(message, message.payload);
@@ -685,7 +649,6 @@
       return;
     }
     elements.statusTitle.textContent = "Reloading this tab…";
-    elements.statusDetail.textContent = "Hack Engine will reconnect when the page initializes.";
     await extensionApi.tabs.reload(activeTab.id);
   });
 
