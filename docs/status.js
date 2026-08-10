@@ -26,7 +26,7 @@ window.RUFFLE_MEMORY_STATUS = {
     },
     {
       title: "Large-memory resilience",
-      description: "Chunked compressed snapshots, cooperative cancellation, and safe handling of growing WASM memory.",
+      description: "Chunked snapshots, cooperative cancellation, sparse direct-address refinements, and safe handling of growing WASM memory.",
     },
   ],
   builtFor: [

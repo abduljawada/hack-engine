@@ -62,10 +62,34 @@ window.addEventListener("message", (event) => {
     payload?.kind === "scanResults" &&
     payload.requestId === "retention-next-scan"
   ) {
-    const retained = payload.total === 1 && payload.preview[0]?.address === targetOffset;
-    retentionResultNode.textContent = retained
-      ? "PASS: retained and refined a candidate after more than 250,000 earlier matches."
-      : `FAIL: late-memory candidate 0x${targetOffset.toString(16)} was lost.`;
+    const retained =
+      payload.total === 1 &&
+      payload.preview[0]?.address === targetOffset &&
+      payload.candidateStorage === "sparse";
+    if (!retained) {
+      retentionResultNode.textContent =
+        `FAIL: late-memory candidate 0x${targetOffset.toString(16)} was lost or remained dense.`;
+      return;
+    }
+    sendRetentionCommand({
+      kind: "exactScan",
+      requestId: "retention-sparse-next-scan",
+      instanceId: retentionInstanceId,
+      type: "f64",
+      rawValue: String(replacementValue),
+      refine: true,
+    });
+  } else if (
+    payload?.kind === "scanResults" &&
+    payload.requestId === "retention-sparse-next-scan"
+  ) {
+    const retainedDirectly =
+      payload.total === 1 &&
+      payload.preview[0]?.address === targetOffset &&
+      payload.candidateStorage === "sparse";
+    retentionResultNode.textContent = retainedDirectly
+      ? "PASS: converted a late candidate to sparse storage and refined its direct address."
+      : "FAIL: sparse next scan did not retain the direct candidate address.";
   } else if (payload?.kind === "error") {
     retentionResultNode.textContent = `FAIL: ${payload.message}`;
   }

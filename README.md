@@ -25,6 +25,7 @@ Firefox-first WebExtension prototype for inspecting WebAssembly memory used by e
 - Samples writes immediately, across two animation frames, after 75 ms, and after 250 ms so cached or game-restored values are distinguishable from persistent writes.
 - Can freeze a selected address by rewriting it once per animation frame.
 - Retains every aligned candidate in a compact bitset and displays the first 200 in the panel.
+- Converts sparse candidate sets to sorted typed address lists below 1/32 density, so later next scans read only the surviving addresses instead of traversing a memory-sized bitset.
 - Safely continues across `WebAssembly.Memory` growth by refreshing detached scan views between chunks.
 - Copies page results into the content-script realm before WebExtension messaging so Firefox Xray wrappers do not corrupt nested candidate rows.
 - Treats the 15-second scan watchdog as a request timeout; result rendering errors are reported separately.
@@ -75,7 +76,7 @@ With the extension loaded, scan the captured memory as `Float64` for `12345.5`. 
 
 `/test/avm-guided-scan-harness.html` verifies ActionScript 1/2 and ActionScript 3 detection through public Ruffle metadata, their guided numeric plans, and the all-format fallback when metadata is unavailable.
 
-`/test/candidate-retention-harness.html` starts with more than 250,000 identical values, changes only the final one, and verifies that a next scan still finds that late-memory address.
+`/test/candidate-retention-harness.html` starts with more than 250,000 identical values, changes only the final one, and verifies that the result converts to sparse address storage and is refined directly by a subsequent next scan.
 
 `/test/memory-growth-harness.html` grows the captured WASM memory during a scan and verifies that scanning continues without using the detached original buffer.
 

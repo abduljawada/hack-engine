@@ -4,6 +4,7 @@
   const CHANNEL = "ruffle-memory-inspector:v1";
   const RESULT_PREVIEW_LIMIT = 200;
   const SCAN_CHUNK_SIZE = 100_000;
+  const SPARSE_CANDIDATE_DENSITY_DIVISOR = 32;
   const SNAPSHOT_CHUNK_SIZE = 1024 * 1024;
   const MAX_WATCH_VALUES = 256;
   const SNAPSHOT_DB_NAME = "ruffle-memory-inspector-snapshots-v1";
@@ -286,9 +287,16 @@
     throwIfScanCancelled(requestId);
   }
 
-  function createCandidateSet(slotCount, type, stride) {
+  function createCandidateSet(
+    slotCount,
+    type,
+    stride,
+    { sparse = false, sparseCapacity = 0 } = {},
+  ) {
     return {
-      bits: new Uint8Array(Math.ceil(slotCount / 8)),
+      bits: sparse ? null : new Uint8Array(Math.ceil(slotCount / 8)),
+      sparseSlots: sparse ? new Uint32Array(sparseCapacity) : null,
+      sparseLength: sparse ? 0 : null,
       allCandidates: false,
       count: 0,
       preview: [],
@@ -302,6 +310,8 @@
   function createAllCandidateSet(slotCount, type, stride, snapshot) {
     return {
       bits: null,
+      sparseSlots: null,
+      sparseLength: null,
       allCandidates: true,
       count: slotCount,
       // Every address is a candidate until the first refinement. Rendering an
@@ -315,11 +325,64 @@
   }
 
   function retainCandidate(candidateSet, slotIndex, address) {
-    candidateSet.bits[slotIndex >>> 3] |= 1 << (slotIndex & 7);
+    if (candidateSet.sparseSlots !== null) {
+      candidateSet.sparseSlots[candidateSet.sparseLength++] = slotIndex;
+    } else {
+      candidateSet.bits[slotIndex >>> 3] |= 1 << (slotIndex & 7);
+    }
     candidateSet.count += 1;
     if (candidateSet.preview.length < RESULT_PREVIEW_LIMIT) {
       candidateSet.preview.push(address);
     }
+  }
+
+  function finalizeCandidateSet(candidateSet) {
+    if (candidateSet.sparseSlots !== null) {
+      if (candidateSet.sparseLength !== candidateSet.sparseSlots.length) {
+        candidateSet.sparseSlots = candidateSet.sparseSlots.slice(
+          0,
+          candidateSet.sparseLength,
+        );
+      }
+      candidateSet.sparseLength = candidateSet.sparseSlots.length;
+      return candidateSet;
+    }
+    if (
+      candidateSet.bits &&
+      candidateSet.count * SPARSE_CANDIDATE_DENSITY_DIVISOR <= candidateSet.slotCount
+    ) {
+      const sparseSlots = new Uint32Array(candidateSet.count);
+      let sparseIndex = 0;
+      for (let byteIndex = 0; byteIndex < candidateSet.bits.length; byteIndex += 1) {
+        const candidateByte = candidateSet.bits[byteIndex];
+        if (!candidateByte) {
+          continue;
+        }
+        for (let bitIndex = 0; bitIndex < 8; bitIndex += 1) {
+          if (candidateByte & (1 << bitIndex)) {
+            sparseSlots[sparseIndex++] = byteIndex * 8 + bitIndex;
+          }
+        }
+      }
+      candidateSet.bits = null;
+      candidateSet.sparseSlots = sparseSlots;
+      candidateSet.sparseLength = sparseSlots.length;
+    }
+    return candidateSet;
+  }
+
+  function sparseLowerBound(slots, target) {
+    let low = 0;
+    let high = slots.length;
+    while (low < high) {
+      const middle = low + ((high - low) >>> 1);
+      if (slots[middle] < target) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    return low;
   }
 
   function scanStride(spec, alignment) {
@@ -568,7 +631,7 @@
       candidates.baselineValue = parseDisplayValue(type, rawValue, multiplier);
     }
 
-    return candidates;
+    return finalizeCandidateSet(candidates);
   }
 
   async function firstUnknownScan({ requestId, record, type, spec, stride }) {
@@ -579,14 +642,24 @@
   }
 
   function candidateIsRetained(candidateSet, slotIndex) {
-    return candidateSet.allCandidates || Boolean(
-      candidateSet.bits?.[slotIndex >>> 3] & (1 << (slotIndex & 7)),
-    );
+    if (candidateSet.allCandidates) {
+      return true;
+    }
+    if (candidateSet.sparseSlots !== null) {
+      const sparseIndex = sparseLowerBound(candidateSet.sparseSlots, slotIndex);
+      return candidateSet.sparseSlots[sparseIndex] === slotIndex;
+    }
+    return Boolean(candidateSet.bits?.[slotIndex >>> 3] & (1 << (slotIndex & 7)));
   }
 
   function candidateRangeHasMatches(candidateSet, startSlot, endSlot) {
     if (candidateSet.allCandidates) {
       return startSlot < endSlot;
+    }
+    if (candidateSet.sparseSlots !== null) {
+      const sparseIndex = sparseLowerBound(candidateSet.sparseSlots, startSlot);
+      return sparseIndex < candidateSet.sparseSlots.length &&
+        candidateSet.sparseSlots[sparseIndex] < endSlot;
     }
     const startByte = startSlot >>> 3;
     const endByte = Math.ceil(endSlot / 8);
@@ -708,12 +781,33 @@
     previous,
     slotCount,
   }) {
-    const candidates = createCandidateSet(slotCount, type, stride);
+    const sparsePrevious = previous.sparseSlots !== null;
+    const candidates = createCandidateSet(slotCount, type, stride, {
+      sparse: sparsePrevious,
+      sparseCapacity: sparsePrevious ? previous.count : 0,
+    });
     if (previous.baselineValue === undefined) {
-      return candidates;
+      return finalizeCandidateSet(candidates);
     }
     const matches = scanComparisonMatcher(type, condition, rawValue, multiplier);
     let view = new DataView(record.memory.buffer);
+    if (sparsePrevious) {
+      const sparseLimit = sparseLowerBound(previous.sparseSlots, slotCount);
+      for (let sparseIndex = 0; sparseIndex < sparseLimit; sparseIndex += 1) {
+        const slotIndex = previous.sparseSlots[sparseIndex];
+        const address = slotIndex * stride;
+        if (matches(spec.read(view, address), previous.baselineValue)) {
+          retainCandidate(candidates, slotIndex, address);
+        }
+        const inspected = sparseIndex + 1;
+        if (inspected % SCAN_CHUNK_SIZE === 0) {
+          send({ kind: "scanProgress", requestId, inspected, total: sparseLimit });
+          await yieldToPage(requestId);
+          view = new DataView(record.memory.buffer);
+        }
+      }
+      return finalizeCandidateSet(candidates);
+    }
     const bytesPerChunk = Math.max(1, Math.floor(SCAN_CHUNK_SIZE / 8));
     for (let byteIndex = 0; byteIndex < previous.bits.length; byteIndex += 1) {
       const candidateByte = previous.bits[byteIndex];
@@ -743,7 +837,7 @@
         view = new DataView(record.memory.buffer);
       }
     }
-    return candidates;
+    return finalizeCandidateSet(candidates);
   }
 
   async function refineLiveValue({
@@ -759,9 +853,30 @@
     previous,
     slotCount,
   }) {
-    const candidates = createCandidateSet(slotCount, type, stride);
+    const sparsePrevious = previous.sparseSlots !== null;
+    const candidates = createCandidateSet(slotCount, type, stride, {
+      sparse: sparsePrevious,
+      sparseCapacity: sparsePrevious ? previous.count : 0,
+    });
     const matches = scanValueMatcher(type, condition, rawValue, rawMaxValue, multiplier);
     let view = new DataView(record.memory.buffer);
+    if (sparsePrevious) {
+      const sparseLimit = sparseLowerBound(previous.sparseSlots, slotCount);
+      for (let sparseIndex = 0; sparseIndex < sparseLimit; sparseIndex += 1) {
+        const slotIndex = previous.sparseSlots[sparseIndex];
+        const offset = slotIndex * stride;
+        if (matches(spec.read(view, offset))) {
+          retainCandidate(candidates, slotIndex, offset);
+        }
+        const inspected = sparseIndex + 1;
+        if (inspected % SCAN_CHUNK_SIZE === 0) {
+          send({ kind: "scanProgress", requestId, inspected, total: sparseLimit });
+          await yieldToPage(requestId);
+          view = new DataView(record.memory.buffer);
+        }
+      }
+      return finalizeCandidateSet(candidates);
+    }
     const bytesPerChunk = Math.max(1, Math.floor(SCAN_CHUNK_SIZE / 8));
 
     for (let byteIndex = 0; byteIndex < previous.bits.length; byteIndex += 1) {
@@ -789,7 +904,7 @@
         view = new DataView(record.memory.buffer);
       }
     }
-    return candidates;
+    return finalizeCandidateSet(candidates);
   }
 
   async function refineSnapshotScan({
@@ -806,7 +921,11 @@
     slotCount,
     currentByteLength,
   }) {
-    const candidates = createCandidateSet(slotCount, type, stride);
+    const sparsePrevious = previous.sparseSlots !== null;
+    const candidates = createCandidateSet(slotCount, type, stride, {
+      sparse: sparsePrevious,
+      sparseCapacity: sparsePrevious ? previous.count : 0,
+    });
     const currentSnapshot = createSnapshot(currentByteLength);
     currentSnapshot.chunks = new Array(previous.snapshot.chunks.length).fill(null);
     const valueCondition = condition === "exact" || condition === "range";
@@ -866,10 +985,7 @@
         );
         let chunkRetained = false;
 
-        for (let slotIndex = startSlot; slotIndex < endSlot; slotIndex += 1) {
-          if (!candidateIsRetained(previous, slotIndex)) {
-            continue;
-          }
+        const retainMatchingSlot = (slotIndex) => {
           const address = slotIndex * stride;
           const localOffset = address - chunkOffset;
           const currentValue = spec.read(currentView, localOffset);
@@ -879,6 +995,19 @@
           if (matches) {
             retainCandidate(candidates, slotIndex, address);
             chunkRetained = true;
+          }
+        };
+        if (sparsePrevious) {
+          const sparseStart = sparseLowerBound(previous.sparseSlots, startSlot);
+          const sparseEnd = sparseLowerBound(previous.sparseSlots, endSlot);
+          for (let sparseIndex = sparseStart; sparseIndex < sparseEnd; sparseIndex += 1) {
+            retainMatchingSlot(previous.sparseSlots[sparseIndex]);
+          }
+        } else {
+          for (let slotIndex = startSlot; slotIndex < endSlot; slotIndex += 1) {
+            if (candidateIsRetained(previous, slotIndex)) {
+              retainMatchingSlot(slotIndex);
+            }
           }
         }
 
@@ -903,7 +1032,7 @@
     }
 
     candidates.snapshot = currentSnapshot;
-    return candidates;
+    return finalizeCandidateSet(candidates);
   }
 
   async function refineScan({
@@ -1006,7 +1135,9 @@
 
   function emptyCandidatesFor(record, type, spec, alignment, byteLength) {
     const stride = scanStride(spec, alignment);
-    return createCandidateSet(slotCountFor(byteLength, spec, stride), type, stride);
+    return finalizeCandidateSet(
+      createCandidateSet(slotCountFor(byteLength, spec, stride), type, stride),
+    );
   }
 
   async function firstAutoScan({
@@ -1115,7 +1246,7 @@
         if (!(error instanceof Error) || !/integer|numeric range/.test(error.message)) {
           throw error;
         }
-        sets.set(type, createCandidateSet(slotCount, type, stride));
+        sets.set(type, finalizeCandidateSet(createCandidateSet(slotCount, type, stride)));
       }
     }
     const snapshot = condition === "exact"
@@ -1155,7 +1286,10 @@
         prior.slotCount,
         slotCountFor(currentByteLength, spec, stride),
       );
-      const candidates = createCandidateSet(slotCount, type, stride);
+      const candidates = createCandidateSet(slotCount, type, stride, {
+        sparse: prior.sparseSlots !== null,
+        sparseCapacity: prior.sparseSlots !== null ? prior.count : 0,
+      });
       sets.set(type, candidates);
       try {
         configurations.push({
@@ -1232,10 +1366,7 @@
             config.slotCount,
             Math.ceil((chunkOffset + uniqueLength) / config.stride),
           );
-          for (let slotIndex = startSlot; slotIndex < endSlot; slotIndex += 1) {
-            if (!candidateIsRetained(config.prior, slotIndex)) {
-              continue;
-            }
+          const retainMatchingSlot = (slotIndex) => {
             const address = slotIndex * config.stride;
             const localOffset = address - chunkOffset;
             const currentValue = config.spec.read(currentView, localOffset);
@@ -1248,6 +1379,19 @@
             if (matches) {
               retainCandidate(config.candidates, slotIndex, address);
               chunkRetained = true;
+            }
+          };
+          if (config.prior.sparseSlots !== null) {
+            const sparseStart = sparseLowerBound(config.prior.sparseSlots, startSlot);
+            const sparseEnd = sparseLowerBound(config.prior.sparseSlots, endSlot);
+            for (let sparseIndex = sparseStart; sparseIndex < sparseEnd; sparseIndex += 1) {
+              retainMatchingSlot(config.prior.sparseSlots[sparseIndex]);
+            }
+          } else {
+            for (let slotIndex = startSlot; slotIndex < endSlot; slotIndex += 1) {
+              if (candidateIsRetained(config.prior, slotIndex)) {
+                retainMatchingSlot(slotIndex);
+              }
             }
           }
         }
@@ -1274,6 +1418,7 @@
 
     for (const candidates of sets.values()) {
       candidates.snapshot = currentSnapshot;
+      finalizeCandidateSet(candidates);
     }
     return {
       multi: true,
@@ -1331,6 +1476,12 @@
       total,
       preview,
       allCandidates,
+      candidateStorage: Object.fromEntries(
+        [...group.sets].map(([type, candidates]) => [
+          type,
+          candidates.allCandidates ? "all" : candidates.sparseSlots !== null ? "sparse" : "dense",
+        ]),
+      ),
       memoryBytes: record.memory.buffer.byteLength,
       snapshotBytes: group.snapshot?.compressedBytes ?? null,
     });
@@ -1533,6 +1684,11 @@
       total: candidates.count,
       preview,
       allCandidates: candidates.allCandidates,
+      candidateStorage: candidates.allCandidates
+        ? "all"
+        : candidates.sparseSlots !== null
+          ? "sparse"
+          : "dense",
       memoryBytes: record.memory.buffer.byteLength,
       snapshotBytes: candidates.snapshot?.compressedBytes ?? null,
     });
