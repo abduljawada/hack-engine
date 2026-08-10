@@ -15,12 +15,12 @@ Automated store-build work completed on 2026-08-10:
 - The exact generated Firefox package passes its live WebExtension bridge test in Firefox 153.0.3.
 - The exact generated Chrome package loads as an MV3 extension and passes the same live bridge test in Chrome 152.
 
-Owner decisions still required before submission:
+Release decisions confirmed on 2026-08-10:
 
-- Choose the permanent Firefox add-on ID. The current development ID must not ship.
-- Choose a project license; MIT is the simplest permissive option, while MPL-2.0 keeps modifications to covered files open.
-- Provide the public support email to show in both stores.
-- Confirm whether `0.7.0` is the first store version and whether the AMO listing should be marked Experimental.
+- Permanent Firefox add-on ID: `hack-engine@abduljawada.github.io`.
+- Project license: MIT.
+- Public support email: `a.abduljawad@outlook.com`.
+- First store version: `0.7.0`; the AMO listing should be marked Experimental.
 
 ## Release blockers found in the current repository
 
@@ -28,20 +28,20 @@ Owner decisions still required before submission:
 - [x] Add a Chrome-compatible `background.service_worker` declaration through the browser-specific production build.
 - [x] Add and validate a Chrome `side_panel` declaration corresponding to Firefox's `sidebar_action`.
 - [x] Add Firefox's required `browser_specific_settings.gecko.data_collection_permissions.required: ["none"]` declaration.
-- [ ] Replace the development Firefox ID `ruffle-memory-inspector@example.local` with a deliberate, permanent Hack Engine add-on ID before the first AMO submission. Do not change it after release.
+- [x] Set the permanent Firefox ID to `hack-engine@abduljawada.github.io`. Do not change it after release.
 - [ ] Publish the prepared `docs/privacy.html` page and verify its public URL after pushing the site.
-- [ ] Add a project license and select the matching license in AMO.
+- [x] Add the MIT project license and prepare MIT as the AMO license selection.
 - [x] Add a reproducible production packaging command that excludes `.git`, tests, harnesses, design sources, screenshots, and other non-runtime files.
 - [ ] Complete the remaining manual Chromium UI and service-worker restart matrix; the generated MV3 package already passes its automated live bridge test.
 
 ## 1. Freeze the release scope
 
-- [ ] Choose the first public store version and update `manifest.json`, the status page, release notes, and package names together.
+- [x] Choose `0.7.0` as the first public store version and align the manifest, status page, release notes, and package names.
 - [x] Define the single purpose consistently: **Inspect and edit numeric WebAssembly memory in embedded Ruffle players for authorized local debugging.**
 - [x] Keep the popup, DevTools panel, store description, privacy disclosures, and reviewer notes consistent with that purpose.
 - [x] State clearly that raw writes are experimental and can reset or crash the embedded player.
 - [x] Avoid marketing the extension as a way to cheat online services, evade security, bypass paid features, or interfere with other users.
-- [ ] Decide whether a pre-1.0 AMO listing should carry Mozilla's **Experimental** label.
+- [x] Mark the pre-1.0 AMO listing as **Experimental**.
 - [x] Confirm from the release package that it contains no analytics, advertising, accounts, telemetry, native messaging, or external network transmission.
 
 ## 2. Permissions and policy review
@@ -78,7 +78,7 @@ Owner decisions still required before submission:
 - [x] Describe local processing plainly in `PRIVACY.md` and `docs/privacy.html`.
 - [x] State what persists and for how long, including session state and IndexedDB snapshots.
 - [x] Verify and state that the submitted code does not send information outside the browser.
-- [ ] Provide a support email and public support/issues URL.
+- [x] Provide `a.abduljawad@outlook.com` and the public GitHub issue tracker as support contacts.
 - [x] Add installation instructions for both Chrome and Firefox.
 - [x] Add an end-user guide covering the simple popup, full inspector, value types, false matches, restored/cached values, freeze behavior, and recovery after a player crash.
 - [x] Add a private vulnerability-reporting path and public issue tracker in `SECURITY.md`.
@@ -141,7 +141,7 @@ Official references: [prepare the extension](https://developer.chrome.com/docs/w
 ## 8. Firefox Add-ons submission
 
 - [ ] Create or connect a Mozilla Account to the [AMO Developer Hub](https://addons.mozilla.org/developers/).
-- [ ] Confirm the permanent Gecko add-on ID and keep it unchanged across all future releases.
+- [x] Confirm permanent Gecko add-on ID `hack-engine@abduljawada.github.io` and keep it unchanged across all future releases.
 - [x] Add `browser_specific_settings.gecko.data_collection_permissions.required: ["none"]` for the local-only release.
 - [x] Build with an equivalent reviewed, reproducible packaging process.
 - [x] Keep the package below AMO's 200 MB limit (the current Firefox ZIP is under 100 KiB).

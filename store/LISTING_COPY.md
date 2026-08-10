@@ -26,6 +26,8 @@ Use Hack Engine only with games, software, and content you own or are authorized
 
 - Suggested category: Developer Tools
 - Firefox: mark the pre-1.0 listing as Experimental
+- First store version: 0.7.0
+- License: MIT
 - Language: English
 
 ## URLs
@@ -33,3 +35,4 @@ Use Hack Engine only with games, software, and content you own or are authorized
 - Homepage: <https://abduljawada.github.io/hack-engine/>
 - Privacy: <https://abduljawada.github.io/hack-engine/privacy.html>
 - Support: <https://github.com/abduljawada/hack-engine/issues>
+- Support email: <a.abduljawad@outlook.com>

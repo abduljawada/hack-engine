@@ -1,5 +1,5 @@
 window.RUFFLE_MEMORY_STATUS = {
-  currentVersion: "0.7",
+  currentVersion: "0.7.0",
   currentName: "Candidate workspace",
   state: "Active development",
   progress: 70,
@@ -41,7 +41,7 @@ window.RUFFLE_MEMORY_STATUS = {
   ],
   milestones: [
     {
-      version: "0.7",
+      version: "0.7.0",
       name: "Candidate workspace",
       status: "Current",
       state: "current",

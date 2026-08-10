@@ -46,4 +46,4 @@ Use Hack Engine only with software and content you own or are authorized to insp
 
 ## Contact and changes
 
-Questions may be filed through the [Hack Engine issue tracker](https://github.com/abduljawada/hack-engine/issues). Security reports should use the process in [SECURITY.md](SECURITY.md). Material changes to collection, transmission, permissions, or external services will be documented here before release.
+Questions may be emailed to [a.abduljawad@outlook.com](mailto:a.abduljawad@outlook.com) or filed through the [Hack Engine issue tracker](https://github.com/abduljawada/hack-engine/issues). Security reports should use the process in [SECURITY.md](SECURITY.md). Material changes to collection, transmission, permissions, or external services will be documented here before release.

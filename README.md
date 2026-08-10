@@ -2,7 +2,7 @@
 
 Firefox-first WebExtension prototype for inspecting WebAssembly memory used by embedded Ruffle players.
 
-## Version 0.7
+## Version 0.7.0
 
 - Hooks `WebAssembly.instantiate` and `WebAssembly.instantiateStreaming` at `document_start` in the page's `MAIN` world.
 - Captures exported or imported `WebAssembly.Memory` objects in every permitted frame.
@@ -121,6 +121,8 @@ With the extension loaded, scan the captured memory as `Float64` for `12345.5`. 
 `node test/run-browser-harnesses.mjs` runs all page-level harnesses in a real headless browser. With the local server running, `node test/run-firefox-extension-harness.mjs` starts an isolated headless Firefox profile and installs `dist/firefox` through WebDriver BiDi. `node test/run-chrome-extension-harness.mjs` loads `dist/chrome` through Chrome's extension-debugging protocol. Both verify nested candidate data across the actual page/content/background bridge.
 
 See [PRIVACY.md](PRIVACY.md), [USER_GUIDE.md](USER_GUIDE.md), [SECURITY.md](SECURITY.md), and [CHANGELOG.md](CHANGELOG.md) for store-facing documentation.
+
+Hack Engine is released under the [MIT License](LICENSE). Support is available through the [issue tracker](https://github.com/abduljawada/hack-engine/issues) or at [a.abduljawad@outlook.com](mailto:a.abduljawad@outlook.com).
 
 ## Intentional limitations
 

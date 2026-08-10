@@ -7,6 +7,7 @@ All notable changes to Hack Engine are documented here.
 - Added deterministic Firefox and Chrome release packaging and validation.
 - Added store-facing privacy, security, reviewer, permission, and user documentation.
 - Added browser-specific Firefox sidebar and Chrome side-panel manifests.
+- Finalized the permanent Firefox add-on ID, MIT license, and public support contact for the 0.7.0 store release.
 
 ## [0.7.0] - 2026-08-10
 

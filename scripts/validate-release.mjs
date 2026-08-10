@@ -45,6 +45,7 @@ for (const browser of ["firefox", "chrome"]) {
   const archive = join(distRoot, `hack-engine-${browser}-v${firefox.version}.zip`);
   const listing = execFileSync("/usr/bin/unzip", ["-Z1", archive], { encoding: "utf8" });
   assert(listing.split("\n").includes("manifest.json"), `${browser} archive lacks a root manifest.json.`);
+  assert(listing.split("\n").includes("LICENSE"), `${browser} archive lacks the MIT license.`);
   assert(!listing.includes(".DS_Store"), `${browser} archive contains .DS_Store.`);
 }
 
