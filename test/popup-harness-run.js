@@ -1,7 +1,7 @@
 const popupHarnessResult = document.querySelector("#harness-result");
 
-function delay() {
-  return new Promise((resolve) => setTimeout(resolve, 0));
+function delay(milliseconds = 0) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 setTimeout(async () => {
@@ -25,13 +25,64 @@ setTimeout(async () => {
 
   if (sidebarMode) {
     const pin = document.querySelector("#pin-popup");
+    const viewSwitcher = document.querySelector("#view-switcher");
     const boundToOriginalTab =
       document.body.classList.contains("sidebar-panel") &&
+      !viewSwitcher.hidden &&
       pin.classList.contains("active") &&
       pin.getAttribute("aria-label").includes("Close Hack Engine sidebar") &&
       popupHarnessState.retrievedTabs.length === 1 &&
       popupHarnessState.retrievedTabs[0] === 77 &&
       popupHarnessState.queriedTabs === 0;
+
+    viewSwitcher.querySelector('[data-view="advanced"]').click();
+    document.querySelector("#advanced-type").value = "f64";
+    document.querySelector("#advanced-alignment").value = "byte";
+    document.querySelector("#advanced-multiplier").value = "4";
+    document.querySelector("#advanced-value").value = "8";
+    document.querySelector("#advanced-scan").click();
+    await delay();
+    await delay();
+    const advancedCommand = popupHarnessState.commands.find(({ payload }) =>
+      payload.kind === "memoryScan" && payload.type === "f64",
+    );
+    await delay(280);
+    const advancedRow = document.querySelector(".advanced-candidate");
+    const advancedScanWorked =
+      document.body.classList.contains("advanced-active") &&
+      document.querySelector("#quick-tools").hidden &&
+      !document.querySelector("#advanced-tools").hidden &&
+      advancedCommand?.payload.alignment === "byte" &&
+      advancedCommand.payload.multiplier === 4 &&
+      advancedRow?.querySelector(".candidate-value")?.textContent === "9" &&
+      advancedRow?.querySelector(".candidate-type")?.textContent === "f64" &&
+      document.querySelector("#advanced-scan").textContent === "Next scan";
+    advancedRow?.click();
+    const watchAdded =
+      document.querySelector("#advanced-watch-count").textContent === "1" &&
+      document.querySelectorAll(".watch-row").length === 1 &&
+      !document.querySelector("#advanced-editor").hidden;
+    document.querySelector("#advanced-filter").value = "missing";
+    document.querySelector("#advanced-filter").dispatchEvent(new Event("input"));
+    const filterWorked = document.querySelectorAll(".advanced-candidate").length === 0;
+    viewSwitcher.querySelector('[data-view="simple"]').click();
+    const sharedSession =
+      !document.querySelector("#quick-tools").hidden &&
+      document.querySelector("#quick-scan").textContent === "Next scan" &&
+      document.querySelector("#quick-result-count").textContent === "1";
+    viewSwitcher.querySelector('[data-view="advanced"]').click();
+    document.querySelector('[data-workspace="watches"]').click();
+    const watchWorkspace =
+      !document.querySelector("#advanced-watch-pane").hidden &&
+      document.querySelector("#advanced-candidate-pane").hidden;
+    document.querySelector("#reset-advanced-scan").click();
+    await delay();
+    const watchSurvivedReset =
+      document.querySelector("#advanced-watch-count").textContent === "1" &&
+      document.querySelectorAll(".watch-row").length === 1 &&
+      document.querySelectorAll(".advanced-candidate").length === 0 &&
+      document.querySelector("#advanced-scan").textContent === "First scan";
+
     document.querySelector("#open-inspector").click();
     await delay();
     const inspectorUrl = new URL(popupHarnessState.createdTabs[0]?.url || location.href);
@@ -42,9 +93,9 @@ setTimeout(async () => {
     pin.click();
     await delay();
     const sidebarClosed = popupHarnessState.sidebarCloseCount === 1 && !popupHarnessState.closed;
-    popupHarnessResult.textContent = rendered && boundToOriginalTab && openedInOriginalWindow && sidebarClosed
-      ? "PASS: Firefox sidebar stays bound to its original inspected tab and exposes undock behavior."
-      : "FAIL: Firefox sidebar did not preserve its target tab or docked state.";
+    popupHarnessResult.textContent = rendered && boundToOriginalTab && advancedScanWorked && watchAdded && filterWorked && sharedSession && watchWorkspace && watchSurvivedReset && openedInOriginalWindow && sidebarClosed
+      ? "PASS: Firefox sidebar shares Simple and Advanced scans, live candidates, watches, and tab-bound docking."
+      : "FAIL: Firefox sidebar Advanced mode did not preserve its scan, candidates, watches, or docked state.";
     return;
   }
 
@@ -52,6 +103,7 @@ setTimeout(async () => {
     const pin = document.querySelector("#pin-popup");
     const boundToOriginalTab =
       document.body.classList.contains("popout-window") &&
+      !document.querySelector("#view-switcher").hidden &&
       !pin.classList.contains("active") &&
       pin.getAttribute("aria-label").includes("Dock Hack Engine") &&
       document.querySelector("#pop-out-window").hidden &&
@@ -74,6 +126,7 @@ setTimeout(async () => {
   }
 
   const pin = document.querySelector("#pin-popup");
+  const nativePopupStayedSimple = document.querySelector("#view-switcher").hidden;
   pin.click();
   await delay();
   const sidebarUrl = new URL(popupHarnessState.sidebarPanels[0]?.panel || location.href);
@@ -166,7 +219,7 @@ setTimeout(async () => {
     popupHarnessState.createdTabs.at(-1)?.windowId === 10;
 
   popupHarnessResult.textContent =
-    rendered && pinDocked && firstPopoutOpened && secondPopoutReused && automaticScan && liveCandidateRefresh && typedActions && inspectorOpened && refreshed && helpOpened
+    rendered && nativePopupStayedSimple && pinDocked && firstPopoutOpened && secondPopoutReused && automaticScan && liveCandidateRefresh && typedActions && inspectorOpened && refreshed && helpOpened
       ? "PASS: compact toolbar popup, live candidates, Firefox sidebar docking, pop-out reuse, and typed quick-scan actions work."
       : "FAIL: toolbar quick-scan behavior did not match the active Ruffle state.";
 }, 80);

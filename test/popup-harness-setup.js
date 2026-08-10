@@ -11,10 +11,13 @@ const popupHarnessState = {
   sidebarSetPanelSettled: false,
   sidebarOpenedDuringUserAction: false,
   candidateReadCount: 0,
+  liveMultiplier: 1,
   reloadedTabs: [],
   commands: [],
   closed: false,
 };
+
+sessionStorage.removeItem("hack-engine-view");
 
 window.close = () => {
   popupHarnessState.closed = true;
@@ -62,6 +65,8 @@ function createPopupPort() {
           instances: [instance],
         }));
       } else if (payload.kind === "memoryScan") {
+        popupHarnessState.liveMultiplier = Number(payload.multiplier) || 1;
+        const resultType = ["smart", "auto"].includes(payload.type) ? "i32" : payload.type;
         queueMicrotask(() => {
           emitPayload({
             kind: "scanProgress",
@@ -73,12 +78,18 @@ function createPopupPort() {
             kind: "scanResults",
             requestId: payload.requestId,
             instanceId: instance.id,
-            type: payload.type,
-            multiplier: 1,
+            type: resultType,
+            multiplier: popupHarnessState.liveMultiplier,
             avmKind: "avm2",
             searchedTypes: ["i32", "u32", "f64"],
             total: 1,
-            preview: [{ address: 4096, type: "i32", value: 8, displayValue: 8 }],
+            preview: [{
+              address: 4096,
+              type: resultType,
+              value: 8 * popupHarnessState.liveMultiplier,
+              displayValue: 8,
+              multiplier: popupHarnessState.liveMultiplier,
+            }],
             allCandidates: false,
           });
         });
@@ -109,7 +120,7 @@ function createPopupPort() {
           instanceId: instance.id,
           values: payload.entries.map((entry) => ({
             ...entry,
-            value: 9,
+            value: 9 * popupHarnessState.liveMultiplier,
           })),
         }));
       }

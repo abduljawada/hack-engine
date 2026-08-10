@@ -16,6 +16,7 @@
           <img src="../assets/ui-icons/pin.svg" alt="" />
         </button>
       </header>
+      <nav id="view-switcher" class="view-switcher" aria-label="Inspector view" hidden><button type="button" data-view="simple" aria-pressed="true">Simple</button><button type="button" data-view="advanced" aria-pressed="false">Advanced</button></nav>
       <section id="quick-tools" class="quick-tools" hidden>
         <div class="quick-heading">
           <div><span class="context-label">Simple view</span><h2>Quick scan</h2></div>
@@ -58,6 +59,23 @@
             <button id="quick-freeze" class="compact-action" type="button">Freeze</button>
           </div>
         </section>
+      </section>
+      <section id="advanced-tools" class="advanced-tools" hidden>
+        <div class="advanced-heading"><div><span class="context-label">Advanced view</span><h2>Memory scan</h2></div><span id="advanced-session-badge" class="session-badge">New scan</span></div>
+        <div class="advanced-form">
+          <label>Condition<select id="advanced-condition"><option value="exact">Exact value</option><option value="range">Value range</option><option value="unknown">Unknown initial value</option><option value="changed" data-refine-only>Changed</option><option value="unchanged" data-refine-only>Unchanged</option><option value="increased" data-refine-only>Increased</option><option value="decreased" data-refine-only>Decreased</option><option value="increasedBy" data-refine-only>Increased by</option><option value="decreasedBy" data-refine-only>Decreased by</option></select></label>
+          <div class="value-fields"><label id="advanced-value-label"><span id="advanced-value-text">Value</span><input id="advanced-value" type="number" step="any" value="100" /></label><label id="advanced-max-label" hidden>Maximum<input id="advanced-max-value" type="number" step="any" value="200" /></label></div>
+          <div class="advanced-grid"><label>Number format<select id="advanced-type"><option value="smart">Automatic</option><option value="auto">All numeric types</option><option value="i8">Int8</option><option value="u8">Uint8</option><option value="i16">Int16</option><option value="u16">Uint16</option><option value="i32">Int32</option><option value="u32">Uint32</option><option value="f32">Float32</option><option value="f64">Float64</option></select></label><label>Alignment<select id="advanced-alignment"><option value="aligned">Aligned</option><option value="byte">Any byte</option></select></label></div>
+          <details class="advanced-options"><summary>More options</summary><div><label id="advanced-instance-label" hidden>Captured memory<select id="advanced-instance"></select></label><label>Stored-value multiplier<input id="advanced-multiplier" type="number" min="0" step="any" value="1" /></label></div></details>
+        </div>
+        <div class="scan-actions"><button id="advanced-scan" class="primary-action" type="button">First scan</button><button id="cancel-advanced-scan" class="compact-action danger" type="button" hidden>Cancel</button><button id="reset-advanced-scan" class="compact-action" type="button" hidden>Reset</button></div>
+        <div id="advanced-status" class="quick-status">Ready to configure a scan.</div>
+        <section id="advanced-workspace" class="advanced-workspace" hidden>
+          <div class="workspace-tabs" role="tablist"><button type="button" data-workspace="candidates" role="tab" aria-selected="true">Candidates <span id="advanced-result-count">0</span></button><button type="button" data-workspace="watches" role="tab" aria-selected="false">Watches <span id="advanced-watch-count">0</span></button></div>
+          <section id="advanced-candidate-pane" class="workspace-pane"><div class="candidate-tools"><input id="advanced-filter" type="search" placeholder="Filter address, value, or type" /><select id="advanced-sort"><option value="address">Address</option><option value="value">Value</option><option value="type">Type</option></select></div><div id="advanced-candidates" class="advanced-candidates"></div></section>
+          <section id="advanced-watch-pane" class="workspace-pane" hidden><p id="advanced-watch-empty" class="empty-state">Select a candidate to add it here automatically.</p><div id="advanced-watches" class="advanced-watches"></div></section>
+        </section>
+        <section id="advanced-editor" class="quick-editor advanced-editor" hidden><div><span class="context-label">Selected value</span><strong id="advanced-selected-address">0x00000000</strong></div><label>New value<input id="advanced-write-value" type="number" step="any" /></label><div class="editor-actions"><button id="advanced-write" class="compact-action danger" type="button">Write value</button><button id="advanced-freeze" class="compact-action" type="button">Freeze</button></div></section>
       </section>
       <button id="open-inspector" class="inspector-action" type="button" disabled>
         <img class="ui-icon" src="../assets/ui-icons/magnifying-glass.svg" alt="" /><span>Open full inspector</span><img class="ui-icon chevron" src="../assets/ui-icons/chevron-right.svg" alt="" />

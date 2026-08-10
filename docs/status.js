@@ -10,7 +10,7 @@ window.RUFFLE_MEMORY_STATUS = {
     },
     {
       title: "Type-free quick scan",
-      description: "Use a compact toolbar scan with Ruffle-guided formats, or dock it in Firefox's sidebar while interacting with the game.",
+      description: "Use a compact Ruffle-guided toolbar scan, or dock it in Firefox's sidebar and switch to explicit Advanced controls.",
     },
     {
       title: "Comparison refinement",
@@ -18,7 +18,7 @@ window.RUFFLE_MEMORY_STATUS = {
     },
     {
       title: "Candidate workspace",
-      description: "Filter, sort, select, label, group, and batch-operate on a focused 200-row preview.",
+      description: "Filter, sort, select, write, freeze, and automatically watch up to 200 live candidates in the persistent sidebar.",
     },
     {
       title: "Live watches",
