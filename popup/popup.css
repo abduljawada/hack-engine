@@ -83,6 +83,7 @@ h1 { font-size: 21px; line-height: 1.1; letter-spacing: -0.025em; }
 .primary-action:focus-visible,
 .pin-action:focus-visible,
 .compact-action:focus-visible,
+.preset-action:focus-visible,
 .inspector-action:focus-visible,
 .secondary-actions button:focus-visible,
 .quick-candidate:focus-visible,
@@ -204,6 +205,18 @@ select:disabled, input:disabled { opacity: 0.48; }
 .quick-editor > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 #selected-address { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
 .editor-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.value-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.preset-action {
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+.preset-action:hover { border-color: rgb(130 247 197 / 28%); color: var(--accent); background: rgb(130 247 197 / 5%); }
 .compact-action.freeze-active { border-color: var(--accent); color: var(--accent); background: rgb(130 247 197 / 7%); }
 
 .view-switcher {

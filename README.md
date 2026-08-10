@@ -19,6 +19,7 @@ Firefox-first WebExtension prototype for inspecting WebAssembly memory used by e
 - Narrows unknown candidates by an exact displayed increase or decrease amount.
 - Scans naturally aligned values by default, with an optional byte-by-byte mode for unaligned values.
 - Displays candidate WASM byte offsets and permits direct writes.
+- Provides type-aware **Set to min** and **Set to max** write presets for every supported integer and floating-point representation.
 - Keeps the candidate preview capped at 200 rows, with filtering, sorting, multi-selection, and batch watch/write/freeze actions.
 - Automatically adds a candidate or manual address to the watch list when it is selected, written, or frozen.
 - Keeps a live watch list across scans for up to 256 typed addresses in the current DevTools session.

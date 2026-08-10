@@ -40,6 +40,7 @@
 - Simple and Advanced views share one scan session; switching views neither resets nor repeats the scan.
 - Advanced mode exposes number format, alignment, stored-value multiplier, and captured-memory selection before the first scan, then locks representation controls during refinement.
 - The Advanced candidate list displays up to 200 live values, supports filtering and sorting, and automatically watches a value when it is selected.
+- Both candidate editors expose compact type-aware minimum and maximum presets without writing until the user confirms **Write value**.
 - Sidebar watches continue polling after a scan reset and are capped so one batched read remains within the page agent's 256-entry limit.
 - Pinning docks the controls in Firefox's sidebar, retains the original inspected-tab target, and the active pin closes the sidebar.
 - Pop out creates or focuses one floating utility window per inspected tab and opens related tabs in the target's original browser window.

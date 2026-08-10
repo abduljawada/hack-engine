@@ -5,6 +5,16 @@
   const CANDIDATE_REFRESH_MS = 250;
   const MAX_ADVANCED_CANDIDATES = 200;
   const MAX_SIDEBAR_WATCHES = 56;
+  const NUMERIC_LIMITS = Object.freeze({
+    i8: ["-128", "127"],
+    u8: ["0", "255"],
+    i16: ["-32768", "32767"],
+    u16: ["0", "65535"],
+    i32: ["-2147483648", "2147483647"],
+    u32: ["0", "4294967295"],
+    f32: ["-3.4028234663852886e+38", "3.4028234663852886e+38"],
+    f64: ["-1.7976931348623157e+308", "1.7976931348623157e+308"],
+  });
   const popupParameters = new URLSearchParams(location.search);
   const boundTabId = Number(popupParameters.get("tabId"));
   const isSidebarPanel = popupParameters.get("sidebar") === "1";
@@ -58,6 +68,8 @@
     editor: document.querySelector("#quick-editor"),
     selectedAddress: document.querySelector("#selected-address"),
     writeValue: document.querySelector("#quick-write-value"),
+    quickSetMin: document.querySelector("#quick-set-min"),
+    quickSetMax: document.querySelector("#quick-set-max"),
     write: document.querySelector("#quick-write"),
     freeze: document.querySelector("#quick-freeze"),
     advancedTools: document.querySelector("#advanced-tools"),
@@ -91,6 +103,8 @@
     advancedEditor: document.querySelector("#advanced-editor"),
     advancedSelectedAddress: document.querySelector("#advanced-selected-address"),
     advancedWriteValue: document.querySelector("#advanced-write-value"),
+    advancedSetMin: document.querySelector("#advanced-set-min"),
+    advancedSetMax: document.querySelector("#advanced-set-max"),
     advancedWrite: document.querySelector("#advanced-write"),
     advancedFreeze: document.querySelector("#advanced-freeze"),
     openInspector: document.querySelector("#open-inspector"),
@@ -1064,6 +1078,28 @@
     }, selectedCandidate.frameId);
     setQuickStatus("Writing and checking the value…");
   }
+
+  function setSelectedLimit(input, bound) {
+    if (!selectedCandidate) {
+      setQuickStatus("Select a candidate before choosing a numeric limit.", "error");
+      return;
+    }
+    const limits = NUMERIC_LIMITS[selectedCandidate.type];
+    if (!limits) {
+      setQuickStatus(`Numeric limits are unavailable for ${selectedCandidate.type}.`, "error");
+      return;
+    }
+    input.value = limits[bound === "max" ? 1 : 0];
+    setQuickStatus(
+      `${bound === "max" ? "Maximum" : "Minimum"} ${selectedCandidate.type} value prepared.`,
+      "ready",
+    );
+  }
+
+  elements.quickSetMin.addEventListener("click", () => setSelectedLimit(elements.writeValue, "min"));
+  elements.quickSetMax.addEventListener("click", () => setSelectedLimit(elements.writeValue, "max"));
+  elements.advancedSetMin.addEventListener("click", () => setSelectedLimit(elements.advancedWriteValue, "min"));
+  elements.advancedSetMax.addEventListener("click", () => setSelectedLimit(elements.advancedWriteValue, "max"));
   elements.write.addEventListener("click", () => writeSelected(elements.writeValue));
   elements.advancedWrite.addEventListener("click", () => writeSelected(elements.advancedWriteValue));
 

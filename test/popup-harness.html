@@ -54,6 +54,7 @@
         <section id="quick-editor" class="quick-editor" hidden>
           <div><span class="context-label">Selected value</span><strong id="selected-address">0x00000000</strong></div>
           <label>New value<input id="quick-write-value" type="number" step="any" /></label>
+          <div class="value-presets" aria-label="Numeric limits"><button id="quick-set-min" class="preset-action" type="button">Set to min</button><button id="quick-set-max" class="preset-action" type="button">Set to max</button></div>
           <div class="editor-actions">
             <button id="quick-write" class="compact-action danger" type="button">Write value</button>
             <button id="quick-freeze" class="compact-action" type="button">Freeze</button>
@@ -75,7 +76,7 @@
           <section id="advanced-candidate-pane" class="workspace-pane"><div class="candidate-tools"><input id="advanced-filter" type="search" placeholder="Filter address, value, or type" /><select id="advanced-sort"><option value="address">Address</option><option value="value">Value</option><option value="type">Type</option></select></div><div id="advanced-candidates" class="advanced-candidates"></div></section>
           <section id="advanced-watch-pane" class="workspace-pane" hidden><p id="advanced-watch-empty" class="empty-state">Select a candidate to add it here automatically.</p><div id="advanced-watches" class="advanced-watches"></div></section>
         </section>
-        <section id="advanced-editor" class="quick-editor advanced-editor" hidden><div><span class="context-label">Selected value</span><strong id="advanced-selected-address">0x00000000</strong></div><label>New value<input id="advanced-write-value" type="number" step="any" /></label><div class="editor-actions"><button id="advanced-write" class="compact-action danger" type="button">Write value</button><button id="advanced-freeze" class="compact-action" type="button">Freeze</button></div></section>
+        <section id="advanced-editor" class="quick-editor advanced-editor" hidden><div><span class="context-label">Selected value</span><strong id="advanced-selected-address">0x00000000</strong></div><label>New value<input id="advanced-write-value" type="number" step="any" /></label><div class="value-presets" aria-label="Numeric limits"><button id="advanced-set-min" class="preset-action" type="button">Set to min</button><button id="advanced-set-max" class="preset-action" type="button">Set to max</button></div><div class="editor-actions"><button id="advanced-write" class="compact-action danger" type="button">Write value</button><button id="advanced-freeze" class="compact-action" type="button">Freeze</button></div></section>
       </section>
       <button id="open-inspector" class="inspector-action" type="button" disabled>
         <img class="ui-icon" src="../assets/ui-icons/magnifying-glass.svg" alt="" /><span>Open full inspector</span><img class="ui-icon chevron" src="../assets/ui-icons/chevron-right.svg" alt="" />

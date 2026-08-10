@@ -58,6 +58,10 @@ setTimeout(async () => {
       advancedRow?.querySelector(".candidate-type")?.textContent === "f64" &&
       document.querySelector("#advanced-scan").textContent === "Next scan";
     advancedRow?.click();
+    document.querySelector("#advanced-set-min").click();
+    const advancedMinPreset = Number(document.querySelector("#advanced-write-value").value) === -Number.MAX_VALUE;
+    document.querySelector("#advanced-set-max").click();
+    const advancedMaxPreset = Number(document.querySelector("#advanced-write-value").value) === Number.MAX_VALUE;
     const watchAdded =
       document.querySelector("#advanced-watch-count").textContent === "1" &&
       document.querySelectorAll(".watch-row").length === 1 &&
@@ -93,7 +97,7 @@ setTimeout(async () => {
     pin.click();
     await delay();
     const sidebarClosed = popupHarnessState.sidebarCloseCount === 1 && !popupHarnessState.closed;
-    popupHarnessResult.textContent = rendered && boundToOriginalTab && advancedScanWorked && watchAdded && filterWorked && sharedSession && watchWorkspace && watchSurvivedReset && openedInOriginalWindow && sidebarClosed
+    popupHarnessResult.textContent = rendered && boundToOriginalTab && advancedScanWorked && advancedMinPreset && advancedMaxPreset && watchAdded && filterWorked && sharedSession && watchWorkspace && watchSurvivedReset && openedInOriginalWindow && sidebarClosed
       ? "PASS: Firefox sidebar shares Simple and Advanced scans, live candidates, watches, and tab-bound docking."
       : "FAIL: Firefox sidebar Advanced mode did not preserve its scan, candidates, watches, or docked state.";
     return;
@@ -183,6 +187,10 @@ setTimeout(async () => {
     document.querySelector(".candidate-value").textContent === "9";
 
   document.querySelector(".quick-candidate").click();
+  document.querySelector("#quick-set-min").click();
+  const quickMinPreset = document.querySelector("#quick-write-value").value === "-2147483648";
+  document.querySelector("#quick-set-max").click();
+  const quickMaxPreset = document.querySelector("#quick-write-value").value === "2147483647";
   document.querySelector("#quick-write-value").value = "999";
   document.querySelector("#quick-write").click();
   document.querySelector("#quick-freeze").click();
@@ -219,7 +227,7 @@ setTimeout(async () => {
     popupHarnessState.createdTabs.at(-1)?.windowId === 10;
 
   popupHarnessResult.textContent =
-    rendered && nativePopupStayedSimple && pinDocked && firstPopoutOpened && secondPopoutReused && automaticScan && liveCandidateRefresh && typedActions && inspectorOpened && refreshed && helpOpened
+    rendered && nativePopupStayedSimple && pinDocked && firstPopoutOpened && secondPopoutReused && automaticScan && liveCandidateRefresh && quickMinPreset && quickMaxPreset && typedActions && inspectorOpened && refreshed && helpOpened
       ? "PASS: compact toolbar popup, live candidates, Firefox sidebar docking, pop-out reuse, and typed quick-scan actions work."
       : "FAIL: toolbar quick-scan behavior did not match the active Ruffle state.";
 }, 80);
