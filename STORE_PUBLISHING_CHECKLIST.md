@@ -14,6 +14,7 @@ Automated store-build work completed on 2026-08-10:
 - The complete page-level regression suite passes, including the 225.5 MiB unknown-value scan.
 - The exact generated Firefox package passes its live WebExtension bridge test in Firefox 153.0.3.
 - The exact generated Chrome package loads as an MV3 extension and passes the same live bridge test in Chrome 152.
+- The public privacy policy is deployed at <https://abduljawada.github.io/hack-engine/privacy.html>.
 
 Release decisions confirmed on 2026-08-10:
 
@@ -29,7 +30,7 @@ Release decisions confirmed on 2026-08-10:
 - [x] Add and validate a Chrome `side_panel` declaration corresponding to Firefox's `sidebar_action`.
 - [x] Add Firefox's required `browser_specific_settings.gecko.data_collection_permissions.required: ["none"]` declaration.
 - [x] Set the permanent Firefox ID to `hack-engine@abduljawada.github.io`. Do not change it after release.
-- [ ] Publish the prepared `docs/privacy.html` page and verify its public URL after pushing the site.
+- [x] Publish `docs/privacy.html` and verify its public GitHub Pages URL.
 - [x] Add the MIT project license and prepare MIT as the AMO license selection.
 - [x] Add a reproducible production packaging command that excludes `.git`, tests, harnesses, design sources, screenshots, and other non-runtime files.
 - [ ] Complete the remaining manual Chromium UI and service-worker restart matrix; the generated MV3 package already passes its automated live bridge test.
@@ -74,7 +75,7 @@ Release decisions confirmed on 2026-08-10:
 
 ## 4. Privacy, support, and public documentation
 
-- [ ] Add a public privacy policy URL, preferably on the `hack-engine` GitHub Pages site.
+- [x] Publish the privacy policy at <https://abduljawada.github.io/hack-engine/privacy.html>.
 - [x] Describe local processing plainly in `PRIVACY.md` and `docs/privacy.html`.
 - [x] State what persists and for how long, including session state and IndexedDB snapshots.
 - [x] Verify and state that the submitted code does not send information outside the browser.
