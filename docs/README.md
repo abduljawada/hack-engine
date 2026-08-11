@@ -1,6 +1,6 @@
-# Project status site
+# Product website
 
-GitHub Pages serves this directory. Update `status.js` whenever a feature ships or a roadmap milestone changes; the page layout normally does not need editing.
+GitHub Pages serves this directory. Keep the product overview, feature summary, setup instructions, and short planned-features section aligned with the main repository README.
 
 The deployment workflow publishes `docs/` after a push to `main`. In the GitHub repository settings, set **Pages → Build and deployment → Source** to **GitHub Actions** once.
 

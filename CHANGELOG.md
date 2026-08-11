@@ -4,6 +4,8 @@ All notable changes to Hack Engine are documented here.
 
 ## [Unreleased]
 
+- Reworked the public website and README around the product, its core features, and the everyday scanning workflow.
+- Replaced browser-priority positioning with clear Firefox and Chromium support language.
 - Moved address-intelligence and compatibility-expansion work to post-release roadmap milestones so 1.0 can focus on a stable store launch.
 - Added deterministic Firefox and Chrome release packaging and validation.
 - Added store-facing privacy, security, reviewer, permission, and user documentation.

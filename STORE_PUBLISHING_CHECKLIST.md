@@ -1,8 +1,8 @@
 # Hack Engine store-publishing checklist
 
-Last reviewed: 2026-08-10
+Last reviewed: 2026-08-11
 
-Target: publish Hack Engine as a Firefox-first, cross-browser Manifest V3 extension on Firefox Add-ons (AMO) and the Chrome Web Store (CWS).
+Target: publish Hack Engine as a cross-browser Manifest V3 extension on Firefox Add-ons (AMO) and the Chrome Web Store (CWS).
 
 ## Current release status
 

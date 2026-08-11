@@ -5,13 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Development status and roadmap for Hack Engine, a Firefox-first WebAssembly memory inspection extension."
+      content="Hack Engine helps you find, watch, and change numeric values in browser games running through Ruffle."
     />
     <meta name="theme-color" content="#10131a" />
-    <title>Hack Engine — Product roadmap</title>
+    <title>Hack Engine — Memory tools for browser games</title>
     <link rel="stylesheet" href="styles.css" />
-    <script src="status.js" defer></script>
-    <script src="app.js" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -21,9 +19,10 @@
         <span>Hack Engine</span>
       </a>
       <nav aria-label="Primary navigation">
-        <a href="#status">Status</a>
-        <a href="#capabilities">Capabilities</a>
-        <a href="#roadmap">Roadmap</a>
+        <a href="#features">Features</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="#install">Install</a>
+        <a href="#planned">What's next</a>
         <a href="privacy.html">Privacy</a>
       </nav>
     </header>
@@ -31,105 +30,177 @@
     <main id="main">
       <section id="top" class="hero">
         <div class="hero-copy">
-          <p class="eyebrow">Firefox-first · WebAssembly tooling</p>
-          <h1>Inspect Ruffle memory.<br /><span>Stay inside the browser.</span></h1>
+          <p class="eyebrow">Memory tools for Ruffle games</p>
+          <h1>Find the value.<br /><span>Take control.</span></h1>
           <p class="lede">
-            A toolbar and DevTools extension for finding, watching, and editing numeric values in
-            embedded Ruffle players—without changing macOS system protections.
+            Hack Engine lets you search, watch, edit, and freeze numeric values in browser games—right beside the page you are playing.
           </p>
           <div class="hero-actions">
-            <a class="button primary" href="#roadmap">View the roadmap</a>
-            <a class="button secondary" href="#capabilities">See what works today</a>
+            <a class="button primary" href="#install">Try Hack Engine</a>
+            <a class="button secondary" href="#how-it-works">See how it works</a>
           </div>
+          <p class="hero-note">Runs locally. No accounts, telemetry, native debugger, or system security changes.</p>
         </div>
 
-        <aside class="release-card" aria-label="Current release status">
-          <div class="release-topline">
-            <span class="live-dot" aria-hidden="true"></span>
-            <span id="release-state">Active development</span>
+        <aside class="product-demo" aria-label="Example Hack Engine scan">
+          <div class="demo-header">
+            <div>
+              <span class="demo-label">Hack Engine</span>
+              <strong>Quick scan</strong>
+            </div>
+            <span class="demo-status"><i aria-hidden="true"></i> Memory detected</span>
           </div>
-          <strong id="current-version">v0.7.0</strong>
-          <p id="release-name">Candidate workspace</p>
-          <div class="progress-track" aria-label="Roadmap progress">
-            <span id="progress-fill"></span>
+          <div class="demo-field">
+            <span>Current value</span>
+            <b>1,250</b>
           </div>
-          <div class="progress-labels">
-            <span>Prototype</span>
-            <span>1.0</span>
+          <div class="demo-scan">Next scan</div>
+          <div class="demo-results">
+            <div class="demo-results-head"><span>Candidates</span><strong>3</strong></div>
+            <div class="demo-row"><code>0x00A3F1C0</code><strong>1,250</strong></div>
+            <div class="demo-row selected"><code>0x00C81428</code><strong>1,250</strong></div>
+            <div class="demo-row"><code>0x00E92B10</code><strong>1,250</strong></div>
           </div>
+          <div class="demo-actions"><span>Watch</span><span>Set value</span><span>Freeze</span></div>
         </aside>
       </section>
 
-      <section id="status" class="status-strip" aria-label="Project summary">
-        <article>
-          <span class="metric" id="release-metric">0.7.0</span>
-          <span class="metric-label">current release</span>
-        </article>
-        <article>
-          <span class="metric">8</span>
-          <span class="metric-label">numeric representations</span>
-        </article>
-        <article>
-          <span class="metric">200</span>
-          <span class="metric-label">candidate preview limit</span>
-        </article>
-        <article>
-          <span class="metric">225.5 MiB</span>
-          <span class="metric-label">large-memory regression</span>
-        </article>
+      <section class="benefit-strip" aria-label="Product benefits">
+        <article><strong>Local</strong><span>Your scan data stays in the browser</span></article>
+        <article><strong>Flexible</strong><span>Exact, range, and unknown scans</span></article>
+        <article><strong>Persistent</strong><span>Keep controls beside the game</span></article>
+        <article><strong>Cross-browser</strong><span>Firefox and Chromium packages</span></article>
       </section>
 
-      <section id="capabilities" class="section-block">
+      <section id="features" class="section-block">
         <div class="section-heading">
-          <p class="eyebrow">Available now</p>
-          <h2>A focused memory workflow</h2>
-          <p>Scan broadly, narrow deliberately, and keep useful candidates visible as the game runs.</p>
+          <p class="eyebrow">Core features</p>
+          <h2>A complete value-finding workflow</h2>
+          <p>Start with the number you can see, narrow the possibilities, and keep the useful result under control.</p>
         </div>
-        <div id="capability-grid" class="capability-grid"></div>
+        <div class="feature-grid">
+          <article class="feature-card">
+            <span class="feature-icon" aria-hidden="true">01</span>
+            <h3>Quick scans</h3>
+            <p>Search for an exact number without choosing a technical number format first.</p>
+          </article>
+          <article class="feature-card">
+            <span class="feature-icon" aria-hidden="true">02</span>
+            <h3>Smart refinement</h3>
+            <p>Filter results by a new value or by whether they changed, increased, or decreased.</p>
+          </article>
+          <article class="feature-card">
+            <span class="feature-icon" aria-hidden="true">03</span>
+            <h3>Live watches</h3>
+            <p>Follow useful values in real time and organize them with labels and groups.</p>
+          </article>
+          <article class="feature-card">
+            <span class="feature-icon" aria-hidden="true">04</span>
+            <h3>Edit and freeze</h3>
+            <p>Set a discovered value once or keep it fixed while the game continues running.</p>
+          </article>
+          <article class="feature-card">
+            <span class="feature-icon" aria-hidden="true">05</span>
+            <h3>Simple and Advanced</h3>
+            <p>Use the streamlined workflow first, then reveal deeper controls only when you need them.</p>
+          </article>
+          <article class="feature-card">
+            <span class="feature-icon" aria-hidden="true">06</span>
+            <h3>One shared workspace</h3>
+            <p>Move between the toolbar, persistent panel, and full inspector without losing your scan.</p>
+          </article>
+        </div>
       </section>
 
-      <section class="section-block split-section">
+      <section id="how-it-works" class="section-block workflow-section">
         <div class="section-heading compact">
-          <p class="eyebrow">Current boundaries</p>
-          <h2>What 0.7.0 is—and is not</h2>
+          <p class="eyebrow">How it works</p>
+          <h2>From visible number to useful value</h2>
+          <p>No memory-inspection experience is required for the standard workflow.</p>
         </div>
-        <div class="boundary-grid">
-          <article class="boundary-card positive">
-            <p class="card-kicker">Built for</p>
-            <ul id="built-for-list"></ul>
-          </article>
-          <article class="boundary-card neutral">
-            <p class="card-kicker">Not yet covered</p>
-            <ul id="not-yet-list"></ul>
-          </article>
-        </div>
+        <ol class="workflow-list">
+          <li><span>1</span><div><h3>Open the game</h3><p>Load an embedded Ruffle game, then open Hack Engine from the browser toolbar.</p></div></li>
+          <li><span>2</span><div><h3>Run the first scan</h3><p>Enter a number shown in the game—such as money, lives, or energy—and scan for it.</p></div></li>
+          <li><span>3</span><div><h3>Change and narrow</h3><p>Make the number change in the game, enter its new value, and scan again until only a few candidates remain.</p></div></li>
+          <li><span>4</span><div><h3>Watch or edit</h3><p>Select the likely candidate to watch it live, set a new value, or freeze it in place.</p></div></li>
+        </ol>
       </section>
 
-      <section id="roadmap" class="section-block roadmap-section">
+      <section class="section-block modes-section">
         <div class="section-heading">
-          <p class="eyebrow">Living roadmap</p>
-          <h2>From 0.7 to 1.0—and beyond</h2>
-          <p>Version 1.0 is focused on a stable store release. Deeper address intelligence and broader compatibility work follow after launch.</p>
+          <p class="eyebrow">Fits your workflow</p>
+          <h2>Simple when you want it. Detailed when you need it.</h2>
         </div>
-        <div id="roadmap-list" class="roadmap-list"></div>
+        <div class="mode-grid">
+          <article>
+            <span>Quick scan</span>
+            <h3>Start with the visible value</h3>
+            <p>Open the toolbar, enter a number, and scan. Hack Engine chooses a sensible search plan for you.</p>
+          </article>
+          <article>
+            <span>Persistent panel</span>
+            <h3>Keep playing while you inspect</h3>
+            <p>Pin the controls beside the page so candidates and watches stay visible during interaction.</p>
+          </article>
+          <article>
+            <span>Advanced mode</span>
+            <h3>Handle trickier values</h3>
+            <p>Use ranges, unknown values, multipliers, alignment choices, and explicit number formats when necessary.</p>
+          </article>
+        </div>
       </section>
 
-      <section class="section-block verification-section">
-        <div>
-          <p class="eyebrow">Verification</p>
-          <h2>Tested where it matters</h2>
+      <section id="install" class="section-block install-section">
+        <div class="install-copy">
+          <p class="eyebrow">Try the development build</p>
+          <h2>Load Hack Engine in your browser</h2>
+          <p>Store packages are being prepared. Until then, build and load the extension locally from the public repository.</p>
+          <pre><code>npm ci --ignore-scripts
+npm run build</code></pre>
+          <a class="button primary" href="https://github.com/abduljawada/hack-engine">View on GitHub</a>
         </div>
+        <div class="browser-cards">
+          <article>
+            <span class="browser-name">Firefox</span>
+            <ol>
+              <li>Open <code>about:debugging</code>.</li>
+              <li>Choose <strong>This Firefox</strong>, then <strong>Load Temporary Add-on</strong>.</li>
+              <li>Select <code>dist/firefox/manifest.json</code>.</li>
+            </ol>
+          </article>
+          <article>
+            <span class="browser-name">Chrome and Chromium</span>
+            <ol>
+              <li>Open <code>chrome://extensions</code>.</li>
+              <li>Enable <strong>Developer mode</strong>, then choose <strong>Load unpacked</strong>.</li>
+              <li>Select <code>dist/chrome</code>.</li>
+            </ol>
+          </article>
+        </div>
+      </section>
+
+      <section id="planned" class="section-block planned-section">
+        <div>
+          <p class="eyebrow">Coming next</p>
+          <h2>A small look ahead</h2>
+        </div>
+        <ul>
+          <li><strong>Store release</strong><span>A signed, documented, and supportable v1.0.</span></li>
+          <li><strong>Reusable workflows</strong><span>Scan profiles, value history, and address notes.</span></li>
+          <li><strong>Broader compatibility</strong><span>More game coverage, recovery tools, and browser hardening.</span></li>
+        </ul>
+      </section>
+
+      <section class="section-block note-section">
+        <h2>Built for responsible, local use</h2>
         <p>
-          Browser harnesses cover exact, range, unknown, scaled, unaligned, ActionScript-guided,
-          cancellation, memory-growth, popup-session, watch, freeze, and large-snapshot paths. The live
-          extension bridge is also exercised against the generated Firefox and Chrome packages.
+          Hack Engine works when a game's numeric state reaches captured WebAssembly memory. Some values may be stored elsewhere or recalculated by the game. Editing the wrong value can reset or crash the player, so use Hack Engine only with software you own or are authorized to inspect.
         </p>
       </section>
     </main>
 
     <footer>
-      <p>Hack Engine · Development status page</p>
-      <p>Use only with games and software you are authorized to inspect.</p>
+      <p>Hack Engine · Memory tools for browser games</p>
       <p><a href="privacy.html">Privacy</a> · <a href="https://github.com/abduljawada/hack-engine/issues">Support</a> · <a href="mailto:a.abduljawad@outlook.com">Email</a></p>
     </footer>
   </body>
