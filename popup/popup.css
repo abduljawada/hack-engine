@@ -199,7 +199,7 @@ select:disabled, input:disabled { opacity: 0.48; }
 .quick-candidate:hover { background: var(--surface-hover); }
 .quick-candidate.selected { border-color: var(--accent); background: rgb(130 247 197 / 7%); }
 .candidate-address { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
-.candidate-value { font-weight: 750; }
+.candidate-value { font-weight: 400; }
 .text-action { margin-top: 8px; border: 0; background: transparent; color: var(--accent); padding: 4px 0; cursor: pointer; font-size: 12px; }
 .quick-editor { display: grid; gap: 9px; margin-top: 11px; padding: 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .quick-editor > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 10px; }

@@ -4,6 +4,7 @@ All notable changes to Hack Engine are documented here.
 
 ## [Unreleased]
 
+- Changed candidate and watch values to normal font weight for a calmer, more consistent list hierarchy.
 - Reworked the public website and README around the product, its core features, and the everyday scanning workflow.
 - Replaced browser-priority positioning with clear Firefox and Chromium support language.
 - Moved address-intelligence and compatibility-expansion work to post-release roadmap milestones so 1.0 can focus on a stable store launch.
