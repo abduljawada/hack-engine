@@ -4,6 +4,7 @@ All notable changes to Hack Engine are documented here.
 
 ## [Unreleased]
 
+- Moved address-intelligence and compatibility-expansion work to post-release roadmap milestones so 1.0 can focus on a stable store launch.
 - Added deterministic Firefox and Chrome release packaging and validation.
 - Added store-facing privacy, security, reviewer, permission, and user documentation.
 - Added browser-specific Firefox sidebar and Chrome side-panel manifests.

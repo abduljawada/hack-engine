@@ -35,9 +35,9 @@ window.RUFFLE_MEMORY_STATUS = {
     "Local, authorized inspection through Firefox Developer Tools",
   ],
   notYet: [
-    "Pointer-chain discovery and stable address rebasing between sessions",
+    "Pointer research, value timelines, address notes, and reusable scan profiles are planned after 1.0",
     "Values held only in JavaScript objects, registers, or encoded structures",
-    "A signed store release and a formal cross-browser compatibility guarantee",
+    "A signed store release and broader cross-browser hardening",
   ],
   milestones: [
     {
@@ -49,28 +49,28 @@ window.RUFFLE_MEMORY_STATUS = {
       items: ["200-row preview", "Type-free popup", "Auto-watch", "Batch actions", "Labels and groups", "Scan history"],
     },
     {
-      version: "0.8",
+      version: "1.0",
+      name: "Stable release",
+      status: "Next",
+      state: "planned",
+      description: "Ship a documented, reproducible, and supportable Firefox-first release.",
+      items: ["Signed package", "Store listing", "Release QA", "Security review", "Stable data format"],
+    },
+    {
+      version: "1.1",
       name: "Address intelligence",
-      status: "Planned",
+      status: "Post-release",
       state: "planned",
       description: "Make useful values easier to rediscover and understand across game screens and sessions.",
       items: ["Pointer experiments", "Address notes", "Value timeline", "Reusable scan profiles"],
     },
     {
-      version: "0.9",
+      version: "1.2",
       name: "Compatibility and hardening",
-      status: "Planned",
+      status: "Post-release",
       state: "planned",
       description: "Broaden real-game coverage and lock down behavior under large, nested, or changing runtimes.",
       items: ["Game compatibility matrix", "Performance budgets", "Recovery UX", "Chromium validation"],
-    },
-    {
-      version: "1.0",
-      name: "Stable release",
-      status: "Target",
-      state: "planned",
-      description: "Ship a documented, reproducible, and supportable Firefox-first release.",
-      items: ["Signed package", "User guide", "Security review", "Release artifacts", "Stable data format"],
     },
   ],
 };
