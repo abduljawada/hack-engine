@@ -3,6 +3,7 @@
 
   const CHANNEL = "ruffle-memory-inspector:v1";
   const RESULT_PREVIEW_LIMIT = 200;
+  const MAX_SCAN_BYTES = 256 * 1024 * 1024;
   const SCAN_CHUNK_SIZE = 100_000;
   const SPARSE_CANDIDATE_DENSITY_DIVISOR = 32;
   const SNAPSHOT_CHUNK_SIZE = 1024 * 1024;
@@ -16,6 +17,26 @@
     return;
   }
 
+  const documentId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const undoScans = new Map();
+  const activeScans = new Map();
+  const ownedSnapshots = new Set();
+  let currentSession = null;
+  let lastWrite = null;
+  let releaseSnapshotLease = null;
+  let snapshotLeaseReady = null;
+  function ensureSnapshotLease() {
+    if (!snapshotLeaseReady) {
+      snapshotLeaseReady = new Promise((resolve) => {
+        if (!navigator.locks) return resolve();
+        navigator.locks.request(`hack-engine-snapshot:${documentId}`, async () => {
+          resolve();
+          await new Promise((release) => { releaseSnapshotLease = release; });
+        }).catch(resolve);
+      });
+    }
+    return snapshotLeaseReady;
+  }
   const instances = new Map();
   const scans = new Map();
   const freezes = new Map();
@@ -88,6 +109,13 @@
   };
 
   function send(payload) {
+    if (currentSession && payload.requestId === currentSession.requestId) {
+      if (payload.kind === "scanProgress") currentSession.progress = payload;
+      if (payload.kind === "scanResults") {
+        payload.canUndo = undoScans.has(scanKey(payload.instanceId, payload.type));
+        currentSession = { ...currentSession, status: "complete", canRefine: true, results: payload, progress: null };
+      }
+    }
     window.postMessage({ channel: CHANNEL, direction: "from-page", payload }, "*");
   }
 
@@ -164,7 +192,7 @@
         continue;
       }
 
-      const id = String(nextInstanceId++);
+      const id = `${documentId}.${nextInstanceId++}`;
       const record = {
         id,
         instance,
@@ -232,7 +260,9 @@
     if (spec?.integer && (value < spec.minimum || value > spec.maximum)) {
       throw new Error(`${type} value is outside its numeric range.`);
     }
-    return type === "f32" ? Math.fround(value) : value;
+    const normalized = type === "f32" ? Math.fround(value) : value;
+    if (!Number.isFinite(normalized)) throw new Error(`${type} value is outside its finite numeric range.`);
+    return normalized;
   }
 
   function parseMultiplier(rawMultiplier) {
@@ -256,6 +286,12 @@
   }
 
   async function clearInstanceScans(instanceId) {
+    for (const [key, scan] of undoScans) {
+      if (key.startsWith(`${instanceId}:`)) {
+        undoScans.delete(key);
+        await deleteSnapshot(scan.snapshot).catch(() => {});
+      }
+    }
     const prefix = `${instanceId}:`;
     const snapshots = new Set();
     for (const key of scans.keys()) {
@@ -420,7 +456,8 @@
     return new Uint8Array(await new Response(stream).arrayBuffer());
   }
 
-  function openSnapshotDatabase() {
+  async function openSnapshotDatabase() {
+    await ensureSnapshotLease();
     if (snapshotDatabasePromise) {
       return snapshotDatabasePromise;
     }
@@ -439,13 +476,30 @@
       };
       request.onsuccess = () => {
         const database = request.result;
-        const transaction = database.transaction(SNAPSHOT_STORE_NAME, "readwrite");
-        transaction.objectStore(SNAPSHOT_STORE_NAME).clear();
-        transaction.oncomplete = () => resolve(database);
-        transaction.onerror = () => reject(
-          transaction.error || new Error("Unable to initialize snapshot storage."),
-        );
-        transaction.onabort = transaction.onerror;
+        // Never clear another document's live snapshots. Reclaim only owners
+        // whose Web Lock is available; unavailable locks identify live pages.
+        resolve(database);
+        if (navigator.locks) {
+          const transaction = database.transaction(SNAPSHOT_STORE_NAME, "readonly");
+          const keys = transaction.objectStore(SNAPSHOT_STORE_NAME).getAllKeys();
+          keys.onsuccess = () => {
+            const owners = new Set(keys.result.map(([id]) => String(id).split(":")[0]));
+            for (const owner of owners) {
+              if (owner === documentId) continue;
+              navigator.locks.request(`hack-engine-snapshot:${owner}`, { ifAvailable: true }, (lock) => {
+                if (!lock) return;
+                return new Promise((done) => {
+                  const cleanup = database.transaction(SNAPSHOT_STORE_NAME, "readwrite");
+                  const store = cleanup.objectStore(SNAPSHOT_STORE_NAME);
+                  for (const key of keys.result) {
+                    if (String(key[0]).split(":")[0] === owner) store.delete(key);
+                  }
+                  cleanup.oncomplete = cleanup.onerror = cleanup.onabort = done;
+                });
+              }).catch(() => {});
+            }
+          };
+        }
       };
       request.onerror = () => reject(request.error || new Error("Unable to open snapshot storage."));
       request.onblocked = () => reject(new Error("Snapshot storage is blocked by another page."));
@@ -517,18 +571,19 @@
       [snapshot.id, Number.MAX_SAFE_INTEGER],
     );
     await runSnapshotTransaction("readwrite", (store) => store.delete(range));
+    ownedSnapshots.delete(snapshot);
   }
 
   function createSnapshot(byteLength) {
-    return {
-      id: typeof globalThis.crypto?.randomUUID === "function"
-        ? globalThis.crypto.randomUUID()
-        : `${Date.now().toString(36)}-${nextSnapshotId++}-${Math.random().toString(36).slice(2)}`,
+    const snapshot = {
+      id: `${documentId}:${nextSnapshotId++}`,
       byteLength,
       chunkSize: SNAPSHOT_CHUNK_SIZE,
       chunks: [],
       compressedBytes: 0,
     };
+    ownedSnapshots.add(snapshot);
+    return snapshot;
   }
 
   async function captureSnapshot(record, requestId, byteLength, spec) {
@@ -1558,14 +1613,13 @@
       });
     group.mode = mode;
     scans.set(key, group);
-    if (previous?.snapshot && previous.snapshot !== group.snapshot) {
-      deleteSnapshot(previous.snapshot).catch(() => {});
-    }
+    await commitCheckpoint(key, previous, group);
+    group.options = { ...options };
     sendAutoScanResults(requestId, record, group);
     cancelledScans.delete(String(requestId));
   }
 
-  async function memoryScan({
+  async function performMemoryScan({
     requestId,
     instanceId,
     type,
@@ -1653,11 +1707,77 @@
     }
 
     scans.set(key, candidates);
-    if (previous?.snapshot && previous.snapshot !== candidates.snapshot) {
-      deleteSnapshot(previous.snapshot).catch(() => {});
-    }
+    await commitCheckpoint(key, previous, candidates);
+    candidates.options = { requestId, instanceId, type, rawValue, rawMaxValue, multiplier, condition, alignment, refine };
     sendScanResults(requestId, record, type, candidates, multiplier);
     cancelledScans.delete(String(requestId));
+  }
+
+  async function commitCheckpoint(key, previous, next) {
+    const expired = undoScans.get(key);
+    if (previous) undoScans.set(key, previous);
+    else undoScans.delete(key);
+    if (expired?.snapshot && expired.snapshot !== previous?.snapshot && expired.snapshot !== next.snapshot) {
+      await deleteSnapshot(expired.snapshot).catch(() => {});
+    }
+  }
+
+  function emitSession() {
+    send({ kind: "agentState", documentId, instances: [...instances.values()].map(describeInstance),
+      session: currentSession, freezes: [...freezes.values()].map(({ record, type, address, value }) =>
+        ({ instanceId: record.id, type, address, value: wireNumber(value) })),
+      lastWrite: lastWrite ? { instanceId: lastWrite.record.id, type: lastWrite.type, address: lastWrite.address } : null });
+  }
+
+  async function memoryScan(options) {
+    const id = String(options.instanceId);
+    if (activeScans.size) throw new Error("A scan is already running in this game frame. Cancel it before starting another.");
+    if (!instances.has(id)) throw new Error("This game was reloaded. Select its new memory and start again.");
+    const record = instances.get(id);
+    if (record.memory.buffer.byteLength > MAX_SCAN_BYTES) throw new Error("This memory exceeds the 256 MiB scan limit. Choose a smaller captured memory.");
+    const existing = scans.get(scanKey(id, options.type));
+    if ((options.condition === "unknown" || options.condition === "range" || existing?.snapshot) && navigator.storage?.estimate) {
+      const estimate = await navigator.storage.estimate().catch(() => ({}));
+      const required = Math.ceil(record.memory.buffer.byteLength * 1.1);
+      if (Number.isFinite(estimate.quota) && estimate.quota - (estimate.usage || 0) < required) {
+        throw new Error("Not enough site storage for a recoverable scan. Previous results are unchanged; clear unused site data or choose a smaller memory.");
+      }
+    }
+    if (activeScans.size) throw new Error("A scan is already running in this game frame.");
+    const priorSession = currentSession;
+    const priorSnapshots = new Set(ownedSnapshots);
+    currentSession = { updatedAt: Date.now(), requestId: options.requestId, instanceId: id, request: { ...options }, status: "scanning", canRefine: !!options.refine, results: null };
+    activeScans.set(id, String(options.requestId));
+    try {
+      await performMemoryScan(options);
+    } catch (error) {
+      // Refinement builds new candidate sets; keep the last committed baseline.
+      for (const snapshot of ownedSnapshots) {
+        if (!priorSnapshots.has(snapshot)) await deleteSnapshot(snapshot).catch(() => {});
+      }
+      currentSession = options.refine ? priorSession : null;
+      throw error;
+    } finally {
+      activeScans.delete(id);
+      cancelledScans.delete(String(options.requestId));
+      emitSession();
+    }
+  }
+
+  async function undoScan({ requestId, instanceId, type }) {
+    if (activeScans.size) throw new Error("Cancel the running scan before undoing.");
+    const key = scanKey(String(instanceId), type);
+    const previous = undoScans.get(key);
+    const record = instances.get(String(instanceId));
+    if (!previous || !record) throw new Error("No previous scan is available for this game session.");
+    const discarded = scans.get(key);
+    undoScans.delete(key);
+    scans.set(key, previous);
+    if (discarded?.snapshot && discarded.snapshot !== previous.snapshot) await deleteSnapshot(discarded.snapshot);
+    currentSession = { updatedAt: Date.now(), requestId, instanceId: record.id, request: previous.options, status: "complete", canRefine: true };
+    if (previous.multi) sendAutoScanResults(requestId, record, previous);
+    else sendScanResults(requestId, record, type, previous, previous.options?.multiplier || 1);
+    emitSession();
   }
 
   function sendScanResults(requestId, record, type, candidates, multiplier = 1) {
@@ -1871,7 +1991,10 @@
     }
     const multiplier = parseMultiplier(rawMultiplier);
     const value = parseDisplayValue(type, rawValue, multiplier);
+    const before = new Uint8Array(record.memory.buffer, numericAddress, spec.size).slice();
     spec.write(view, numericAddress, value);
+    lastWrite = { record, type, address: numericAddress, before,
+      after: new Uint8Array(record.memory.buffer, numericAddress, spec.size).slice() };
     const activeFreeze = freezes.get(freezeKey(record.id, type, numericAddress));
     if (activeFreeze) {
       activeFreeze.value = value;
@@ -1885,6 +2008,7 @@
       value: wireNumber(spec.read(view, numericAddress)),
       displayValue: wireNumber(spec.read(view, numericAddress) / multiplier),
     });
+    emitSession();
     const diagnosticKey = freezeKey(record.id, type, numericAddress);
     activeWriteDiagnostics.set(diagnosticKey, requestId);
     runWriteDiagnostics({
@@ -1942,6 +2066,33 @@
       instanceId: record.id,
       values,
     });
+  }
+
+  function stopAllFreezes({ requestId } = {}) {
+    for (const entry of freezes.values()) {
+      send({ kind: "freezeChanged", requestId, instanceId: entry.record.id, type: entry.type, address: entry.address, enabled: false });
+    }
+    freezes.clear();
+    if (freezeFrameHandle !== null) cancelAnimationFrame(freezeFrameHandle);
+    freezeFrameHandle = null;
+    emitSession();
+  }
+
+  function restoreWrite({ requestId, instanceId, type, address }) {
+    if (!lastWrite || lastWrite.record.id !== instanceId || lastWrite.type !== type || lastWrite.address !== address) {
+      throw new Error("The previous write is no longer available in this game session.");
+    }
+    const { record, before, after } = lastWrite;
+    const current = new Uint8Array(record.memory.buffer, address, before.length);
+    if (!current.every((value, index) => value === after[index])) {
+      throw new Error("The game changed this address after the write. Restore was cancelled to preserve its current value.");
+    }
+    freezes.delete(freezeKey(instanceId, type, address));
+    activeWriteDiagnostics.delete(freezeKey(instanceId, type, address));
+    current.set(before);
+    lastWrite = null;
+    send({ kind: "writeRestored", requestId, instanceId, type, address });
+    emitSession();
   }
 
   function applyFreezes() {
@@ -2023,9 +2174,15 @@
 
   async function resetScan({ requestId, instanceId, type }) {
     const key = scanKey(String(instanceId), type);
+    if (activeScans.size) throw new Error("Cancel the running scan before resetting.");
     const previous = scans.get(key);
     scans.delete(key);
+    const checkpoint = undoScans.get(key);
+    undoScans.delete(key);
     await deleteSnapshot(previous?.snapshot).catch(() => {});
+    if (checkpoint?.snapshot !== previous?.snapshot) await deleteSnapshot(checkpoint?.snapshot).catch(() => {});
+    currentSession = null;
+    emitSession();
     send({ kind: "scanReset", requestId, instanceId: String(instanceId), type });
   }
 
@@ -2042,6 +2199,17 @@
     Promise.resolve()
       .then(() => {
         switch (command?.kind) {
+          case "getSessionState":
+            emitSession();
+            break;
+          case "bridgeDisconnected":
+          case "stopAllFreezes":
+            stopAllFreezes(command);
+            break;
+          case "restoreWrite":
+            return restoreWrite(command);
+          case "undoScan":
+            return undoScan(command);
           case "listInstances":
             send({
               kind: "instanceList",
@@ -2068,10 +2236,10 @@
             break;
           case "setFreeze":
             setFreeze(command);
+            emitSession();
             break;
           case "resetScan":
-            resetScan(command);
-            break;
+            return resetScan(command);
           default:
             throw new Error(`Unknown command: ${command?.kind || "missing"}`);
         }
@@ -2097,5 +2265,14 @@
     writable: false,
   });
 
+  window.addEventListener("pagehide", (event) => {
+    stopAllFreezes();
+    if (event.persisted) return;
+    for (const requestId of activeScans.values()) cancelledScans.add(requestId);
+    Promise.allSettled([...ownedSnapshots].map(deleteSnapshot)).finally(() => releaseSnapshotLease?.());
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) stopAllFreezes();
+  });
   send({ kind: "agentReady", url: location.href });
 })();

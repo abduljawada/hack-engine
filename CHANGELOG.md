@@ -2,7 +2,17 @@
 
 All notable changes to Hack Engine are documented here.
 
-## [Unreleased]
+## [1.0.0 candidate] - 2026-09-21
+
+Unpublished; external compatibility and signed-store qualification remain open.
+
+- Added document-scoped memory identities, isolated snapshots, recovered background sessions, and reconnecting controls.
+- Added one-step scan undo, guarded last-write restoration, stop-all freeze controls, and visible freeze state.
+- Added locally saved workspaces with unverified import previews, labels/groups in the sidebar, and a bundled practice game.
+- Added resource limits, portable browser discovery, recovery regressions, and packaged Firefox/Chromium UI tests.
+- Excluded transfer metadata from packages and disabled private browsing pending qualification.
+
+## [Earlier unreleased work]
 
 - Changed candidate and watch values to normal font weight for a calmer, more consistent list hierarchy.
 - Reworked the public website and README around the product, its core features, and the everyday scanning workflow.

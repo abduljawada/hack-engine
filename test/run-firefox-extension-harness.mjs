@@ -1,18 +1,24 @@
+import { extensionUiScenario } from "./extension-ui-scenario.mjs";
+import { browserPath } from "./browser-path.mjs";
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const firefoxPath = "/Applications/Firefox.app/Contents/MacOS/firefox";
+const firefoxPath = browserPath("firefox");
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const extensionDirectory = join(projectRoot, "dist", "firefox");
 const harnessUrl = process.argv[2] ??
   "http://127.0.0.1:8765/test/firefox-extension-bridge-harness.html";
 const profileDirectory = mkdtempSync(join(tmpdir(), "hack-engine-firefox-harness-"));
+const testExtensionUuid = "6aed3a66-90e3-4c30-b580-2154d88ce676";
+writeFileSync(join(profileDirectory, "user.js"), `user_pref("extensions.webextensions.uuids", ${JSON.stringify(JSON.stringify({ "hack-engine@abduljawada.github.io": testExtensionUuid }))});\n`);
 
 const firefox = spawn(firefoxPath, [
   "--headless",
+  // Firefox 153+ requires this for moz-extension navigation in this disposable test profile.
+  "--remote-allow-system-access",
   "--no-remote",
   "--profile",
   profileDirectory,
@@ -130,7 +136,8 @@ try {
     const result = await readResult(bidi, context);
     if (typeof result === "string" && /^(PASS|FAIL):/.test(result)) {
       if (result.startsWith("FAIL:")) {
-        throw new Error(result);
+        const diagnostic = await bidi.call("script.evaluate", { expression: "navigator.storage.estimate().then(JSON.stringify)", target: { context }, awaitPromise: true });
+        throw new Error(`${result} Storage estimate: ${diagnostic.result?.value || "unavailable"}`);
       }
       console.log(result);
       completed = true;
@@ -141,6 +148,21 @@ try {
   if (!completed) {
     throw new Error("Firefox extension bridge harness did not complete within 30 seconds.");
   }
+  const origin = `moz-extension://${testExtensionUuid}`;
+  await bidi.call("browsingContext.navigate", { context, url: `${origin}/practice/index.html`, wait: "complete" });
+  let practiceTab;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const result = await bidi.call("script.evaluate", { expression: "document.querySelector('#result')?.textContent?.startsWith('Ready') ? browser.tabs.getCurrent().then(tab => tab.id) : null", target: { context }, awaitPromise: true });
+    if (result.result?.type === "number") { practiceTab = result.result.value; break; }
+    await delay(100);
+  }
+  if (!practiceTab) throw new Error("Firefox practice game did not initialize.");
+  const controls = await bidi.call("browsingContext.create", { type: "tab", background: true });
+  await bidi.call("browsingContext.navigate", { context: controls.context, url: `${origin}/popup/popup.html?sidebar=1&tabId=${practiceTab}`, wait: "complete" });
+  const uiResult = await bidi.call("script.evaluate", { expression: extensionUiScenario, target: { context: controls.context }, awaitPromise: true });
+  if (uiResult.type === "exception") throw new Error(uiResult.exceptionDetails.text);
+  console.log(uiResult.result?.value);
+
 } finally {
   if (bidi && installedExtension?.extension) {
     await bidi.call("webExtension.uninstall", {
@@ -157,5 +179,5 @@ try {
       resolve();
     });
   });
-  rmSync(profileDirectory, { recursive: true, force: true });
+  rmSync(profileDirectory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }

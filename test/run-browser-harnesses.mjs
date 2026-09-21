@@ -1,11 +1,13 @@
+import { browserPath } from "./browser-path.mjs";
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chromePath = browserPath("chrome");
 const baseUrl = process.argv[2] ?? "http://127.0.0.1:8765";
 const allHarnesses = [
+  ["recovery", "/test/recovery-harness.html", 90_000],
   ["exact scan", "/test/harness.html", 30_000],
   ["scan cancellation", "/test/scan-cancellation-harness.html", 90_000],
   ["freeze", "/test/freeze-harness.html", 30_000],
@@ -186,5 +188,5 @@ try {
       resolve();
     });
   });
-  rmSync(profileDirectory, { recursive: true, force: true });
+  rmSync(profileDirectory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }

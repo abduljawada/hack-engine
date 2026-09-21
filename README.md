@@ -4,12 +4,15 @@ Hack Engine helps you find, watch, and change numeric values in browser games ru
 
 Everything happens locally in the inspected tab. Hack Engine has no accounts, telemetry, advertising, or remote service.
 
-> Current release: **v0.7.0 development build**. The first store release is planned for v1.0.
+> Current release: **v1.0.0 release candidate — not published**. Core workflows are tested locally on Linux Firefox and Chromium; the remaining release gates are recorded in [IMPLEMENTATION_1_0.md](IMPLEMENTATION_1_0.md).
 
 ## What you can do
 
 - **Find visible values:** Search for an exact number, a range, or an unknown starting value.
 - **Narrow the results:** Change the value in the game, then filter by changed, unchanged, increased, or decreased.
+- **Recover mistakes:** Undo one refinement, restore the last write when the game has not changed it, and stop all freezes.
+- **Save your work:** Keep named local workspaces, preview imports, and verify addresses against the current game before use.
+- **Practice first:** Open the included local practice game from the controls.
 - **Edit and freeze:** Replace a discovered value or keep it fixed while the game runs.
 - **Watch values live:** Keep useful candidates visible as they change and organize them with labels and groups.
 - **Start simple, go deeper:** Use Quick scan for the common workflow, then open Advanced controls when you need more options.
@@ -62,7 +65,7 @@ Reload the game page after loading the extension so Hack Engine can detect the p
 
 ## Planned features
 
-- A signed and documented v1.0 store release.
+- Complete the remaining compatibility matrix and signed-store qualification for v1.0.
 - Reusable scan profiles, value history, address notes, and pointer research.
 - Broader game compatibility, recovery tools, and browser hardening.
 
@@ -76,3 +79,11 @@ Reload the game page after loading the extension so Hack Engine can detect the p
 - [Issue tracker](https://github.com/abduljawada/hack-engine/issues)
 
 Hack Engine is released under the [MIT License](LICENSE). Questions can also be sent to [a.abduljawad@outlook.com](mailto:a.abduljawad@outlook.com).
+
+## Development checks
+
+`npm run test:unit` checks background recovery and document invalidation. Serve this directory at `http://127.0.0.1:8765`, then run `npm run test:browser` for page-level regressions. After `npm run build`, `npm run test:firefox` and `npm run test:chrome` install the actual packages in disposable profiles and exercise the practice game and persistent controls. Browser discovery supports Linux, macOS, and Windows; set `FIREFOX_PATH` or `CHROME_PATH` to override it. Current qualification evidence is Linux-only.
+
+The Firefox UI test uses its documented `--remote-allow-system-access` automation flag only in the temporary test profile. Do not point these runners at a personal browser profile.
+
+The Firefox runner accepts a fixture URL as its first argument. For the 225.5 MiB fixture (`test/large-unknown-harness.html`), use a disposable profile on a disk with sufficient storage: a small RAM-backed `/tmp` can impose a lower IndexedDB quota. On Linux, setting `TMPDIR` to an existing empty test directory selects that location. The scanner intentionally rejects a snapshot when estimated remaining quota is insufficient.

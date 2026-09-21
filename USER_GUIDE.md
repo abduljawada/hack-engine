@@ -38,3 +38,19 @@ If a write corrupts or crashes the player, reload the tab. If Hack Engine report
 ## Data handling
 
 Scans and writes run locally. Hack Engine does not transmit browsing activity or memory values. See [PRIVACY.md](PRIVACY.md) for storage and retention details.
+
+## Recovery and saved workspaces in the 1.0 candidate
+
+**Undo scan** restores the candidates and comparison baseline from one completed refinement. Cancelling a refinement preserves the previous completed scan. Undo does not reverse gameplay. A new First scan replaces the previous session.
+
+**Restore last write** restores the previous bytes only while the same game document and memory are alive and the address still contains the value Hack Engine wrote. If the game has changed it, restoration is refused. This is not a game-state rollback.
+
+**Stop all freezes** stops every freeze in the inspected tab. Freezes also stop when the game becomes hidden, the page leaves, or the extension connection is lost. Re-enable them explicitly after returning to the game. Background continuous freezing is not supported.
+
+**Saved workspaces** stores up to 30 named watch lists and scan settings locally. Import/export accepts up to 256 watches in a file smaller than 1 MiB. Loading opens an unverified preview. Select the correct live memory, verify that the addresses still describe the intended values, and choose **Use verified addresses**. No write or freeze is replayed. Saved scan settings apply immediately to a fresh scan or after resetting the current one. Deleting a saved copy leaves live watches intact.
+
+The game/tab label remains bound to the inspected tab. Open Hack Engine from another game's toolbar to inspect that game separately. Popup closure and background restarts recover live sessions, but reloading a game creates a new memory identity and invalidates old live addresses.
+
+Scans are limited to captured memories of at most 256 MiB. Snapshot scans check available site storage before starting; if storage is unavailable, the error explains the limit and a failed refinement retains its previous results. Reset releases the current scan and its undo checkpoint. Private/incognito windows are excluded from this candidate.
+
+Choose **Open practice game** to learn the complete workflow using bundled local WebAssembly memory, without an external website or account.

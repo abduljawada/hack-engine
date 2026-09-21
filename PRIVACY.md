@@ -1,8 +1,8 @@
 # Hack Engine privacy policy
 
-Effective date: August 10, 2026
+Candidate policy updated: September 21, 2026
 
-Hack Engine is a local browser developer tool for inspecting WebAssembly memory used by embedded Ruffle players. This policy describes the current `0.7.x` release line.
+Hack Engine is a local browser developer tool for inspecting WebAssembly memory used by embedded Ruffle players. This policy describes the `1.0.0` release candidate.
 
 ## Information the extension handles
 
@@ -22,9 +22,10 @@ This information is used only to capture WebAssembly memory, run user-requested 
 
 ## Storage and retention
 
-- Active scan state, shared candidates, watches, selection, and freeze state are held in extension memory for the inspected tab and are cleared when that tab closes or the extension background context restarts.
+- Live scan state and one undo checkpoint are held in the game document. The extension keeps small watch metadata in extension session storage and reconstructs live scan state after a background restart. Tab closure or game navigation invalidates live memory identities. Freezes stop when the game is hidden or the extension connection is lost.
+- Named workspaces contain watch addresses, labels, groups, and scan settings in extension local storage. They remain until the user deletes them or uninstalls the extension. They do not save memory snapshots or freeze commands. Private/incognito windows are not supported.
 - The full inspector stores up to 20 scan-history entries and its watch metadata in that extension page's `sessionStorage`. The persistent sidebar stores its Simple/Advanced view choice in `sessionStorage`. This data is scoped to the browser session/page context.
-- Unknown-value scans may store compressed memory snapshot chunks in IndexedDB belonging to the inspected page's origin. The extension deletes the active snapshot when the scan is reset, replaced, cancelled, or successfully refined. Data left by an abnormal page or browser shutdown is cleared the next time Hack Engine initializes snapshot storage on that origin. Clearing that site's stored data also removes it.
+- Unknown-value scans may store compressed memory snapshot chunks in IndexedDB belonging to the inspected page's origin. The extension retains the current snapshot and one undo checkpoint, plus temporary data while a refinement runs. Reset, replacement, cancellation, and page exit clean up owned data; another live document's snapshots are not cleared. On origins with the Web Locks API, later initialization reclaims orphaned snapshots only after acquiring the owner's unused lock. Where that API is unavailable or shutdown interrupts cleanup, orphaned site data may remain. Clearing that site's stored data also removes it.
 - Exported workspace files are saved only when the user requests an export and remain wherever the user chooses to save them. Imported files are read locally.
 - Disabling or uninstalling Hack Engine removes extension-owned data according to the browser's normal extension-data removal behavior. Site-origin IndexedDB can also be removed through the browser's site-data controls.
 
@@ -36,6 +37,7 @@ Links opened from Hack Engine, such as its documentation or issue tracker, are n
 
 ## Permissions
 
+- `storage` saves named local workspaces and small session metadata for background recovery.
 - `tabs` lets the user interface identify and reload the inspected tab and open a full inspector bound to that tab.
 - `<all_urls>` lets the document-start capture hook run before an embedded Ruffle player instantiates WebAssembly, including in permitted child frames. The extension cannot reliably request this access after the player has already started.
 - Chrome's `sidePanel` permission lets the user keep Hack Engine visible beside the inspected page. Firefox provides the equivalent through its sidebar manifest declaration.

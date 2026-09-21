@@ -7,6 +7,23 @@
   const quickSessions = new Map();
   const workspaces = new Map();
   const MAX_SHARED_WATCHES = 256;
+  const sessionStorage = extensionApi.storage?.session;
+  let storageReady = !sessionStorage;
+  let persistence = Promise.resolve();
+  const hydration = sessionStorage ? sessionStorage.get("liveWorkspaces").then((data) => {
+    for (const [tabId, value] of Object.entries(data.liveWorkspaces || {})) {
+      if (!Number.isSafeInteger(Number(tabId)) || !Array.isArray(value.watches)) continue;
+      workspaces.set(Number(tabId), { watches: new Map(value.watches.map(normalizeWatch).filter(Boolean).map((watch) => [watch.key, watch])),
+        selectedKey: value.selectedKey || null, frozenKeys: new Set(), lastWrite: null });
+    }
+  }).catch(() => {}).finally(() => { storageReady = true; }) : Promise.resolve();
+
+  function persistWorkspaces() {
+    if (!sessionStorage) return;
+    const value = Object.fromEntries([...workspaces].map(([tabId, workspace]) => [tabId,
+      { watches: [...workspace.watches.values()], selectedKey: workspace.selectedKey }]));
+    persistence = persistence.catch(() => {}).then(() => sessionStorage.set({ liveWorkspaces: value })).catch(() => {});
+  }
 
   function bridgeKey(tabId, frameId) {
     return `${tabId}:${frameId}`;
@@ -52,6 +69,7 @@
       watches: [...workspace.watches.values()],
       selectedKey: workspace.selectedKey,
       frozenKeys: [...workspace.frozenKeys],
+      lastWrite: workspace.lastWrite || null,
     };
   }
 
@@ -87,6 +105,7 @@
   }
 
   function broadcastWorkspace(tabId) {
+    persistWorkspaces();
     broadcast(tabId, { kind: "workspaceState", workspace: workspaceSnapshot(tabId) });
   }
 
@@ -123,12 +142,12 @@
 
   function rememberQuickCommand(tabId, frameId, payload) {
     const numericTabId = Number(tabId);
-    if (payload.kind === "resetScan") {
+    if (payload?.kind === "resetScan") {
       quickSessions.delete(numericTabId);
       broadcast(numericTabId, { kind: "quickSession", session: null });
       return;
     }
-    if (payload.kind !== "memoryScan") {
+    if (payload?.kind !== "memoryScan") {
       return;
     }
     quickSessions.set(numericTabId, {
@@ -198,6 +217,33 @@
     broadcastWorkspace(entry.tabId);
   }
 
+  function reconcileAgent(entry, state) {
+    const ids = new Set((state.instances || []).map((instance) => String(instance.id)));
+    const workspace = workspaceFor(entry.tabId);
+    for (const [key, watch] of workspace.watches) {
+      if (watch.frameId === entry.frameId && !ids.has(watch.instanceId)) workspace.watches.delete(key);
+    }
+    for (const key of workspace.frozenKeys) {
+      if (key.startsWith(`${entry.frameId}:`)) workspace.frozenKeys.delete(key);
+    }
+    for (const freeze of (state.freezes || []).slice(0, MAX_SHARED_WATCHES)) {
+      if (ids.has(freeze.instanceId)) workspace.frozenKeys.add(watchKey({ ...freeze, frameId: entry.frameId }));
+    }
+    if (state.lastWrite) workspace.lastWrite = { ...state.lastWrite, frameId: entry.frameId };
+    else if (workspace.lastWrite?.frameId === entry.frameId) workspace.lastWrite = null;
+    if (!workspace.watches.has(workspace.selectedKey)) workspace.selectedKey = null;
+    const existing = quickSessions.get(entry.tabId);
+    if (!existing || existing.frameId === entry.frameId || (state.session?.updatedAt || 0) > (existing.updatedAt || 0)) {
+      if (state.session) quickSessions.set(entry.tabId, { ...state.session, frameId: entry.frameId });
+      else if (existing?.frameId === entry.frameId) quickSessions.delete(entry.tabId);
+      broadcast(entry.tabId, { kind: "quickSession", session: quickSessionSnapshot(entry.tabId) });
+    }
+    rememberInstances(entry, { kind: "instanceList", instances: state.instances });
+    broadcast(entry.tabId, { kind: "pageMessage", frameId: entry.frameId, url: entry.url,
+      payload: { kind: "instanceList", instances: state.instances } });
+    broadcastWorkspace(entry.tabId);
+  }
+
   function rememberInstances(entry, payload) {
     if (payload?.kind === "instanceCaptured" && payload.instance?.id) {
       entry.instances.set(String(payload.instance.id), payload.instance);
@@ -234,7 +280,7 @@
     }
   });
 
-  extensionApi.runtime.onConnect.addListener((port) => {
+  function connectPort(port) {
     const clientPrefix = port.name.startsWith("ruffle-panel:")
       ? "ruffle-panel:"
       : port.name.startsWith("hack-popup:")
@@ -254,6 +300,8 @@
           return;
         }
         const targetFrameId = message.frameId;
+        if (!message.payload || typeof message.payload.kind !== "string") return;
+        if (!["listInstances", "getSessionState", "stopAllFreezes"].includes(message.payload.kind) && !Number.isInteger(targetFrameId)) return;
         rememberQuickCommand(tabId, targetFrameId, message.payload);
         for (const entry of bridges.values()) {
           if (
@@ -283,11 +331,11 @@
       return;
     }
 
-    if (port.name !== "ruffle-frame-bridge" || !port.sender?.tab) {
-      return;
-    }
-
-    const tabId = port.sender.tab.id;
+    const practiceTab = port.name.startsWith("hack-practice:") &&
+      port.sender?.url === extensionApi.runtime.getURL?.("practice/index.html")
+      ? Number(port.name.slice("hack-practice:".length)) : null;
+    if ((port.name !== "ruffle-frame-bridge" || !port.sender?.tab) && !Number.isSafeInteger(practiceTab)) return;
+    const tabId = practiceTab ?? port.sender.tab.id;
     const frameId = port.sender.frameId ?? 0;
     const key = bridgeKey(tabId, frameId);
     const entry = {
@@ -300,10 +348,16 @@
     bridges.set(key, entry);
 
     port.onMessage.addListener((message) => {
+      if (bridges.get(key)?.port !== port) return;
       if (message?.kind === "bridgeReady") {
         entry.url = message.url || entry.url;
         broadcast(tabId, { kind: "frameConnected", frameId, url: entry.url });
+        port.postMessage({ kind: "pageCommand", payload: { kind: "getSessionState" } });
       } else if (message?.kind === "pageMessage") {
+        if (message.payload?.kind === "agentState") {
+          reconcileAgent(entry, message.payload);
+          return;
+        }
         rememberInstances(entry, message.payload);
         rememberQuickPayload(entry, message.payload);
         rememberWorkspacePayload(entry, message.payload);
@@ -326,16 +380,39 @@
       }
     });
 
+    port.postMessage({ kind: "pageCommand", payload: { kind: "getSessionState" } });
+
     port.onDisconnect.addListener(() => {
       if (bridges.get(key)?.port === port) {
         bridges.delete(key);
         const session = quickSessions.get(tabId);
         if (session?.frameId === frameId) {
           session.status = "disconnected";
-          session.error = "The game frame disconnected.";
+          session.canRefine = false;
+          session.error = "The game frame disconnected. Reconnecting will verify its memory identity.";
+          broadcast(tabId, { kind: "quickSession", session });
         }
+        const workspace = workspaceFor(tabId);
+        for (const frozen of workspace.frozenKeys) if (frozen.startsWith(`${frameId}:`)) workspace.frozenKeys.delete(frozen);
+        if (workspace.lastWrite?.frameId === frameId) workspace.lastWrite = null;
+        broadcastWorkspace(tabId);
         broadcast(tabId, { kind: "frameDisconnected", frameId });
       }
+    });
+  }
+
+  extensionApi.runtime.onConnect.addListener((port) => {
+    if (storageReady) return connectPort(port);
+    let disconnected = false;
+    const collect = () => {};
+    port.onMessage.addListener(collect);
+    port.onDisconnect.addListener(() => { disconnected = true; });
+    hydration.then(() => {
+      port.onMessage.removeListener(collect);
+      if (disconnected) return;
+      connectPort(port);
+      // Ask peers to resynchronize rather than replaying stale write commands.
+      if (port.name === "ruffle-frame-bridge") port.postMessage({ kind: "pageCommand", payload: { kind: "getSessionState" } });
     });
   });
 
@@ -343,5 +420,6 @@
     clients.delete(Number(tabId));
     quickSessions.delete(Number(tabId));
     workspaces.delete(Number(tabId));
+    persistWorkspaces();
   });
 })();

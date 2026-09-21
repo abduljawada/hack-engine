@@ -1,17 +1,17 @@
 # Mozilla reviewer build instructions
 
-This source package produces the submitted Hack Engine `0.7.0` Firefox add-on. The executable JavaScript is readable and is not minified, bundled, transpiled, or obfuscated. The build script copies an explicit runtime-file allowlist, writes the reviewed browser manifest, normalizes package timestamps, and creates the ZIP archive.
+This source package produces the unpublished Hack Engine `1.0.0` Firefox candidate. The executable JavaScript is readable and is not minified, bundled, transpiled, or obfuscated. The build script copies an explicit runtime-file allowlist, writes the reviewed browser manifest, normalizes package timestamps, and creates the ZIP archive.
 
 ## Reference build environment
 
-The submitted package was built and verified with:
+The September 21 candidate was built locally with:
 
-- macOS 15.7.8 on ARM64;
-- Node.js 22.19.0;
-- npm 11.6.0;
+- Linux on x86_64;
+- Node.js 26.8.1;
+- npm 11.19.0;
 - Info-ZIP `zip` 3.0 and `unzip` 6.0 at `/usr/bin/zip` and `/usr/bin/unzip`.
 
-The scripts use standard Node.js APIs and Info-ZIP only. They are also suitable for Mozilla's Ubuntu 24.04 ARM64 reviewer environment with its provided Node.js 24 and npm 11 versions.
+The scripts use standard Node.js APIs and Info-ZIP only. Other operating systems and the eventual reviewer environment must be qualified before submission.
 
 ## Install the required programs
 
@@ -35,7 +35,7 @@ No global JavaScript build tools are required. From the extracted source-package
 npm ci --ignore-scripts
 ```
 
-## Build the submitted Firefox add-on
+## Build the Firefox candidate
 
 Run:
 
@@ -46,7 +46,7 @@ npm run build
 The Firefox submission is created at:
 
 ```text
-dist/hack-engine-firefox-v0.7.0.zip
+dist/hack-engine-firefox-v1.0.0.zip
 ```
 
 The same command also produces the Chrome package and `dist/SHA256SUMS.txt`. These extra outputs do not affect the Firefox package.
@@ -66,7 +66,7 @@ To compare the rebuilt add-on with the submitted package, extract each ZIP into 
 
 ```sh
 unzip -q submitted-firefox.zip -d submitted
-unzip -q dist/hack-engine-firefox-v0.7.0.zip -d rebuilt
+unzip -q dist/hack-engine-firefox-v1.0.0.zip -d rebuilt
 diff -ru submitted rebuilt
 ```
 

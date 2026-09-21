@@ -1,0 +1,15 @@
+.session-tools { margin: 12px; padding: 12px; border: 1px solid #38454b; border-radius: 10px; color: #edf6f2; background: #141e23; font: 13px/1.5 system-ui, sans-serif; }
+.session-target { overflow-wrap: anywhere; color: #b4d5c9; margin-bottom: 8px; }
+.session-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.session-tools button, .session-tools input, .session-tools select { font: inherit; color: inherit; background: #233138; border: 1px solid #557066; border-radius: 5px; padding: 7px; min-width: 0; }
+.session-tools button { cursor: pointer; }
+.session-tools button:disabled { opacity: .45; cursor: default; }
+.session-tools :focus-visible { outline: 2px solid #8affcd; outline-offset: 3px; }
+.session-tools label { display: grid; gap: 4px; margin: 8px 0; }
+.session-tools .verification { display: flex; align-items: flex-start; }
+.session-tools .verification input { flex: 0 0 auto; margin-top: 4px; }
+.session-tools [hidden] { display: none !important; }
+.session-tools summary { cursor: pointer; }
+.session-tools pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow: auto; }
+.session-feedback:empty { display: none; }
+.session-tools .practice-action { margin-top: 10px; }

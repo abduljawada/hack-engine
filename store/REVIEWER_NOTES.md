@@ -1,6 +1,6 @@
 # Reviewer notes
 
-Hack Engine installs a document-start hook because Ruffle may instantiate WebAssembly before a user can open the toolbar popup. Host access is used only to capture WebAssembly memory in the current page and permitted frames. Scans, writes, freezes, and watches run locally. The submitted version does not transmit browsing activity, page content, memory values, or analytics to the developer or any third party.
+Hack Engine installs a document-start hook because Ruffle may instantiate WebAssembly before a user can open the toolbar popup. Host access is used only to capture WebAssembly memory in the current page and permitted frames. Scans, writes, freezes, and watches run locally. The candidate version does not transmit browsing activity, page content, memory values, or analytics to the developer or any third party.
 
 ## Deterministic review procedure
 
@@ -16,6 +16,8 @@ No account, payment, network service, or proprietary test content is required. A
 
 ## Source build
 
-Upload `hack-engine-source-v0.7.0.zip` as the matching source archive. Its root `SOURCE_BUILD.md` gives the operating-system and tool-version requirements, installation steps, exact build command, validation commands, and unpacked-tree comparison procedure. The source includes `package-lock.json` and every build script. It excludes `node_modules`, `dist`, and repository internals.
+Upload `hack-engine-source-v1.0.0.zip` as the matching source archive. Its root `SOURCE_BUILD.md` gives the operating-system and tool-version requirements, installation steps, exact build command, validation commands, and unpacked-tree comparison procedure. The source includes `package-lock.json` and every build script. It excludes `node_modules`, `dist`, and repository internals.
 
-The release JavaScript is not minified, bundled, transpiled, or obfuscated. A clean extraction followed by `npm ci --ignore-scripts` and `npm run build` was verified to produce a byte-for-byte identical `hack-engine-firefox-v0.7.0.zip` in the reference environment.
+The release JavaScript is not minified, bundled, transpiled, or obfuscated. Reproduce the candidate by extracting the source archive, installing the locked dependencies, and running `npm run build`. Compare the unpacked output with the candidate archives as described in `SOURCE_BUILD.md`; qualification evidence is recorded in `IMPLEMENTATION_1_0.md`.
+
+The bundled **Open practice game** action provides a second review path without a local server. Session tools expose Undo scan, Stop all freezes, Restore last write, and saved workspaces with an explicit unverified preview.

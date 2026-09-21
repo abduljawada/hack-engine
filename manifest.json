@@ -1,11 +1,16 @@
 {
   "manifest_version": 3,
   "name": "Hack Engine",
-  "version": "0.7.0",
+  "version": "1.0.0",
   "description": "Inspect, watch, and edit WebAssembly memory used by embedded Ruffle players.",
   "homepage_url": "https://abduljawada.github.io/hack-engine/",
-  "permissions": ["tabs"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": [
+    "tabs",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "icons": {
     "16": "assets/icons/icon-16.png",
     "32": "assets/icons/icon-32.png",
@@ -31,13 +36,19 @@
     "open_at_install": false
   },
   "background": {
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js"
+    ]
   },
   "devtools_page": "devtools/devtools.html",
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["page-agent.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "page-agent.js"
+      ],
       "run_at": "document_start",
       "all_frames": true,
       "match_about_blank": true,
@@ -45,8 +56,12 @@
       "world": "MAIN"
     },
     {
-      "matches": ["<all_urls>"],
-      "js": ["content-bridge.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content-bridge.js"
+      ],
       "run_at": "document_start",
       "all_frames": true,
       "match_about_blank": true,
@@ -58,8 +73,14 @@
       "id": "hack-engine@abduljawada.github.io",
       "strict_min_version": "142.0",
       "data_collection_permissions": {
-        "required": ["none"]
+        "required": [
+          "none"
+        ]
       }
     }
-  }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "incognito": "not_allowed"
 }

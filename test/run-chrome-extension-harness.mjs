@@ -1,10 +1,12 @@
+import { extensionUiScenario } from "./extension-ui-scenario.mjs";
+import { browserPath } from "./browser-path.mjs";
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chromePath = browserPath("chrome");
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const extensionDirectory = join(projectRoot, "dist", "chrome");
 const harnessUrl = process.argv[2] ??
@@ -146,6 +148,42 @@ try {
       `Chrome extension bridge harness did not complete within 30 seconds.\nTargets:\n${targetSummary}\nChrome output:\n${chromeOutput.trim()}`,
     );
   }
+  await pageCdp.call("Page.navigate", { url: `chrome-extension://${installedExtension.id}/practice/index.html` });
+  let practiceTab;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    try {
+      const result = await pageCdp.call("Runtime.evaluate", { expression: "(async () => ({ tab: (await chrome.tabs.getCurrent()).id, ready: document.querySelector('#result')?.textContent }))()", awaitPromise: true, returnByValue: true });
+      if (result.result?.value?.ready?.startsWith("Ready")) { practiceTab = result.result.value.tab; break; }
+    } catch {}
+    await delay(100);
+  }
+  if (!practiceTab) throw new Error("Packaged practice game did not initialize.");
+  const created = await browserCdp.call("Target.createTarget", { url: `chrome-extension://${installedExtension.id}/popup/popup.html?sidebar=1&tabId=${practiceTab}`, background: true });
+  const { port: debugPort } = new URL(browserSocketUrl);
+  const targets = await fetch(`http://127.0.0.1:${debugPort}/json/list`).then((response) => response.json());
+  const target = targets.find((item) => item.id === created.targetId);
+  const controls = connectCdp(target.webSocketDebuggerUrl);
+  try {
+    await delay(300);
+    const result = await controls.call("Runtime.evaluate", { expression: extensionUiScenario, awaitPromise: true, returnByValue: true });
+    if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
+    console.log(result.result.value);
+    await controls.call("ServiceWorker.enable");
+    await controls.call("ServiceWorker.stopAllWorkers");
+    await delay(1200);
+    const recovered = await controls.call("Runtime.evaluate", { expression: `(async () => {
+      const deadline = Date.now() + 15000;
+      while (Date.now() < deadline) {
+        const session = await chrome.runtime.sendMessage({ kind: "getQuickSession", tabId: ${practiceTab} });
+        if (session?.status === "complete" && session.results?.total === 1 && !document.querySelector('#advanced-scan').disabled) return true;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      throw new Error("Scan session failed to recover after worker termination");
+    })()`, awaitPromise: true, returnByValue: true });
+    if (recovered.exceptionDetails || recovered.result.value !== true) throw new Error(recovered.exceptionDetails?.exception?.description || "Worker recovery failed");
+    console.log("PASS: live Chromium service-worker termination preserves the completed scan and reconnects its controls.");
+  } finally { controls.close(); }
+
 } finally {
   pageCdp?.close();
   browserCdp?.close();
@@ -157,5 +195,5 @@ try {
       resolve();
     });
   });
-  rmSync(profileDirectory, { recursive: true, force: true });
+  rmSync(profileDirectory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }

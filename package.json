@@ -1,6 +1,6 @@
 {
   "name": "hack-engine-extension",
-  "version": "0.7.0",
+  "version": "1.0.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -12,7 +12,8 @@
     "test:browser": "node test/run-browser-harnesses.mjs",
     "test:firefox": "node test/run-firefox-extension-harness.mjs",
     "test:chrome": "node test/run-chrome-extension-harness.mjs",
-    "release:verify": "npm run build:source && npm run check && npm run lint:firefox"
+    "release:verify": "npm run build:source && npm run check && npm run lint:firefox",
+    "test:unit": "node --test --test-isolation=none test/*.test.mjs"
   },
   "devDependencies": {
     "web-ext": "10.6.0"

@@ -26,6 +26,9 @@ const sourceEntries = [
   "package-lock.json",
   "package.json",
   "page-agent.js",
+  "workspace-controls.js",
+  "workspace-controls.css",
+  "practice",
   "popup",
   "scripts",
   "store",
@@ -34,6 +37,7 @@ const sourceEntries = [
 
 function filesBelow(path) {
   const entries = readdirSync(path, { withFileTypes: true })
+    .filter((entry) => !entry.name.startsWith("._") && entry.name !== ".DS_Store")
     .sort((left, right) => left.name.localeCompare(right.name));
   return entries.flatMap((entry) => {
     const child = join(path, entry.name);

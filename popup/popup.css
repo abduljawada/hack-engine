@@ -384,3 +384,6 @@ body.advanced-active .secondary-actions { display: none; }
   .advanced-grid,
   .candidate-tools { grid-template-columns: 1fr; }
 }
+
+.watch-metadata { grid-column: 1 / -1; display: flex; gap: 6px; width: 100%; }
+.watch-metadata input { min-width: 0; width: 50%; }

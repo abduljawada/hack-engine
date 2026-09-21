@@ -33,6 +33,9 @@
   const pendingCandidateInstances = new Set();
   let activeTab = null;
   let port = null;
+  let reconnectTimer = null;
+  let closing = false;
+  let pendingSettings = null;
   let pollTimer = null;
   let candidateRefreshTimer = null;
   let requestSequence = 1;
@@ -167,6 +170,8 @@
     }
     if (extensionApi.sidePanel?.close && activeTab?.id) {
       await extensionApi.sidePanel.close({ tabId: activeTab.id });
+    } else if (extensionApi.sidePanel && activeTab?.id) {
+      await extensionApi.sidePanel.setOptions({ tabId: activeTab.id, enabled: false });
     }
   }
 
@@ -310,6 +315,7 @@
       return false;
     }
     try {
+      document.dispatchEvent(new CustomEvent("hack-engine-workspace-edit", { detail: { action, ...options } }));
       port.postMessage({ kind: "workspaceCommand", action, ...options });
       return true;
     } catch {
@@ -371,9 +377,11 @@
         ? "Ruffle memory detected"
         : "WebAssembly memory detected";
     } else if (summary.connected) {
-      elements.statusTitle.textContent = "Connected to this tab";
+      elements.statusTitle.textContent = "No memory captured — start or reload the game";
     } else {
-      elements.statusTitle.textContent = "No connection yet";
+      elements.statusTitle.textContent = /^(about:|chrome:|edge:)/.test(activeTab?.url || "")
+        ? "This browser page cannot be inspected"
+        : "No capture — reload the game or check site access";
     }
   }
 
@@ -442,7 +450,7 @@
       elements.condition.value = "changed";
     }
     elements.scan.textContent = canRefine ? "Next scan" : "First scan";
-    elements.scan.disabled = scanning || !selectedInstance();
+    elements.scan.disabled = !port || scanning || !selectedInstance();
     elements.cancel.hidden = !scanning;
     elements.reset.hidden = !quickSession;
     for (const option of elements.advancedCondition.querySelectorAll("[data-refine-only]")) {
@@ -456,7 +464,7 @@
       elements.advancedCondition.value = "changed";
     }
     elements.advancedScan.textContent = canRefine ? "Next scan" : "First scan";
-    elements.advancedScan.disabled = scanning || !(canRefine ? sessionInstance() : advancedSelectedInstance());
+    elements.advancedScan.disabled = !port || scanning || !(canRefine ? sessionInstance() : advancedSelectedInstance());
     elements.advancedCancel.hidden = !scanning;
     elements.advancedReset.hidden = !quickSession;
     elements.advancedType.disabled = canRefine || scanning;
@@ -483,6 +491,8 @@
       row.classList.toggle("selected", row.dataset.candidateKey === selectedKey);
     }
     const hasSelection = Boolean(selectedCandidate);
+    const liveSelection = !!port && !!selectedCandidate && instances.has(`${selectedCandidate.frameId}:${selectedCandidate.instanceId}`);
+    for (const button of [elements.write, elements.advancedWrite, elements.freeze, elements.advancedFreeze]) button.disabled = !liveSelection;
     elements.editor.hidden = !hasSelection;
     elements.advancedEditor.hidden = !hasSelection;
     if (!selectedCandidate) {
@@ -509,6 +519,8 @@
       type: candidate.type,
       multiplier: Number(candidate.multiplier) || 1,
       address: candidate.address,
+      label: candidate.label || watchedCandidates.get(candidateKey(candidate))?.candidate.label || "",
+      group: candidate.group || watchedCandidates.get(candidateKey(candidate))?.candidate.group || "",
       hint: instance?.hint || "",
       url: instance?.url || "",
     };
@@ -546,6 +558,8 @@
         value: undefined,
       };
       candidate.multiplier = Number(watch.multiplier) || 1;
+      candidate.label = watch.label || "";
+      candidate.group = watch.group || "";
       incoming.set(key, existing || { candidate, valueCells: new Set() });
     }
     watchedCandidates.clear();
@@ -668,6 +682,21 @@
         sendWorkspace("removeWatch", { key });
       });
       row.append(select, remove);
+      const metadata = document.createElement("div");
+      metadata.className = "watch-metadata";
+      for (const field of ["label", "group"]) {
+        const input = document.createElement("input");
+        input.type = "text"; input.maxLength = 80;
+        input.value = entry.candidate[field] || "";
+        input.placeholder = field === "label" ? "Watch label" : "Group";
+        input.setAttribute("aria-label", `${input.placeholder} for ${formatAddress(entry.candidate.address)}`);
+        input.addEventListener("change", () => {
+          entry.candidate[field] = input.value;
+          sendWorkspace("upsertWatch", { watch: entry.candidate });
+        });
+        metadata.append(input);
+      }
+      row.append(metadata);
       elements.advancedWatches.append(row);
     }
     elements.advancedWatchCount.textContent = String(watchedCandidates.size);
@@ -711,7 +740,7 @@
     if (payload?.allCandidates) {
       setQuickStatus("Baseline captured. Change the game value, choose a comparison, then run Next scan.", "ready");
     } else if (Number(payload?.total) === 0) {
-      setQuickStatus("No matching values found. You can broaden the search or reset.", "error");
+      setQuickStatus("No matches. Undo the last scan, widen the range, search all number formats, or reset.", "error");
     } else {
       setQuickStatus(
         `${candidateTotal.toLocaleString()} candidates remain; showing ${preview.length}.`,
@@ -749,6 +778,12 @@
     } else if (session?.results) {
       renderResults(session.results, session.frameId);
     } else if (!session) {
+      if (pendingSettings) {
+        elements.advancedType.value = pendingSettings.type;
+        elements.advancedAlignment.value = pendingSettings.alignment;
+        elements.advancedMultiplier.value = pendingSettings.multiplier;
+        pendingSettings = null;
+      }
       clearCandidateRefreshState();
       hasScanResults = false;
       candidateTotal = 0;
@@ -777,6 +812,9 @@
       return;
     }
     if (payload?.kind === "instanceList") {
+      for (const [key, record] of instances) {
+        if (record.frameId === message.frameId) instances.delete(key);
+      }
       addInstances(message.frameId, message.url, payload.instances);
       return;
     }
@@ -820,6 +858,10 @@
       renderResults(payload, message.frameId);
       updateScanControls();
     } else if (payload.kind === "scanCancelled") {
+      if (quickSession?.requestId !== payload.requestId) {
+        setQuickStatus("Scan cancelled; the previous completed results are available.", "ready");
+        return;
+      }
       if (quickSession) {
         quickSession.status = "cancelled";
       }
@@ -899,6 +941,7 @@
       pendingCandidateInstances.clear();
       updateInstanceOptions();
       updateScanControls();
+      updateSelectionUI();
     } else if (message?.kind === "pageMessage") {
       handlePagePayload(message, message.payload);
     }
@@ -924,26 +967,39 @@
     }
   }
 
+  function connectPopup() {
+    if (closing) return;
+    clearTimeout(reconnectTimer);
+    try {
+      const nextPort = extensionApi.runtime.connect({ name: `hack-popup:${activeTab.id}` });
+      port = nextPort;
+      nextPort.onMessage.addListener(handlePortMessage);
+      nextPort.onDisconnect.addListener(() => {
+        if (port !== nextPort) return;
+        port = null;
+        setQuickStatus("Reconnecting to this game…", "error");
+        updateScanControls();
+        reconnectTimer = setTimeout(connectPopup, 750);
+      });
+      send({ kind: "listInstances", requestId: nextRequestId("instances") });
+      extensionApi.runtime.sendMessage({ kind: "getQuickSession", tabId: activeTab.id }).then(applyQuickSession).catch(() => {});
+    } catch { reconnectTimer = setTimeout(connectPopup, 1000); }
+  }
+
+  document.addEventListener("hack-engine-settings", (event) => {
+    if (quickSession?.canRefine || quickSession?.status === "scanning") { pendingSettings = event.detail; return; }
+    elements.advancedType.value = event.detail.type;
+    elements.advancedAlignment.value = event.detail.alignment;
+    elements.advancedMultiplier.value = event.detail.multiplier;
+  });
+
   async function initialize() {
     const tab = hasBoundTab
       ? await extensionApi.tabs.get(boundTabId)
       : (await extensionApi.tabs.query({ active: true, currentWindow: true }))[0];
     activeTab = tab || null;
     elements.pin.disabled = !activeTab?.id;
-    if (activeTab?.id) {
-      port = extensionApi.runtime.connect({ name: `hack-popup:${activeTab.id}` });
-      port.onMessage.addListener(handlePortMessage);
-      port.onDisconnect.addListener(() => {
-        port = null;
-        setQuickStatus("The extension connection was closed.", "error");
-        updateScanControls();
-      });
-      const session = await extensionApi.runtime.sendMessage({
-        kind: "getQuickSession",
-        tabId: activeTab.id,
-      });
-      applyQuickSession(session);
-    }
+    if (activeTab?.id) connectPopup();
     await refreshSummary();
     pollTimer = setInterval(refreshSummary, 1000);
     candidateRefreshTimer = setInterval(refreshCandidateValues, CANDIDATE_REFRESH_MS);
@@ -1228,6 +1284,8 @@
   window.addEventListener("unload", () => {
     clearInterval(pollTimer);
     clearInterval(candidateRefreshTimer);
+    closing = true;
+    clearTimeout(reconnectTimer);
     port?.disconnect?.();
   });
 

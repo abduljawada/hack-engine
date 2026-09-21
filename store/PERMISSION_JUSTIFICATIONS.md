@@ -15,3 +15,11 @@ The `sidePanel` permission lets a user keep Hack Engine visible while interactin
 ## Remote code and external services
 
 All executable JavaScript is readable and included in the package. Hack Engine does not use `eval`, `new Function`, remote script imports, downloaded executable logic, analytics, advertising, accounts, payment, native messaging, or remote configuration.
+
+## `storage`
+
+Session storage preserves small watch metadata through background restarts. Local storage holds only user-saved workspace names, watch metadata, and scan settings. It is not used for remote sync or bulk memory dumps.
+
+## Bundled practice memory
+
+The extension page CSP permits local WebAssembly compilation (`wasm-unsafe-eval`) so the packaged practice page can instantiate its fixed in-package memory fixture. JavaScript string evaluation and remote code remain prohibited. The practice bridge accepts only the extension's own practice page.

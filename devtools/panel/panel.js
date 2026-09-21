@@ -23,6 +23,8 @@
   let selectedValueType = null;
   let selectedMultiplier = 1;
   let port = null;
+  let pendingSettings = null;
+  let sharedSession = null;
   let reconnectTimer = null;
   let scanWatchdog = null;
   let activeScanRequestId = null;
@@ -206,6 +208,7 @@
       return false;
     }
     try {
+      document.dispatchEvent(new CustomEvent("hack-engine-workspace-edit", { detail: { action, ...options } }));
       port.postMessage({ kind: "workspaceCommand", action, ...options });
       return true;
     } catch {
@@ -966,7 +969,14 @@
   }
 
   function applySharedScanSession(session) {
+    sharedSession = session;
     if (!session) {
+      if (pendingSettings) {
+        elements.type.value = pendingSettings.type;
+        elements.alignment.value = pendingSettings.alignment;
+        elements.multiplier.value = pendingSettings.multiplier;
+        pendingSettings = null;
+      }
       activeScanRequestId = null;
       activeScanMeta = null;
       appliedSharedResultId = null;
@@ -1524,65 +1534,16 @@
   }
 
   function importWorkspaceData(payload) {
-    if (payload?.format !== "ruffle-memory-workspace" || payload.version !== 1) {
-      throw new Error("This is not a supported Hack Engine workspace file.");
-    }
-    const validTypes = new Set(["i8", "u8", "i16", "u16", "i32", "u32", "f32", "f64"]);
-    const record = selectedInstance();
-    if (record && Array.isArray(payload.watches)) {
-      for (const watch of payload.watches.slice(0, MAX_WATCH_ADDRESSES)) {
-        if (
-          !validTypes.has(watch?.type) ||
-          !Number.isSafeInteger(watch.address) ||
-          watch.address < 0
-        ) {
-          continue;
-        }
-        addWatch(record, watch.type, watch.address, Number(watch.multiplier) || 1, {
-          select: false,
-          quiet: true,
-          label: typeof watch.label === "string" ? watch.label : "",
-          group: typeof watch.group === "string" ? watch.group : "",
-          broadcast: false,
-        });
-      }
-    }
-    if (Array.isArray(payload.candidates)) {
-      candidateRecords = payload.candidates.slice(0, MAX_CANDIDATE_PREVIEW).flatMap((candidate) => {
-        const multiplier = Number(candidate?.multiplier) || 1;
-        if (
-          !validTypes.has(candidate?.type) ||
-          !Number.isSafeInteger(candidate.address) ||
-          candidate.address < 0 ||
-          !Number.isFinite(multiplier) ||
-          multiplier <= 0
-        ) {
-          return [];
-        }
-        return [{
-          key: candidateIdentity(candidate.type, candidate.address, multiplier),
-          address: candidate.address,
-          type: candidate.type,
-          multiplier,
-          value: candidate.value,
-          displayValue: candidate.displayValue ?? candidate.value,
-        }];
-      });
-      selectedCandidates.clear();
-      elements.resultCount.textContent = candidateRecords.length.toLocaleString();
-      renderCandidateWorkspace();
-    }
-    if (Array.isArray(payload.history)) {
-      scanHistory = payload.history.slice(0, MAX_SCAN_HISTORY);
-      persistHistory();
-      renderScanHistory();
-    }
-    persistWatches();
-    sendWorkspace("mergeWatches", { watches: serializableWatches() });
-    renderWatches();
-    refreshWatchValues();
-    setStatus("Workspace imported. Verify addresses before writing or freezing.", "ready");
+    document.dispatchEvent(new CustomEvent("hack-engine-import", { detail: payload }));
+    setStatus("Workspace opened as a preview. Verify its addresses in Saved workspaces before using it.", "ready");
   }
+
+  document.addEventListener("hack-engine-settings", (event) => {
+    if (sharedSession?.canRefine || activeScanRequestId) { pendingSettings = event.detail; return; }
+    elements.type.value = event.detail.type;
+    elements.alignment.value = event.detail.alignment;
+    elements.multiplier.value = event.detail.multiplier;
+  });
 
   elements.refresh.addEventListener("click", listInstances);
   elements.firstScan.addEventListener("click", () => runScan(false));
@@ -1730,6 +1691,7 @@
       return;
     }
     try {
+      if (file.size > 1048576) throw new Error("Workspace files must be smaller than 1 MiB.");
       importWorkspaceData(JSON.parse(await file.text()));
     } catch (error) {
       setStatus(
