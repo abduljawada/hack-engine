@@ -2,7 +2,7 @@
 
 Candidate policy updated: September 21, 2026
 
-Hack Engine is a local browser developer tool for inspecting WebAssembly memory used by embedded Ruffle players. This policy describes the `1.0.0` release candidate.
+Hack Engine is a local browser developer tool for inspecting WebAssembly memory used by embedded Ruffle players. This policy describes the `1.0.1` release candidate.
 
 ## Information the extension handles
 

@@ -26,7 +26,7 @@ Use Hack Engine only with games, software, and content you own or are authorized
 
 - Suggested category: Developer Tools
 - Firefox: mark the pre-1.0 listing as Experimental
-- First store version: 1.0.0
+- First store version: 1.0.1
 - License: MIT
 - Language: English
 

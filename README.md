@@ -4,7 +4,7 @@ Hack Engine helps you find, watch, and change numeric values in browser games ru
 
 Everything happens locally in the inspected tab. Hack Engine has no accounts, telemetry, advertising, or remote service.
 
-> Current release: **v1.0.0 release candidate — not published**. Core workflows are tested locally on Linux Firefox and Chromium; the remaining release gates are recorded in [IMPLEMENTATION_1_0.md](IMPLEMENTATION_1_0.md).
+> Current release: **v1.0.1 release candidate — not published**. Core workflows are tested locally on Linux Firefox and Chromium; the remaining release gates are recorded in [IMPLEMENTATION_1_0.md](IMPLEMENTATION_1_0.md).
 
 ## What you can do
 

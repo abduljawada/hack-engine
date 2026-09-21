@@ -15,6 +15,8 @@ Hack Engine finds, watches, and edits numeric values in WebAssembly memory used 
 
 The toolbar popup closes when focus returns to the page. Use the pin to open the persistent sidebar. The sidebar's **Advanced** view adds explicit number format, alignment, multiplier, and captured-memory controls plus filtering, sorting, and watches.
 
+Both views show candidates with recommended variable types first: Float64 for AVM1, or Int32, Uint32, then Float64 for AVM2. Candidates within each priority are ordered by address; when AVM is unknown, candidates are ordered by address. Advanced defaults to **Recommended types**, with manual Address, Value, and Type sorting available. Simple always uses the recommended order.
+
 **Open full inspector** provides batch selection, labels and groups, scan history, diagnostics, and workspace import/export. The popup/sidebar and full inspector share the active tab's scan, candidates, watches, primary selection, and freeze state.
 
 ## Numeric formats

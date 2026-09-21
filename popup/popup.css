@@ -39,6 +39,7 @@ main { padding: 16px 18px; }
 }
 h1, h2, p { margin: 0; }
 h1 { font-size: 21px; line-height: 1.1; letter-spacing: -0.025em; }
+body.sidebar-panel .popup-header h1 { display: none; }
 .header-copy { min-width: 0; display: grid; gap: 5px; }
 .header-status { min-height: 16px; display: flex; align-items: center; gap: 7px; color: var(--accent); font-size: 12px; font-weight: 650; line-height: 1.3; }
 .header-status.offline { color: var(--muted); }
@@ -263,6 +264,22 @@ select:disabled, input:disabled { opacity: 0.48; }
 }
 .advanced-heading > div { display: grid; gap: 3px; }
 .advanced-heading h2 { font-size: 18px; }
+.runtime-guidance {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.runtime-guidance > div { display: grid; gap: 2px; }
+.runtime-guidance span,
+.runtime-guidance p { color: var(--muted); }
+.runtime-guidance strong { font-weight: 650; }
+.runtime-guidance p { margin: 0; }
 .session-badge,
 .candidate-type {
   padding: 4px 7px;
@@ -309,7 +326,7 @@ select:disabled, input:disabled { opacity: 0.48; }
 }
 .workspace-tabs span { margin-left: 3px; color: var(--accent); }
 .workspace-pane { padding-top: 9px; }
-.candidate-tools { display: grid; grid-template-columns: minmax(0, 1fr) 96px; gap: 7px; }
+.candidate-tools { display: grid; grid-template-columns: minmax(0, 1fr) 164px; gap: 7px; }
 .candidate-tools input,
 .candidate-tools select { min-height: 36px; font-size: 12px; }
 .advanced-candidates,

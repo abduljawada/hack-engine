@@ -46,6 +46,8 @@
   let nextSnapshotId = 1;
   let freezeFrameHandle = null;
   let snapshotDatabasePromise = null;
+  let scanYieldChannel = null;
+  const scanYieldQueue = [];
 
   const typeSpecs = {
     i8: {
@@ -319,7 +321,16 @@
   }
 
   async function yieldToPage(requestId) {
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // A posted task lets progress and cancellation messages run without the
+    // minimum delay imposed on repeatedly nested zero-delay timers.
+    if (!scanYieldChannel) {
+      scanYieldChannel = new MessageChannel();
+      scanYieldChannel.port1.onmessage = () => scanYieldQueue.shift()?.();
+    }
+    await new Promise((resolve) => {
+      scanYieldQueue.push(resolve);
+      scanYieldChannel.port2.postMessage(null);
+    });
     throwIfScanCancelled(requestId);
   }
 
@@ -738,7 +749,6 @@
     snapshot.chunks = new Array(chunkCount).fill(null);
     try {
       for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
-        await yieldToPage(requestId);
         const chunkOffset = chunkIndex * snapshot.chunkSize;
         const uniqueLength = Math.min(snapshot.chunkSize, byteLength - chunkOffset);
         const startSlot = Math.ceil(chunkOffset / candidates.stride);
@@ -749,6 +759,7 @@
         if (!candidateRangeHasMatches(candidates, startSlot, endSlot)) {
           continue;
         }
+        await yieldToPage(requestId);
         const readLength = Math.min(
           uniqueLength + spec.size - 1,
           byteLength - chunkOffset,
@@ -782,7 +793,6 @@
     snapshot.chunks = new Array(chunkCount).fill(null);
     try {
       for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
-        await yieldToPage(requestId);
         const chunkOffset = chunkIndex * snapshot.chunkSize;
         const uniqueLength = Math.min(snapshot.chunkSize, byteLength - chunkOffset);
         const hasCandidates = [...sets.values()].some((candidates) => {
@@ -796,6 +806,7 @@
         if (!hasCandidates) {
           continue;
         }
+        await yieldToPage(requestId);
         const readLength = Math.min(
           uniqueLength + typeSpecs.f64.size - 1,
           byteLength - chunkOffset,
@@ -997,7 +1008,6 @@
         chunkIndex < previous.snapshot.chunks.length;
         chunkIndex += 1
       ) {
-        await yieldToPage(requestId);
         const previousChunk = previous.snapshot.chunks[chunkIndex];
         const chunkOffset = chunkIndex * previous.snapshot.chunkSize;
         const uniqueLength = Math.min(
@@ -1018,6 +1028,7 @@
           continue;
         }
 
+        await yieldToPage(requestId);
         const currentReadLength = Math.min(
           uniqueLength + spec.size - 1,
           currentByteLength - chunkOffset,
@@ -1370,7 +1381,6 @@
 
     try {
       for (let chunkIndex = 0; chunkIndex < previousSnapshot.chunks.length; chunkIndex += 1) {
-        await yieldToPage(requestId);
         const previousChunk = previousSnapshot.chunks[chunkIndex];
         const chunkOffset = chunkIndex * previousSnapshot.chunkSize;
         const uniqueLength = Math.min(
@@ -1397,6 +1407,7 @@
           });
           continue;
         }
+        await yieldToPage(requestId);
         const currentReadLength = Math.min(
           uniqueLength + typeSpecs.f64.size - 1,
           currentByteLength - chunkOffset,
@@ -1612,6 +1623,8 @@
         types,
       });
     group.mode = mode;
+    // Deliver late cancellation before replacing the completed scan or Undo.
+    await yieldToPage(requestId);
     scans.set(key, group);
     await commitCheckpoint(key, previous, group);
     group.options = { ...options };
@@ -1706,6 +1719,8 @@
       await captureCandidateSnapshot({ requestId, record, candidates, spec });
     }
 
+    // This is the commit boundary; cancellation must leave both states intact.
+    await yieldToPage(requestId);
     scans.set(key, candidates);
     await commitCheckpoint(key, previous, candidates);
     candidates.options = { requestId, instanceId, type, rawValue, rawMaxValue, multiplier, condition, alignment, refine };

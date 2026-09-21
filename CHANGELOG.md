@@ -2,6 +2,13 @@
 
 All notable changes to Hack Engine are documented here.
 
+## [1.0.1] - 2026-09-21
+
+Unpublished; external compatibility and signed-store qualification remain open.
+
+- Show detected AVM and recommended variable types in Advanced, and prioritize those types in both Simple and Advanced candidate lists by default.
+- Accelerated scan scheduling and sparse snapshot traversal, with a final cancellation checkpoint that preserves completed results and Undo before a new scan commits.
+
 ## [1.0.0 candidate] - 2026-09-21
 
 Unpublished; external compatibility and signed-store qualification remain open.

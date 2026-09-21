@@ -4,6 +4,84 @@ function delay(milliseconds = 0) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+function checkRecommendedSorting() {
+  const failures = [];
+  const sort = document.querySelector("#advanced-sort");
+  const order = (selector) => [...document.querySelectorAll(selector)]
+    .map((row) => row.dataset.candidateKey.split(":").slice(-2).join(":"));
+  const expectOrder = (label, selector, expected) => {
+    if (JSON.stringify(order(selector)) !== JSON.stringify(expected)) failures.push(label);
+  };
+  const bothOrders = (label, expected) => {
+    expectOrder(`${label} Simple`, ".quick-candidate", expected);
+    expectOrder(`${label} Advanced`, ".advanced-candidate", expected);
+  };
+  const setInstances = (avmKind, additional = []) => popupHarnessState.emitPagePayload({
+    kind: "instanceList",
+    instances: [{ id: "memory-1", memoryBytes: 4096, looksLikeRuffle: true, avmKind }, ...additional],
+  });
+  const showResults = (preview, instanceId = "memory-1", avmKind) => popupHarnessState.emitPagePayload({
+    kind: "scanResults",
+    requestId: "quick:harness-sort",
+    instanceId,
+    ...(avmKind ? { avmKind } : {}),
+    type: "auto",
+    multiplier: 1,
+    total: preview.length,
+    preview: preview.map((candidate) => ({ ...candidate, displayValue: candidate.value, multiplier: 1 })),
+    allCandidates: false,
+  });
+  const preview = [
+    { address: 10, type: "u8", value: 1 },
+    { address: 40, type: "f64", value: 2 },
+    { address: 30, type: "u32", value: 5 },
+    { address: 50, type: "i32", value: 4 },
+    { address: 20, type: "f64", value: 3 },
+  ];
+  if (sort.value !== "recommended") failures.push("Advanced defaults to recommended");
+  setInstances("avm1");
+  showResults(preview);
+  bothOrders("AVM1", ["f64:20", "f64:40", "u8:10", "u32:30", "i32:50"]);
+  setInstances("avm2");
+  const avm2Order = ["i32:50", "u32:30", "f64:20", "f64:40", "u8:10"];
+  bothOrders("Updated runtime metadata", avm2Order);
+  showResults(preview);
+  bothOrders("AVM2", avm2Order);
+  for (const [mode, expected] of [
+    ["address", ["u8:10", "f64:20", "u32:30", "f64:40", "i32:50"]],
+    ["value", ["u8:10", "f64:40", "f64:20", "i32:50", "u32:30"]],
+    ["type", ["f64:20", "f64:40", "i32:50", "u32:30", "u8:10"]],
+  ]) {
+    sort.value = mode;
+    sort.dispatchEvent(new Event("change"));
+    expectOrder(`${mode} override`, ".advanced-candidate", expected);
+    expectOrder(`${mode} leaves Simple recommended`, ".quick-candidate", avm2Order);
+  }
+  sort.value = "recommended";
+  sort.dispatchEvent(new Event("change"));
+  setInstances("unknown");
+  showResults(preview);
+  bothOrders("Unknown", ["u8:10", "f64:20", "u32:30", "f64:40", "i32:50"]);
+  setInstances("avm1", [{ id: "memory-2", memoryBytes: 4096, looksLikeRuffle: true, avmKind: "avm2" }]);
+  showResults(preview, "memory-2");
+  bothOrders("Scan instance metadata", avm2Order);
+  setInstances("avm1");
+  showResults(preview, "memory-1", "avm2");
+  bothOrders("Scan result runtime metadata", avm2Order);
+  showResults([
+    ...Array.from({ length: 21 }, (_, index) => ({ address: index, type: "i32", value: index })),
+    { address: 100, type: "f64", value: 100 },
+  ]);
+  expectOrder("Sort before Simple cap", ".quick-candidate", [
+    "f64:100", ...Array.from({ length: 19 }, (_, index) => `i32:${index}`),
+  ]);
+  if (document.querySelectorAll(".advanced-candidate").length !== 22) failures.push("Advanced retains all candidates");
+  document.querySelector("#reset-quick-scan").click();
+  popupHarnessState.resetInstances();
+  popupHarnessState.sortingFailures = failures;
+  return failures.length === 0;
+}
+
 setTimeout(async () => {
   const parameters = new URLSearchParams(location.search);
   const sidebarMode = parameters.get("sidebar") === "1";
@@ -22,6 +100,7 @@ setTimeout(async () => {
     !document.querySelector("#scan-strategy") &&
     !document.querySelector("#open-inspector").disabled &&
     !document.querySelector("#type");
+  const recommendedSorting = checkRecommendedSorting();
 
   if (sidebarMode) {
     const pin = document.querySelector("#pin-popup");
@@ -97,7 +176,7 @@ setTimeout(async () => {
     pin.click();
     await delay();
     const sidebarClosed = popupHarnessState.sidebarCloseCount === 1 && !popupHarnessState.closed;
-    popupHarnessResult.textContent = rendered && boundToOriginalTab && advancedScanWorked && advancedMinPreset && advancedMaxPreset && watchAdded && filterWorked && sharedSession && watchWorkspace && watchSurvivedReset && openedInOriginalWindow && sidebarClosed
+    popupHarnessResult.textContent = rendered && recommendedSorting && boundToOriginalTab && advancedScanWorked && advancedMinPreset && advancedMaxPreset && watchAdded && filterWorked && sharedSession && watchWorkspace && watchSurvivedReset && openedInOriginalWindow && sidebarClosed
       ? "PASS: Firefox sidebar shares Simple and Advanced scans, live candidates, watches, and tab-bound docking."
       : "FAIL: Firefox sidebar Advanced mode did not preserve its scan, candidates, watches, or docked state.";
     return;
@@ -123,7 +202,7 @@ setTimeout(async () => {
       popupHarnessState.sidebarOpenCount === 1 &&
       popupHarnessState.sidebarOpenedDuringUserAction &&
       popupHarnessState.closed;
-    popupHarnessResult.textContent = rendered && boundToOriginalTab && docked
+    popupHarnessResult.textContent = rendered && recommendedSorting && boundToOriginalTab && docked
       ? "PASS: pop-out mode remains tab-bound and can dock into the Firefox sidebar."
       : "FAIL: pop-out mode did not preserve or dock its target tab.";
     return;
@@ -227,7 +306,7 @@ setTimeout(async () => {
     popupHarnessState.createdTabs.at(-1)?.windowId === 10;
 
   popupHarnessResult.textContent =
-    rendered && nativePopupStayedSimple && pinDocked && firstPopoutOpened && secondPopoutReused && automaticScan && liveCandidateRefresh && quickMinPreset && quickMaxPreset && typedActions && inspectorOpened && refreshed && helpOpened
+    rendered && recommendedSorting && nativePopupStayedSimple && pinDocked && firstPopoutOpened && secondPopoutReused && automaticScan && liveCandidateRefresh && quickMinPreset && quickMaxPreset && typedActions && inspectorOpened && refreshed && helpOpened
       ? "PASS: compact toolbar popup, live candidates, Firefox sidebar docking, pop-out reuse, and typed quick-scan actions work."
       : "FAIL: toolbar quick-scan behavior did not match the active Ruffle state.";
 }, 80);

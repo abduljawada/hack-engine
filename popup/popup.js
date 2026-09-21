@@ -6,6 +6,11 @@
   const MAX_ADVANCED_CANDIDATES = 200;
   const MAX_SHARED_WATCHES = 256;
   const MAX_LIVE_READS = 256;
+  const AVM_RECOMMENDED_TYPES = Object.freeze({
+    avm1: ["f64"],
+    avm2: ["i32", "u32", "f64"],
+  });
+  const TYPE_LABELS = Object.freeze({ i32: "Int32 (i32)", u32: "Uint32 (u32)", f64: "Float64 (f64)" });
   const NUMERIC_LIMITS = Object.freeze({
     i8: ["-128", "127"],
     u8: ["0", "255"],
@@ -77,6 +82,9 @@
     write: document.querySelector("#quick-write"),
     freeze: document.querySelector("#quick-freeze"),
     advancedTools: document.querySelector("#advanced-tools"),
+    advancedAvmType: document.querySelector("#advanced-avm-type"),
+    advancedRecommendedTypes: document.querySelector("#advanced-recommended-types"),
+    advancedRuntimeHint: document.querySelector("#advanced-runtime-hint"),
     advancedSessionBadge: document.querySelector("#advanced-session-badge"),
     advancedCondition: document.querySelector("#advanced-condition"),
     advancedValue: document.querySelector("#advanced-value"),
@@ -436,6 +444,26 @@
     elements.advancedInstanceLabel.hidden = records.length <= 1;
   }
 
+  function updateRuntimeGuidance() {
+    const usesSession = quickSession?.canRefine || quickSession?.status === "scanning";
+    const record = usesSession ? sessionInstance() : advancedSelectedInstance();
+    const avmKind = usesSession && quickSession?.results?.avmKind !== undefined
+      ? quickSession.results.avmKind
+      : record?.looksLikeRuffle ? record.avmKind : "unknown";
+    elements.advancedRecommendedTypes.textContent = AVM_RECOMMENDED_TYPES[avmKind]
+      ?.map((type) => TYPE_LABELS[type]).join(", ") || "All numeric types";
+    if (avmKind === "avm1") {
+      elements.advancedAvmType.textContent = "AVM1";
+      elements.advancedRuntimeHint.textContent = "Automatic searches Float64 for this runtime.";
+    } else if (avmKind === "avm2") {
+      elements.advancedAvmType.textContent = "AVM2";
+      elements.advancedRuntimeHint.textContent = "Start with Int32 or Uint32 for whole numbers, Float64 for decimals. Automatic narrows decimal searches to Float64 after applying the multiplier.";
+    } else {
+      elements.advancedAvmType.textContent = "Unknown";
+      elements.advancedRuntimeHint.textContent = "AVM could not be determined. Automatic searches all numeric types.";
+    }
+  }
+
   function updateScanControls() {
     const canRefine = Boolean(quickSession?.canRefine);
     const scanning = quickSession?.status === "scanning";
@@ -477,6 +505,7 @@
         ? `${candidateTotal.toLocaleString()} candidates`
         : "New scan";
     elements.advancedSessionBadge.classList.toggle("active", scanning || canRefine);
+    updateRuntimeGuidance();
     updateConditionControls();
   }
 
@@ -590,9 +619,26 @@
     return value;
   }
 
+  function candidateTypePriority(candidate) {
+    const instance = instances.get(`${candidate.frameId}:${candidate.instanceId}`);
+    const belongsToSession = candidate.frameId === quickSession?.frameId &&
+      candidate.instanceId === String(quickSession?.instanceId);
+    const avmKind = belongsToSession && quickSession?.results?.avmKind !== undefined
+      ? quickSession.results.avmKind
+      : instance?.looksLikeRuffle ? instance.avmKind : "unknown";
+    const types = AVM_RECOMMENDED_TYPES[avmKind] || [];
+    const index = types.indexOf(candidate.type);
+    return index < 0 ? types.length : index;
+  }
+
+  function compareRecommendedCandidates([, left], [, right]) {
+    return candidateTypePriority(left.candidate) - candidateTypePriority(right.candidate) ||
+      left.candidate.address - right.candidate.address;
+  }
+
   function renderSimpleCandidates() {
     elements.candidates.replaceChildren();
-    for (const [key, entry] of [...candidateRecords].slice(0, 20)) {
+    for (const [key, entry] of [...candidateRecords].sort(compareRecommendedCandidates).slice(0, 20)) {
       const row = document.createElement("button");
       row.type = "button";
       row.className = "quick-candidate";
@@ -614,7 +660,12 @@
       return !filter || `${formatAddress(candidate.address)} ${candidateValueText(candidate)} ${candidate.type}`.toLowerCase().includes(filter);
     });
     const sort = elements.advancedSort.value;
-    records.sort(([, left], [, right]) => {
+    records.sort((leftEntry, rightEntry) => {
+      if (sort === "recommended") {
+        return compareRecommendedCandidates(leftEntry, rightEntry);
+      }
+      const [, left] = leftEntry;
+      const [, right] = rightEntry;
       if (sort === "value") {
         return Number(left.candidate.displayValue) - Number(right.candidate.displayValue);
       }
@@ -804,6 +855,7 @@
     }
     updateInstanceOptions();
     updateScanControls();
+    if (candidateRecords.size) renderCandidateLists();
   }
 
   function handlePagePayload(message, payload) {
@@ -1007,6 +1059,7 @@
 
   elements.condition.addEventListener("change", updateConditionControls);
   elements.advancedCondition.addEventListener("change", updateConditionControls);
+  elements.advancedInstance.addEventListener("change", updateRuntimeGuidance);
   for (const button of elements.viewButtons) {
     button.addEventListener("click", () => setActiveView(button.dataset.view));
   }

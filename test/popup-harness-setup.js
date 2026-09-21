@@ -47,6 +47,11 @@ function createPopupPort() {
     url: "https://bubblebox.com/civilizations-wars",
     payload,
   });
+  popupHarnessState.emitPagePayload = emitPayload;
+  popupHarnessState.resetInstances = () => emitPayload({
+    kind: "instanceList",
+    instances: [instance],
+  });
   queueMicrotask(() => {
     onMessage.emit({ kind: "quickSession", session: null });
     onMessage.emit({ kind: "frameConnected", frameId: 0, url: instance.url });

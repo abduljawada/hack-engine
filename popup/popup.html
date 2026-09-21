@@ -118,6 +118,12 @@
           <span id="advanced-session-badge" class="session-badge">New scan</span>
         </div>
 
+        <div class="runtime-guidance" aria-live="polite">
+          <div><span>Detected AVM type</span><strong id="advanced-avm-type">Unknown</strong></div>
+          <div><span>Recommended variable types</span><strong id="advanced-recommended-types">All numeric types</strong></div>
+          <p id="advanced-runtime-hint">AVM could not be determined. Automatic searches all numeric types.</p>
+        </div>
+
         <div class="advanced-form">
           <label>
             Condition
@@ -146,7 +152,7 @@
           <div class="advanced-grid">
             <label>
               Number format
-              <select id="advanced-type">
+              <select id="advanced-type" aria-describedby="advanced-recommended-types advanced-runtime-hint">
                 <option value="smart">Automatic</option>
                 <option value="auto">All numeric types</option>
                 <option value="i8">Int8</option>
@@ -203,6 +209,7 @@
             <div class="candidate-tools">
               <input id="advanced-filter" type="search" placeholder="Filter address, value, or type" aria-label="Filter candidates" />
               <select id="advanced-sort" aria-label="Sort candidates">
+                <option value="recommended">Recommended types</option>
                 <option value="address">Address</option>
                 <option value="value">Value</option>
                 <option value="type">Type</option>

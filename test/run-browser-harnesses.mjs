@@ -10,6 +10,7 @@ const allHarnesses = [
   ["recovery", "/test/recovery-harness.html", 90_000],
   ["exact scan", "/test/harness.html", 30_000],
   ["scan cancellation", "/test/scan-cancellation-harness.html", 90_000],
+  ["scan scheduling", "/test/scan-scheduling-harness.html", 90_000],
   ["freeze", "/test/freeze-harness.html", 30_000],
   ["watch diagnostics", "/test/watch-diagnostics-harness.html", 30_000],
   ["representation discovery", "/test/representation-discovery-harness.html", 90_000],
