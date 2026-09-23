@@ -2,6 +2,13 @@
 
 All notable changes to Hack Engine are documented here.
 
+## [1.1.0] - 2026-09-23
+
+Local release; not published to browser stores. External compatibility and signed-store qualification remain open.
+
+- Consolidate controls into the toolbar, sidebar, and pop-out; remove the separate legacy inspector and DevTools registration.
+- Migrate manual address entry, explicit batch watch/metadata selection, final write diagnostics, descending address/value sorting, and stalled-scan feedback into Advanced controls. Accept only current `hack-engine-workspace` version 2 imports; retire pre-release legacy import compatibility and defer scan history and bulk writes/freezes.
+
 ## [1.0.1] - 2026-09-21
 
 Unpublished; external compatibility and signed-store qualification remain open.

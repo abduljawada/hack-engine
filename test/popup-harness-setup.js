@@ -48,6 +48,7 @@ function createPopupPort() {
     payload,
   });
   popupHarnessState.emitPagePayload = emitPayload;
+  popupHarnessState.emitMessage = (message) => onMessage.emit(message);
   popupHarnessState.resetInstances = () => emitPayload({
     kind: "instanceList",
     instances: [instance],
@@ -61,8 +62,9 @@ function createPopupPort() {
     onDisconnect,
     disconnect() {},
     postMessage(message) {
-      const payload = message.payload;
+      const payload = message.payload || {};
       popupHarnessState.commands.push({ ...message, payload: { ...payload } });
+      if (popupHarnessState.interceptCommand?.(message, emitPayload, onMessage)) return;
       if (payload.kind === "listInstances") {
         queueMicrotask(() => emitPayload({
           kind: "instanceList",

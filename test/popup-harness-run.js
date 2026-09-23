@@ -50,6 +50,8 @@ function checkRecommendedSorting() {
   for (const [mode, expected] of [
     ["address", ["u8:10", "f64:20", "u32:30", "f64:40", "i32:50"]],
     ["value", ["u8:10", "f64:40", "f64:20", "i32:50", "u32:30"]],
+    ["addressDesc", ["i32:50", "f64:40", "u32:30", "f64:20", "u8:10"]],
+    ["valueDesc", ["u32:30", "i32:50", "f64:20", "f64:40", "u8:10"]],
     ["type", ["f64:20", "f64:40", "i32:50", "u32:30", "u8:10"]],
   ]) {
     sort.value = mode;
@@ -98,7 +100,7 @@ setTimeout(async () => {
     getComputedStyle(document.querySelector("#quick-max-label")).display === "none" &&
     getComputedStyle(document.querySelector("#quick-editor")).display === "none" &&
     !document.querySelector("#scan-strategy") &&
-    !document.querySelector("#open-inspector").disabled &&
+    !document.querySelector("#open-inspector") &&
     !document.querySelector("#type");
   const recommendedSorting = checkRecommendedSorting();
 
@@ -166,11 +168,10 @@ setTimeout(async () => {
       document.querySelectorAll(".advanced-candidate").length === 0 &&
       document.querySelector("#advanced-scan").textContent === "First scan";
 
-    document.querySelector("#open-inspector").click();
+    document.querySelector("#how-it-works").click();
     await delay();
-    const inspectorUrl = new URL(popupHarnessState.createdTabs[0]?.url || location.href);
     const openedInOriginalWindow =
-      inspectorUrl.pathname.endsWith("/devtools/panel/panel.html") &&
+      popupHarnessState.createdTabs[0]?.url.includes("#capabilities") &&
       popupHarnessState.createdTabs[0]?.windowId === 10 &&
       !popupHarnessState.closed;
     pin.click();
@@ -284,16 +285,6 @@ setTimeout(async () => {
     freezeCommand.payload.enabled === true &&
     document.querySelector("#quick-freeze").classList.contains("freeze-active");
 
-  document.querySelector("#open-inspector").click();
-  await delay();
-  const inspectorUrl = new URL(popupHarnessState.createdTabs[0]?.url || location.href);
-  const inspectorOpened =
-    inspectorUrl.pathname.endsWith("/devtools/panel/panel.html") &&
-    inspectorUrl.searchParams.get("standalone") === "1" &&
-    inspectorUrl.searchParams.get("tabId") === "77" &&
-    popupHarnessState.createdTabs[0]?.windowId === 10 &&
-    popupHarnessState.closed;
-
   popupHarnessState.closed = false;
   document.querySelector("#refresh-connection").click();
   await delay();
@@ -306,7 +297,7 @@ setTimeout(async () => {
     popupHarnessState.createdTabs.at(-1)?.windowId === 10;
 
   popupHarnessResult.textContent =
-    rendered && recommendedSorting && nativePopupStayedSimple && pinDocked && firstPopoutOpened && secondPopoutReused && automaticScan && liveCandidateRefresh && quickMinPreset && quickMaxPreset && typedActions && inspectorOpened && refreshed && helpOpened
+    rendered && recommendedSorting && nativePopupStayedSimple && pinDocked && firstPopoutOpened && secondPopoutReused && automaticScan && liveCandidateRefresh && quickMinPreset && quickMaxPreset && typedActions && refreshed && helpOpened
       ? "PASS: compact toolbar popup, live candidates, Firefox sidebar docking, pop-out reuse, and typed quick-scan actions work."
       : "FAIL: toolbar quick-scan behavior did not match the active Ruffle state.";
 }, 80);

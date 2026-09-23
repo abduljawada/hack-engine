@@ -51,6 +51,17 @@
   let memoryDetected = false;
   let hasScanResults = false;
   let candidateTotal = 0;
+  let diagnostics = {};
+  const batchSelection = new Set();
+  let batchMode = false;
+  const manualRequests = new Map();
+  const workspaceRequests = new Map();
+  let scanWatchdog;
+  let watchdogRequest = null;
+  let watchdogProgress = null;
+  let stalledRequest = null;
+  let renderedResult = null;
+  const ui = (id) => document.getElementById(id);
 
   const elements = {
     pin: document.querySelector("#pin-popup"),
@@ -119,11 +130,182 @@
     advancedSetMax: document.querySelector("#advanced-set-max"),
     advancedWrite: document.querySelector("#advanced-write"),
     advancedFreeze: document.querySelector("#advanced-freeze"),
-    openInspector: document.querySelector("#open-inspector"),
     popOut: document.querySelector("#pop-out-window"),
     refreshConnection: document.querySelector("#refresh-connection"),
     howItWorks: document.querySelector("#how-it-works"),
   };
+
+  function markUnavailable(entry, reason) {
+    entry.readError = reason || "This address could not be read.";
+    entry.candidate.value = undefined;
+    entry.candidate.displayValue = undefined;
+    for (const cell of entry.valueCells) cell.textContent = "—";
+  }
+
+  function diagnosticFor(key) {
+    const entry = watchedCandidates.get(key) || candidateRecords.get(key);
+    const diagnostic = diagnostics[key];
+    if (entry?.readError) return { label: "Unavailable", detail: entry.readError };
+    if (frozenCandidates.has(key)) return { label: "Frozen", detail: "Rewritten while the game is visible. Stop all freezes is available above." };
+    const labels = { checking: "Checking write…", verified: "Verified through 250 ms", persistent: "Verified through 250 ms", restored: "Game restored it", rejected: "Write rejected", unavailable: "Unavailable" };
+    return diagnostic ? { label: labels[diagnostic.state] || "Live", detail: diagnostic.detail || "" }
+      : { label: entry?.candidate.value === undefined ? "Waiting for value" : "Live", detail: "Current read only; no retained write diagnostic." };
+  }
+
+  function updateDiagnosticUI() {
+    for (const node of document.querySelectorAll("[data-watch-key]")) {
+      const state = diagnosticFor(node.dataset.watchKey);
+      node.querySelector(".watch-state").textContent = state.label;
+      node.querySelector(".watch-detail").textContent = state.detail;
+    }
+    const state = selectedCandidate ? diagnosticFor(candidateKey(selectedCandidate)) : null;
+    for (const node of document.querySelectorAll(".selected-feedback")) node.textContent = state ? `${state.label}${state.detail ? ` · ${state.detail}` : ""}` : "";
+  }
+
+  function clearBatchSelection() {
+    batchSelection.clear(); batchMode = false;
+    updateBatchTools();
+  }
+
+  function updateBatchTools() {
+    for (const [prefix, workspace] of [["candidate", "candidates"], ["watch", "watches"]]) {
+      const enabled = batchMode && activeWorkspace === workspace;
+      ui(`${prefix}-select-mode`).setAttribute("aria-pressed", String(enabled));
+      ui(`${prefix}-batch-tools`).hidden = !enabled;
+      ui(`${prefix}-selected-count`).textContent = `${enabled ? batchSelection.size : 0} selected`;
+    }
+    ui("batch-watch").disabled = !port || batchSelection.size === 0;
+    ui("batch-metadata").disabled = !port || batchSelection.size === 0;
+    for (const checkbox of document.querySelectorAll("[data-batch-key]")) {
+      checkbox.checked = batchSelection.has(checkbox.dataset.batchKey);
+      checkbox.hidden = !batchMode;
+    }
+  }
+
+  function toggleBatch(key) {
+    if (batchSelection.has(key)) batchSelection.delete(key); else batchSelection.add(key);
+    updateBatchTools();
+  }
+
+  function batchCheckbox(key, candidate) {
+    const checkbox = document.createElement("input"); checkbox.type = "checkbox";
+    checkbox.dataset.batchKey = key; checkbox.checked = batchSelection.has(key);
+    checkbox.setAttribute("aria-label", `Select ${candidate.type} at ${formatAddress(candidate.address)}`);
+    checkbox.addEventListener("change", () => toggleBatch(key));
+    return checkbox;
+  }
+
+  function sendManagedWatches(watches, context, select = false) {
+    const requestId = nextRequestId("workspace");
+    workspaceRequests.set(requestId, context);
+    const options = select ? { requestId, watch: watches[0], select: true } : { requestId, watches };
+    if (!sendWorkspace(select ? "upsertWatch" : "mergeWatches", options)) {
+      workspaceRequests.delete(requestId);
+      setQuickStatus("Connection lost; watches were not changed.", "error");
+      return false;
+    }
+    return true;
+  }
+
+  function clearManualRequests(message) {
+    for (const request of manualRequests.values()) clearTimeout(request.timer);
+    manualRequests.clear(); ui("manual-add").disabled = false;
+    ui("manual-status").textContent = message;
+  }
+
+  function addManualAddress() {
+    const status = ui("manual-status");
+    try {
+      if (!port) throw new Error("Wait for the game connection to recover.");
+      const raw = ui("manual-address").value.trim();
+      if (!/^(?:0x[0-9a-f]+|[0-9]+)$/i.test(raw)) throw new Error("Enter a complete decimal or hexadecimal address.");
+      const address = Number(raw), type = ui("manual-type").value;
+      const record = instances.get(ui("manual-instance").value);
+      const multiplier = Number(ui("manual-multiplier").value);
+      const width = { i8: 1, u8: 1, i16: 2, u16: 2, i32: 4, u32: 4, f32: 4, f64: 8 }[type];
+      if (!record || !width) throw new Error("Choose current game memory and an explicit numeric type.");
+      if (!Number.isSafeInteger(address) || address < 0 || address + width > record.memoryBytes) throw new Error("Address is outside this game's memory.");
+      if (!Number.isFinite(multiplier) || multiplier <= 0) throw new Error("Multiplier must be a positive finite number.");
+      const candidate = { frameId: record.frameId, instanceId: record.id, address, type, multiplier };
+      const key = candidateKey(candidate);
+      if (!watchedCandidates.has(key) && watchedCandidates.size >= MAX_SHARED_WATCHES) throw new Error("The watch list is full (256 addresses).");
+      clearManualRequests("");
+      const requestId = nextRequestId("manual-read");
+      const timer = setTimeout(() => {
+        manualRequests.delete(requestId); ui("manual-add").disabled = false;
+        status.textContent = "Read timed out. Nothing was added; try again when the game responds.";
+      }, 10000);
+      manualRequests.set(requestId, { candidate, timer });
+      ui("manual-add").disabled = true; status.textContent = "Reading address…";
+      if (!send({ kind: "readValues", requestId, instanceId: record.id, entries: [{ id: key, address, type }] }, record.frameId)) clearManualRequests("Read could not be sent. Nothing was added.");
+    } catch (error) { status.textContent = error.message; }
+  }
+
+  function completeManualRead(message, payload) {
+    if (!["watchValues", "error"].includes(payload.kind)) return;
+    const request = manualRequests.get(payload.requestId);
+    clearTimeout(request.timer); manualRequests.delete(payload.requestId); ui("manual-add").disabled = false;
+    const candidate = request.candidate;
+    const key = candidateKey(candidate);
+    const value = payload.values?.find((value) => value.id === key);
+    if (message.frameId !== candidate.frameId || !instances.has(`${candidate.frameId}:${candidate.instanceId}`) || String(payload.instanceId ?? candidate.instanceId) !== candidate.instanceId) {
+      ui("manual-status").textContent = "Game memory changed. Read the address again."; return;
+    }
+    if (payload.kind === "error" || !value || value.error) {
+      ui("manual-status").textContent = payload.message || value?.error || "This address could not be read. Nothing was added."; return;
+    }
+    const existing = watchedCandidates.get(key);
+    const watch = existing ? { ...existing.candidate } : candidate;
+    watch.value = value.value; watch.displayValue = displayCandidateValue(value.value, watch.multiplier);
+    if (existing) updateCandidateValue(existing, value.value);
+    ui("manual-status").textContent = "Address read; adding verified watch…";
+    if (!sendManagedWatches([sharedWatch(watch)], "manual", true)) ui("manual-status").textContent = "Connection lost. Nothing was added; try again after reconnecting.";
+  }
+
+  function updateScanWatchdog() {
+    if (!port || quickSession?.status !== "scanning") {
+      clearTimeout(scanWatchdog); watchdogRequest = null; watchdogProgress = null; stalledRequest = null; return;
+    }
+    const id = quickSession.requestId;
+    const progress = JSON.stringify(quickSession.progress || null);
+    if (watchdogRequest === id && watchdogProgress === progress) return;
+    clearTimeout(scanWatchdog); watchdogRequest = id; watchdogProgress = progress;
+    if (stalledRequest === id) return;
+    scanWatchdog = setTimeout(() => {
+      if (!port || quickSession?.status !== "scanning" || quickSession.requestId !== id) return;
+      stalledRequest = id;
+      setQuickStatus("No recent progress. The scan may still be running; Cancel remains available.");
+      send({ kind: "getSessionState", requestId: nextRequestId("recover") }, quickSession.frameId);
+    }, 15000);
+  }
+
+  function installAdvancedControls() {
+    ui("manual-add").addEventListener("click", addManualAddress);
+    for (const id of ["manual-instance", "advanced-instance"]) ui(id).addEventListener("change", () => {
+      clearBatchSelection(); clearManualRequests(""); renderCandidateLists(); renderWatches();
+    });
+    for (const [prefix, workspace] of [["candidate", "candidates"], ["watch", "watches"]]) {
+      ui(`${prefix}-select-mode`).addEventListener("click", () => {
+        batchMode = !batchMode; batchSelection.clear(); renderCandidateLists(); renderWatches();
+      });
+      ui(`${prefix}-select-visible`).addEventListener("click", () => {
+        const selector = workspace === "candidates" ? "#advanced-candidates [data-candidate-key]" : "#advanced-watches [data-candidate-key]";
+        for (const node of document.querySelectorAll(selector)) batchSelection.add(node.dataset.candidateKey);
+        updateBatchTools();
+      });
+      ui(`${prefix}-clear-selection`).addEventListener("click", () => { batchSelection.clear(); updateBatchTools(); });
+    }
+    ui("batch-watch").addEventListener("click", () => {
+      const watches = [...batchSelection].map((key) => candidateRecords.get(key)).filter(Boolean).map((entry) => sharedWatch(entry.candidate));
+      sendManagedWatches(watches, "watch");
+    });
+    ui("batch-metadata").addEventListener("click", () => {
+      const label = ui("batch-label").value.trim(), group = ui("batch-group").value.trim();
+      if (!label && !group) { setQuickStatus("Enter a label or group; blank fields keep existing values."); return; }
+      const watches = [...batchSelection].map((key) => watchedCandidates.get(key)).filter(Boolean).map(({ candidate }) => ({ ...sharedWatch(candidate), ...(label ? { label } : {}), ...(group ? { group } : {}) }));
+      sendManagedWatches(watches, "metadata");
+    });
+  }
 
   function nextRequestId(action = "scan") {
     return `quick:${action}:${Date.now()}:${requestSequence++}`;
@@ -226,6 +408,7 @@
 
   function updateCandidateValue(entry, rawValue) {
     const displayValue = displayCandidateValue(rawValue, entry.candidate.multiplier);
+    entry.readError = null;
     entry.candidate.value = rawValue;
     entry.candidate.displayValue = displayValue;
     for (const valueCell of entry.valueCells || []) {
@@ -235,10 +418,10 @@
 
   function refreshCandidateValues() {
     const liveRecords = new Map();
-    for (const [key, entry] of candidateRecords) {
+    for (const [key, entry] of watchedCandidates) {
       liveRecords.set(key, entry);
     }
-    for (const [key, entry] of watchedCandidates) {
+    for (const [key, entry] of candidateRecords) {
       if (!liveRecords.has(key) && liveRecords.size < MAX_LIVE_READS) {
         liveRecords.set(key, entry);
       }
@@ -252,13 +435,20 @@
       return;
     }
     const groups = new Map();
+    let unavailable = false;
     for (const [key, entry] of liveRecords) {
       const instanceKey = `${entry.candidate.frameId}:${entry.candidate.instanceId}`;
+      if (!instances.has(instanceKey)) {
+        markUnavailable(entry, "Game memory disconnected. Reconnect to read this address.");
+        unavailable = true;
+        continue;
+      }
       if (!groups.has(instanceKey)) {
         groups.set(instanceKey, []);
       }
       groups.get(instanceKey).push({ key, entry });
     }
+    if (unavailable) updateDiagnosticUI();
     for (const [instanceKey, entries] of groups) {
       if (pendingCandidateInstances.has(instanceKey)) {
         continue;
@@ -362,6 +552,7 @@
   }
 
   function setActiveWorkspace(workspace) {
+    clearBatchSelection();
     activeWorkspace = workspace === "watches" ? "watches" : "candidates";
     for (const button of elements.workspaceButtons) {
       button.setAttribute("aria-selected", String(button.dataset.workspace === activeWorkspace));
@@ -377,7 +568,6 @@
       detected ? "" : summary.connected ? "searching" : "offline"
     }`;
     elements.connectionState.classList.toggle("offline", !summary.connected);
-    elements.openInspector.disabled = !activeTab?.id;
     updateViewVisibility();
 
     if (detected) {
@@ -442,6 +632,12 @@
       elements.advancedInstance.value = preferred ? `${preferred.frameId}:${preferred.id}` : "";
     }
     elements.advancedInstanceLabel.hidden = records.length <= 1;
+    const manual = ui("manual-instance");
+    const previousManual = manual.value;
+    manual.replaceChildren(...records.map((record) => new Option(
+      `${record.looksLikeRuffle ? "Ruffle" : "WASM"} · frame ${record.frameId} · ${(record.memoryBytes / 1048576).toFixed(1)} MiB · ${record.id.slice(-8)}`,
+      `${record.frameId}:${record.id}`)));
+    if (instances.has(previousManual)) manual.value = previousManual;
   }
 
   function updateRuntimeGuidance() {
@@ -507,6 +703,7 @@
     elements.advancedSessionBadge.classList.toggle("active", scanning || canRefine);
     updateRuntimeGuidance();
     updateConditionControls();
+    updateScanWatchdog();
   }
 
   function candidateValueText(candidate) {
@@ -519,6 +716,7 @@
     for (const row of document.querySelectorAll("[data-candidate-key]")) {
       row.classList.toggle("selected", row.dataset.candidateKey === selectedKey);
     }
+    updateDiagnosticUI();
     const hasSelection = Boolean(selectedCandidate);
     const liveSelection = !!port && !!selectedCandidate && instances.has(`${selectedCandidate.frameId}:${selectedCandidate.instanceId}`);
     for (const button of [elements.write, elements.advancedWrite, elements.freeze, elements.advancedFreeze]) button.disabled = !liveSelection;
@@ -576,6 +774,7 @@
   }
 
   function applySharedWorkspace(workspace) {
+    diagnostics = workspace?.diagnostics || {};
     const incoming = new Map();
     for (const watch of Array.isArray(workspace?.watches) ? workspace.watches : []) {
       const key = candidateKey(watch);
@@ -606,6 +805,7 @@
     } else {
       selectedCandidate = null;
     }
+    for (const key of batchSelection) if (activeWorkspace === "watches" && !watchedCandidates.has(key)) batchSelection.delete(key);
     renderWatches();
     updateSelectionUI();
     refreshCandidateValues();
@@ -666,14 +866,17 @@
       }
       const [, left] = leftEntry;
       const [, right] = rightEntry;
-      if (sort === "value") {
-        return Number(left.candidate.displayValue) - Number(right.candidate.displayValue);
+      if (sort === "value" || sort === "valueDesc") {
+        return (Number(left.candidate.displayValue) - Number(right.candidate.displayValue)) * (sort === "valueDesc" ? -1 : 1);
       }
       if (sort === "type") {
         return String(left.candidate.type).localeCompare(String(right.candidate.type)) || left.candidate.address - right.candidate.address;
       }
-      return left.candidate.address - right.candidate.address;
+      return (left.candidate.address - right.candidate.address) * (sort === "addressDesc" ? -1 : 1);
     });
+    const visible = new Set(records.map(([key]) => key));
+    if (activeWorkspace === "candidates") for (const key of batchSelection) if (!visible.has(key)) batchSelection.delete(key);
+    ui("advanced-preview-count").textContent = `${records.length} visible · ${candidateRecords.size} previewed · ${candidateTotal.toLocaleString()} total matches`;
     for (const [key, entry] of records) {
       const row = document.createElement("button");
       row.type = "button";
@@ -686,9 +889,13 @@
       type.className = "candidate-type";
       type.textContent = entry.candidate.type;
       row.append(address, makeValueCell(entry), type);
-      row.addEventListener("click", () => selectCandidate(entry.candidate));
-      elements.advancedCandidates.append(row);
+      row.addEventListener("click", () => batchMode ? toggleBatch(key) : selectCandidate(entry.candidate));
+      if (batchMode && activeWorkspace === "candidates") {
+        const wrapper = document.createElement("div"); wrapper.className = "batch-row";
+        wrapper.append(batchCheckbox(key, entry.candidate), row); elements.advancedCandidates.append(wrapper);
+      } else elements.advancedCandidates.append(row);
     }
+    updateBatchTools();
     updateSelectionUI();
   }
 
@@ -701,6 +908,12 @@
   }
 
   function renderWatches() {
+    const focused = document.activeElement;
+    const draft = elements.advancedWatches.contains(focused) && focused.dataset.metadataField
+      ? { key: focused.dataset.metadataKey, field: focused.dataset.metadataField,
+        value: focused.value, start: focused.selectionStart, end: focused.selectionEnd } : null;
+    const expanded = new Set([...elements.advancedWatches.querySelectorAll("details[open]")].map((node) => node.dataset.watchKey));
+    let restoredInput = null;
     elements.advancedWatches.replaceChildren();
     for (const [key, entry] of watchedCandidates) {
       entry.valueCells.clear();
@@ -717,7 +930,7 @@
       type.className = "candidate-type";
       type.textContent = entry.candidate.type;
       select.append(address, makeValueCell(entry), type);
-      select.addEventListener("click", () => selectCandidate(entry.candidate));
+      select.addEventListener("click", () => batchMode ? toggleBatch(key) : selectCandidate(entry.candidate));
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "watch-remove";
@@ -733,12 +946,24 @@
         sendWorkspace("removeWatch", { key });
       });
       row.append(select, remove);
+      if (batchMode && activeWorkspace === "watches") row.prepend(batchCheckbox(key, entry.candidate));
+      const state = document.createElement("details"); state.className = "watch-diagnostic";
+      state.dataset.watchKey = key;
+      state.open = expanded.has(key);
+      const summary = document.createElement("summary"); summary.className = "watch-state";
+      const detail = document.createElement("p"); detail.className = "watch-detail";
+      state.append(summary, detail); row.append(state);
       const metadata = document.createElement("div");
       metadata.className = "watch-metadata";
       for (const field of ["label", "group"]) {
         const input = document.createElement("input");
         input.type = "text"; input.maxLength = 80;
+        input.dataset.metadataKey = key; input.dataset.metadataField = field;
         input.value = entry.candidate[field] || "";
+        if (draft?.key === key && draft.field === field) {
+          input.value = draft.value;
+          restoredInput = input;
+        }
         input.placeholder = field === "label" ? "Watch label" : "Group";
         input.setAttribute("aria-label", `${input.placeholder} for ${formatAddress(entry.candidate.address)}`);
         input.addEventListener("change", () => {
@@ -750,13 +975,21 @@
       row.append(metadata);
       elements.advancedWatches.append(row);
     }
+    if (restoredInput) {
+      restoredInput.focus({ preventScroll: true });
+      restoredInput.setSelectionRange(draft.start, draft.end);
+    }
     elements.advancedWatchCount.textContent = String(watchedCandidates.size);
     elements.advancedWatchEmpty.hidden = watchedCandidates.size > 0;
-    elements.advancedWorkspace.hidden = !hasScanResults && watchedCandidates.size === 0;
+    elements.advancedWorkspace.hidden = false;
+    updateBatchTools();
     updateSelectionUI();
   }
 
   function renderResults(payload, frameId = quickSession?.frameId) {
+    const resultIdentity = `${frameId}:${payload.instanceId}:${payload.requestId}`;
+    if (renderedResult !== resultIdentity) clearBatchSelection();
+    renderedResult = resultIdentity;
     const preview = Array.isArray(payload?.preview)
       ? payload.preview.slice(0, MAX_ADVANCED_CANDIDATES)
       : [];
@@ -804,6 +1037,7 @@
 
   function applyQuickSession(session) {
     quickSession = session || null;
+    updateScanWatchdog();
     if (session?.request) {
       elements.condition.value = session.request.condition || "exact";
       elements.value.value = session.request.rawValue ?? elements.value.value;
@@ -818,7 +1052,9 @@
     if (session?.status === "scanning") {
       const progress = session.progress;
       setQuickStatus(
-        progress?.total
+        stalledRequest === session.requestId
+          ? "No recent progress. The scan may still be running; Cancel remains available."
+          : progress?.total
           ? `Scanning… ${Number(progress.inspected).toLocaleString()} / ${Number(progress.total).toLocaleString()}`
           : "Scanning memory…",
       );
@@ -835,6 +1071,8 @@
         elements.advancedMultiplier.value = pendingSettings.multiplier;
         pendingSettings = null;
       }
+      clearBatchSelection();
+      renderedResult = null;
       clearCandidateRefreshState();
       hasScanResults = false;
       candidateTotal = 0;
@@ -870,6 +1108,10 @@
       addInstances(message.frameId, message.url, payload.instances);
       return;
     }
+    if (manualRequests.has(payload?.requestId)) {
+      completeManualRead(message, payload);
+      return;
+    }
     if (!String(payload?.requestId || "").startsWith("quick:")) {
       return;
     }
@@ -878,7 +1120,9 @@
       candidateReadRequests.delete(payload.requestId);
       pendingCandidateInstances.delete(instanceKey);
       for (const value of Array.isArray(payload.values) ? payload.values : []) {
-        if (!value.error) {
+        if (value.error) {
+          for (const entry of [candidateRecords.get(value.id), watchedCandidates.get(value.id)]) if (entry) markUnavailable(entry, value.error);
+        } else {
           const candidateEntry = candidateRecords.get(value.id);
           const watchEntry = watchedCandidates.get(value.id);
           if (candidateEntry) {
@@ -889,11 +1133,13 @@
           }
         }
       }
+      updateDiagnosticUI();
     } else if (payload.kind === "scanProgress") {
       if (quickSession) {
         quickSession.status = "scanning";
         quickSession.progress = payload;
       }
+      updateScanWatchdog();
       setQuickStatus(
         `Scanning… ${Number(payload.inspected).toLocaleString()} / ${Number(payload.total).toLocaleString()}`,
       );
@@ -920,6 +1166,8 @@
       setQuickStatus("Scan cancelled.");
       updateScanControls();
     } else if (payload.kind === "writeComplete" || payload.kind === "writeVerified") {
+      const diagnostic = diagnostics[candidateKey({ frameId: message.frameId, instanceId: String(payload.instanceId), type: payload.type, address: payload.address })];
+      if (diagnostic && diagnostic.requestId !== payload.requestId) return;
       const entry = candidateRecords.get(candidateKey({
         frameId: message.frameId,
         instanceId: String(payload.instanceId),
@@ -939,12 +1187,7 @@
       if (watchedEntry && refreshedValue !== undefined && watchedEntry !== entry) {
         updateCandidateValue(watchedEntry, refreshedValue);
       }
-      setQuickStatus(
-        payload.kind === "writeVerified" && payload.persisted === false
-          ? "The game restored the old value. Freeze it to keep the replacement."
-          : `Wrote ${payload.displayValue ?? payload.value} successfully.`,
-        payload.persisted === false ? "error" : "ready",
-      );
+      updateDiagnosticUI();
     } else if (payload.kind === "freezeChanged") {
       const record = {
         frameId: message.frameId,
@@ -966,6 +1209,10 @@
         const instanceKey = candidateReadRequests.get(payload.requestId);
         candidateReadRequests.delete(payload.requestId);
         pendingCandidateInstances.delete(instanceKey);
+        for (const entry of [...candidateRecords.values(), ...watchedCandidates.values()]) {
+          if (`${entry.candidate.frameId}:${entry.candidate.instanceId}` === instanceKey) markUnavailable(entry, payload.message);
+        }
+        updateDiagnosticUI();
         return;
       }
       if (quickSession?.requestId === payload.requestId) {
@@ -977,13 +1224,26 @@
   }
 
   function handlePortMessage(message) {
-    if (message?.kind === "quickSession") {
+    if (message?.kind === "workspaceCommandResult") {
+      const context = workspaceRequests.get(message.requestId);
+      if (!context) return;
+      workspaceRequests.delete(message.requestId);
+      document.dispatchEvent(new CustomEvent("hack-engine-workspace-result", { detail: { ...message, acceptedKeys: [...watchedCandidates.keys()] } }));
+      const text = `${message.accepted} ${context === "metadata" ? "updated" : "accepted"}; ${message.skipped} skipped${message.skipped ? " (invalid address or watch limit reached)" : ""}.`;
+      setQuickStatus(text, message.skipped ? "error" : "ready");
+      if (context === "manual") ui("manual-status").textContent = text;
+    } else if (message?.kind === "quickSession") {
       applyQuickSession(message.session);
     } else if (message?.kind === "workspaceState") {
       applySharedWorkspace(message.workspace);
     } else if (message?.kind === "frameConnected") {
       send({ kind: "listInstances", requestId: nextRequestId("instances") }, message.frameId);
     } else if (message?.kind === "frameDisconnected") {
+      for (const entry of [...candidateRecords.values(), ...watchedCandidates.values()]) {
+        if (entry.candidate.frameId === message.frameId) markUnavailable(entry, "Game memory disconnected. Reconnect to read this address.");
+      }
+      clearBatchSelection();
+      clearManualRequests("Game memory disconnected. Read the address again.");
       for (const [key, record] of instances) {
         if (record.frameId === message.frameId) {
           instances.delete(key);
@@ -1029,6 +1289,9 @@
       nextPort.onDisconnect.addListener(() => {
         if (port !== nextPort) return;
         port = null;
+        clearTimeout(scanWatchdog);
+        clearManualRequests("Connection lost. Read the address again after reconnecting.");
+        for (const entry of [...candidateRecords.values(), ...watchedCandidates.values()]) markUnavailable(entry, "Connection lost.");
         setQuickStatus("Reconnecting to this game…", "error");
         updateScanControls();
         reconnectTimer = setTimeout(connectPopup, 750);
@@ -1200,6 +1463,8 @@
   elements.advancedCancel.addEventListener("click", cancelScan);
 
   function resetScan() {
+    clearBatchSelection();
+    renderedResult = null;
     const record = sessionInstance() || selectedInstance();
     if (!record) {
       return;
@@ -1304,19 +1569,6 @@
   elements.freeze.addEventListener("click", () => toggleFreeze(elements.writeValue));
   elements.advancedFreeze.addEventListener("click", () => toggleFreeze(elements.advancedWriteValue));
 
-  elements.openInspector.addEventListener("click", async () => {
-    if (!activeTab?.id) {
-      return;
-    }
-    const url = new URL(extensionApi.runtime.getURL("devtools/panel/panel.html"));
-    url.searchParams.set("standalone", "1");
-    url.searchParams.set("tabId", String(activeTab.id));
-    await extensionApi.tabs.create(newTabOptions(url.href));
-    if (!isSidebarPanel && !isPopoutWindow) {
-      window.close();
-    }
-  });
-
   elements.refreshConnection.addEventListener("click", async () => {
     if (!activeTab?.id) {
       return;
@@ -1335,6 +1587,8 @@
   });
 
   window.addEventListener("unload", () => {
+    clearTimeout(scanWatchdog);
+    clearManualRequests("");
     clearInterval(pollTimer);
     clearInterval(candidateRefreshTimer);
     closing = true;
@@ -1342,6 +1596,7 @@
     port?.disconnect?.();
   });
 
+  installAdvancedControls();
   updateConditionControls();
   updateInstanceOptions();
   setActiveWorkspace("candidates");

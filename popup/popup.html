@@ -29,7 +29,7 @@
         </button>
       </header>
 
-      <nav id="view-switcher" class="view-switcher" aria-label="Inspector view" hidden>
+      <nav id="view-switcher" class="view-switcher" aria-label="Controls view" hidden>
         <button type="button" data-view="simple" aria-pressed="true">Simple</button>
         <button type="button" data-view="advanced" aria-pressed="false">Advanced</button>
       </nav>
@@ -94,6 +94,7 @@
             <span class="context-label">Selected value</span>
             <strong id="selected-address">0x00000000</strong>
           </div>
+          <p class="selected-feedback" role="status"></p>
           <label>
             New value
             <input id="quick-write-value" type="number" step="any" />
@@ -195,7 +196,7 @@
         </div>
         <div id="advanced-status" class="quick-status" aria-live="polite">Ready to configure a scan.</div>
 
-        <section id="advanced-workspace" class="advanced-workspace" hidden>
+        <section id="advanced-workspace" class="advanced-workspace">
           <div class="workspace-tabs" role="tablist" aria-label="Advanced workspace">
             <button type="button" data-workspace="candidates" role="tab" aria-selected="true">
               Candidates <span id="advanced-result-count">0</span>
@@ -210,15 +211,43 @@
               <input id="advanced-filter" type="search" placeholder="Filter address, value, or type" aria-label="Filter candidates" />
               <select id="advanced-sort" aria-label="Sort candidates">
                 <option value="recommended">Recommended types</option>
-                <option value="address">Address</option>
-                <option value="value">Value</option>
+                <option value="address">Address ↑</option><option value="addressDesc">Address ↓</option>
+                <option value="value">Value ↑</option><option value="valueDesc">Value ↓</option>
                 <option value="type">Type</option>
               </select>
+            </div>
+            <p id="advanced-preview-count" class="preview-count" aria-live="polite"></p>
+            <button id="candidate-select-mode" type="button" aria-pressed="false">Select candidates</button>
+            <div id="candidate-batch-tools" class="batch-tools" hidden>
+              <span id="candidate-selected-count" aria-live="polite">0 selected</span>
+              <button id="candidate-select-visible" type="button">Select visible</button>
+              <button id="candidate-clear-selection" type="button">Clear selection</button>
+              <button id="batch-watch" type="button" disabled>Watch selected</button>
             </div>
             <div id="advanced-candidates" class="advanced-candidates"></div>
           </section>
 
           <section id="advanced-watch-pane" class="workspace-pane" hidden>
+            <details class="manual-address-form">
+              <summary>Add address</summary>
+              <label>Current game memory <select id="manual-instance"></select></label>
+              <label>Address <input id="manual-address" type="text" placeholder="0x1000 or 4096" spellcheck="false"></label>
+              <div class="advanced-grid">
+                <label>Number format <select id="manual-type"><option value="i32">Int32</option><option value="u32">Uint32</option><option value="f64">Float64</option><option value="f32">Float32</option><option value="i16">Int16</option><option value="u16">Uint16</option><option value="i8">Int8</option><option value="u8">Uint8</option></select></label>
+                <label>Multiplier <input id="manual-multiplier" type="number" min="0" step="any" value="1"></label>
+              </div>
+              <button id="manual-add" type="button">Read and add watch</button>
+              <p id="manual-status" role="status"></p>
+            </details>
+            <button id="watch-select-mode" type="button" aria-pressed="false">Select watches</button>
+            <div id="watch-batch-tools" class="batch-tools" hidden>
+              <span id="watch-selected-count" aria-live="polite">0 selected</span>
+              <button id="watch-select-visible" type="button">Select visible</button>
+              <button id="watch-clear-selection" type="button">Clear selection</button>
+              <label>Label <input id="batch-label" maxlength="80" placeholder="Leave blank to keep labels"></label>
+              <label>Group <input id="batch-group" maxlength="80" placeholder="Leave blank to keep groups"></label>
+              <button id="batch-metadata" type="button" disabled>Apply label/group</button>
+            </div>
             <p id="advanced-watch-empty" class="empty-state">Select a candidate to add it here automatically.</p>
             <div id="advanced-watches" class="advanced-watches"></div>
           </section>
@@ -229,6 +258,7 @@
             <span class="context-label">Selected value</span>
             <strong id="advanced-selected-address">0x00000000</strong>
           </div>
+          <p class="selected-feedback" role="status"></p>
           <label>
             New value
             <input id="advanced-write-value" type="number" step="any" />
@@ -243,12 +273,6 @@
           </div>
         </section>
       </section>
-
-      <button id="open-inspector" class="inspector-action" type="button" disabled>
-        <img class="ui-icon" src="../assets/ui-icons/magnifying-glass.svg" alt="" />
-        <span>Open full inspector</span>
-        <img class="ui-icon chevron" src="../assets/ui-icons/chevron-right.svg" alt="" />
-      </button>
 
       <div class="secondary-actions">
         <button id="pop-out-window" type="button">
@@ -268,7 +292,7 @@
         </button>
       </div>
 
-      <footer>v1.0 candidate</footer>
+      <footer>v1.1.0</footer>
     </main>
     <script src="popup.js"></script>
   <script src="../workspace-controls.js"></script>

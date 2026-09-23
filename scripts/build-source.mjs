@@ -20,7 +20,6 @@ const sourceEntries = [
   "assets",
   "background.js",
   "content-bridge.js",
-  "devtools",
   "docs",
   "manifest.json",
   "package-lock.json",

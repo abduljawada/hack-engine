@@ -31,16 +31,25 @@
   const action = (name) => el(`[data-action="${name}"]`);
   let port, tabId, tab, session, workspace = { watches: [], frozenKeys: [] }, staged, stopped = false;
   let reconnectTimer;
+  let pendingImport = null;
   let sequence = 0;
   const memories = new Map();
   const pendingWatches = new Map();
   const removedWatches = new Set();
+  const pendingCommands = new Map();
   const watchKey = (watch) => `${watch.frameId}:${watch.instanceId}:${watch.type}:${watch.address}`;
   document.addEventListener("hack-engine-workspace-edit", ({ detail }) => {
+    if (detail.requestId) pendingCommands.set(detail.requestId, (detail.watches || [detail.watch]).filter(Boolean).map(watchKey));
     if (detail.action === "removeWatch") { pendingWatches.delete(detail.key); removedWatches.add(detail.key); }
     for (const watch of detail.action === "upsertWatch" ? [detail.watch] : detail.action === "mergeWatches" ? detail.watches : []) {
       pendingWatches.set(watchKey(watch), { ...watch }); removedWatches.delete(watchKey(watch));
     }
+  });
+  document.addEventListener("hack-engine-workspace-result", ({ detail }) => {
+    if (!pendingCommands.has(detail.requestId)) return;
+    const liveKeys = new Set(detail.acceptedKeys || (workspace.watches || []).map(watchKey));
+    for (const key of pendingCommands.get(detail.requestId)) if (!liveKeys.has(key)) pendingWatches.delete(key);
+    pendingCommands.delete(detail.requestId);
   });
   const notice = (text) => { el(".session-feedback").textContent = text; };
   const requestId = () => `quick:tools:${Date.now()}:${++sequence}`;
@@ -75,6 +84,17 @@
       const current = api.runtime.connect({ name: `hack-popup:${tabId}` });
       port = current;
       current.onMessage.addListener((message) => {
+        if (message.kind === "workspaceCommandResult" && message.requestId === pendingImport?.requestId) {
+          const imported = pendingImport; pendingImport = null; action("apply").disabled = false;
+          document.dispatchEvent(new CustomEvent("hack-engine-settings", { detail: imported.settings }));
+          if (!message.skipped) { el("[data-preview]").hidden = true; staged = null; }
+          notice(`${message.accepted} watches accepted; ${message.skipped} skipped${message.skipped ? " (watch limit reached or invalid address); remove watches before retrying" : ""}. Reset any current scan to use saved settings. Nothing was written or frozen.`);
+        }
+        if (message.kind === "workspaceCommandResult" && pendingCommands.has(message.requestId)) {
+          const liveKeys = new Set((workspace.watches || []).map(watchKey));
+          for (const key of pendingCommands.get(message.requestId)) if (!liveKeys.has(key)) pendingWatches.delete(key);
+          pendingCommands.delete(message.requestId);
+        }
         if (message.kind === "quickSession") session = message.session;
         if (message.kind === "workspaceState") {
           workspace = message.workspace;
@@ -109,6 +129,7 @@
       current.onDisconnect.addListener(() => {
         if (port !== current) return;
         port = null;
+        pendingImport = null; action("apply").disabled = false;
         notice("Reconnecting to this game…");
         refresh();
         reconnectTimer = setTimeout(connect, 750);
@@ -118,7 +139,7 @@
     } catch { port = null; reconnectTimer = setTimeout(connect, 1000); }
   }
   function validate(payload) {
-    if (!["hack-engine-workspace", "ruffle-memory-workspace"].includes(payload?.format) || ![1, 2].includes(payload.version)) throw new Error("Unsupported workspace format.");
+    if (payload?.format !== "hack-engine-workspace" || payload.version !== 2) throw new Error("Unsupported workspace format.");
     if (!Array.isArray(payload.watches) || payload.watches.length > 256) throw new Error("A workspace supports up to 256 watches.");
     const watches = payload.watches.map((watch) => {
       if (!types.has(watch?.type) || !Number.isSafeInteger(watch.address) || watch.address < 0 || !Number.isFinite(watch.multiplier ?? 1) || (watch.multiplier ?? 1) <= 0) throw new Error("The workspace contains an invalid address or number format.");
@@ -191,12 +212,13 @@
         if (!staged || !record || !el("[data-verified]").checked) throw new Error("Select the current game and verify its addresses first.");
         const widths = { i8: 1, u8: 1, i16: 2, u16: 2, i32: 4, u32: 4, f32: 4, f64: 8 };
         if (staged.watches.some((watch) => watch.address + widths[watch.type] > record.memoryBytes)) throw new Error("An address is outside this game's memory.");
-        port.postMessage({ kind: "workspaceCommand", action: "mergeWatches", watches: staged.watches.map((watch) => ({ ...watch, frameId: record.frameId, instanceId: record.id })) });
-        document.dispatchEvent(new CustomEvent("hack-engine-settings", { detail: staged.settings }));
-        el("[data-preview]").hidden = true; staged = null;
-        notice("Verified watches added. Reset any current scan to use the saved scan settings. Nothing was written or frozen.");
+        const id = requestId();
+        pendingImport = { requestId: id, settings: staged.settings };
+        action("apply").disabled = true;
+        port.postMessage({ kind: "workspaceCommand", requestId: id, action: "mergeWatches", watches: staged.watches.map((watch) => ({ ...watch, frameId: record.frameId, instanceId: record.id })) });
+        notice("Applying verified watches…");
       }
-    } catch (error) { notice(error.message || String(error)); }
+    } catch (error) { pendingImport = null; action("apply").disabled = false; notice(error.message || String(error)); }
   });
   el("[data-file]").addEventListener("change", async () => {
     try {
@@ -212,7 +234,7 @@
   window.addEventListener("pagehide", () => { stopped = true; clearTimeout(reconnectTimer); port?.disconnect(); });
   (async () => {
     const parameters = new URLSearchParams(location.search);
-    tabId = api.devtools?.inspectedWindow?.tabId ?? (parameters.has("tabId") ? Number(parameters.get("tabId")) : null);
+    tabId = parameters.has("tabId") ? Number(parameters.get("tabId")) : null;
     tab = tabId === null ? (await api.tabs.query({ active: true, currentWindow: true }))[0] : await api.tabs.get(tabId);
     if (!tab || !Number.isInteger(tab.id)) throw new Error("The inspected tab is no longer available.");
     tabId = tab.id;

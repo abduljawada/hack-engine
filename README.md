@@ -4,7 +4,7 @@ Hack Engine helps you find, watch, and change numeric values in browser games ru
 
 Everything happens locally in the inspected tab. Hack Engine has no accounts, telemetry, advertising, or remote service.
 
-> Current release: **v1.0.1 release candidate — not published**. Core workflows are tested locally on Linux Firefox and Chromium; the remaining release gates are recorded in [IMPLEMENTATION_1_0.md](IMPLEMENTATION_1_0.md).
+> Current release: **v1.1.0 release candidate — not published**. Core workflows are tested locally on Linux Firefox and Chromium; the remaining release gates are recorded in [IMPLEMENTATION_1_0.md](IMPLEMENTATION_1_0.md).
 
 ## What you can do
 
@@ -16,7 +16,7 @@ Everything happens locally in the inspected tab. Hack Engine has no accounts, te
 - **Edit and freeze:** Replace a discovered value or keep it fixed while the game runs.
 - **Watch values live:** Keep useful candidates visible as they change and organize them with labels and groups.
 - **Start simple, go deeper:** Use Quick scan for the common workflow, then open Advanced controls when you need more options.
-- **Keep one shared workspace:** Candidates, watches, selections, and freezes stay synchronized between the toolbar, persistent panel, and full inspector.
+- **Keep one shared workspace:** Candidates, watches, selections, and freezes stay synchronized between the toolbar, sidebar, and pop-out.
 
 ## How to use Hack Engine
 
@@ -26,7 +26,7 @@ Everything happens locally in the inspected tab. Hack Engine has no accounts, te
 4. Change that value in the game, enter the new value, and choose **Next scan**.
 5. Repeat until only a small number of candidates remain, then select one to watch, edit, or freeze it.
 
-If the exact value is not known, start with **Unknown initial value** and refine after the game changes. **Value range** helps with rounded or approximate values. Advanced mode also provides explicit number-format, alignment, multiplier, and captured-memory controls.
+If the exact value is not known, start with **Unknown initial value** and refine after the game changes. **Value range** helps with rounded or approximate values. Advanced mode also provides explicit number-format, alignment, multiplier, and captured-memory controls. Add known addresses, select displayed candidates to watch in a batch, apply watch labels/groups together, and sort addresses or values in either direction. Write feedback follows verification through 250 ms; expandable details distinguish verification from game restoration or failed reads.
 
 ## Browser support
 

@@ -19,7 +19,7 @@ const allHarnesses = [
   ["memory growth", "/test/memory-growth-harness.html", 30_000],
   ["advanced scan", "/test/advanced-scan-harness.html", 90_000],
   ["bridge payload", "/test/bridge-payload-harness.html", 30_000],
-  ["panel watchdog", "/test/panel-watchdog-harness.html", 30_000],
+  ["advanced migration", "/test/advanced-migration-harness.html?sidebar=1&tabId=77", 30_000],
   ["toolbar popup", "/test/popup-harness.html", 30_000],
   ["sidebar toolbar popup", "/test/popup-harness.html?sidebar=1&tabId=77", 30_000],
   ["pop-out toolbar popup", "/test/popup-harness.html?popout=1&tabId=77", 30_000],

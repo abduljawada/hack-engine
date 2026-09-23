@@ -2,7 +2,7 @@
 
 ## `tabs`
 
-Hack Engine uses `tabs` to identify and reload the tab the user is inspecting, keep persistent windows bound to that tab, and open the full inspector for the same tab. It does not read unrelated browsing history.
+Hack Engine uses `tabs` to identify and reload the tab the user is inspecting, and keep the sidebar and pop-out bound to that tab. It does not read unrelated browsing history.
 
 ## `<all_urls>` host access
 

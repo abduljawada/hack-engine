@@ -9,6 +9,20 @@ Updated September 21, 2026. Approved scope: [essential-feature roadmap](ROADMAP_
 - **M3 — controlled changes and saved work:** stop all freezes with count, freezes stop when the game is hidden or control disconnects, guarded restoration of the last write, labelled/grouped watches, named local workspaces, validated import/export, and explicit address revalidation. Saved data never replays writes or freezes.
 - **M4 — local engineering checks:** portable browser discovery, browser-specific 1.0.0 packages, source archive, metadata exclusion, actual installed-extension workflow tests, and updated privacy/reviewer/user documentation.
 
+## Interface consolidation
+
+The toolbar, sidebar, and pop-out now share the supported interface. Advanced controls include known-address entry, explicit batch watch/metadata selection, final write diagnostics, descending address/value sorting, and stalled-scan feedback. The legacy inspector, DevTools registration, and panel-only watchdog fixture are removed. Workspace imports accept only `hack-engine-workspace` version 2, validate watches and supported settings, and never replay writes/freezes. Compatibility with earlier pre-release inspector exports is retired. Scan history and bulk writes/freezes remain deferred.
+
+Consolidation checks on September 21, 2026:
+
+- Eight unit tests pass, covering background recovery, shared/final/superseded diagnostics, document invalidation, batch capacity, and refinement recovery.
+- Eighteen Chromium browser fixtures pass, including the new Advanced migration fixture and existing scanning, scheduling, cancellation, storage, and adapter regressions. The migration fixture covers manual input, metadata, failed reads, selection boundaries, stalled-scan recovery, and current-format import validation/capacity feedback.
+- Installed Firefox and Chromium packages pass the practice workflow, including final diagnostics, manual duplicate-address entry, batch watch/metadata actions, undo, restore, freeze/stop, and verified workspace loading. Forced Chromium worker termination also passes.
+- Local release/source archives build; release validation rejects DevTools registrations/files; Firefox lint reports zero errors, warnings, and notices.
+- Mock sidebar/pop-out layouts were visually inspected at 360 pixels and 200% CSS content zoom, with no horizontal overflow; keyboard focus reaches manual-address controls. This is not native browser-panel zoom or full accessibility certification.
+
+The historical qualification evidence below predates consolidation. Remaining real-game, native-panel, cross-platform, and store-release gates still apply.
+
 ## Verified locally
 
 Environment: Linux x86_64, Node 26.8.1, npm 11.19.0, Firefox 155.0.1, Chromium 152.0.7977.82. Tests use disposable browser profiles.

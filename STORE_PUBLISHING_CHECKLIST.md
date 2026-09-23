@@ -2,7 +2,7 @@
 
 Last reviewed: 2026-09-21
 
-Current work is an unpublished **1.0.1 candidate**. Use [IMPLEMENTATION_1_0.md](IMPLEMENTATION_1_0.md) for current test evidence and remaining release gates. Historical checked entries below describe the August 0.7.0 preparation and do not certify the new candidate.
+Current work is an unpublished **1.1.0 candidate**. Use [IMPLEMENTATION_1_0.md](IMPLEMENTATION_1_0.md) for current test evidence and remaining release gates. Historical checked entries below describe the August 0.7.0 preparation and do not certify the new candidate.
 
 Target: publish Hack Engine as a cross-browser Manifest V3 extension on Firefox Add-ons (AMO) and the Chrome Web Store (CWS).
 
@@ -42,7 +42,7 @@ Release decisions confirmed on 2026-08-10:
 
 - [x] Choose `0.7.0` as the first public store version and align the manifest, status page, release notes, and package names.
 - [x] Define the single purpose consistently: **Inspect and edit numeric WebAssembly memory in embedded Ruffle players for authorized local debugging.**
-- [x] Keep the popup, DevTools panel, store description, privacy disclosures, and reviewer notes consistent with that purpose.
+- [x] Keep the popup, sidebar/pop-out, store description, privacy disclosures, and reviewer notes consistent with that purpose.
 - [x] State clearly that raw writes are experimental and can reset or crash the embedded player.
 - [x] Avoid marketing the extension as a way to cheat online services, evade security, bypass paid features, or interfere with other users.
 - [x] Mark the pre-1.0 AMO listing as **Experimental**.
@@ -51,7 +51,7 @@ Release decisions confirmed on 2026-08-10:
 ## 2. Permissions and policy review
 
 - [x] Inventory every manifest permission and host permission in `store/PERMISSION_JUSTIFICATIONS.md`.
-- [x] Document why `tabs` is necessary: the popup identifies/reloads the inspected tab and opens the full inspector for that tab.
+- [x] Document why `tabs` is necessary: the popup identifies/reloads the inspected tab and binds persistent controls to that tab.
 - [x] Document why `<all_urls>` is necessary: the extension must install its hook at `document_start`, including permitted child frames, before an arbitrary embedded Ruffle player instantiates WebAssembly.
 - [x] Evaluate optional host access and document why it would miss early Ruffle initialization.
 - [x] Confirm that packaged JavaScript is readable, self-contained, and does not execute remotely hosted code.
@@ -68,7 +68,7 @@ Release decisions confirmed on 2026-08-10:
 - [x] Verify the document-start page/content/background bridge on current Chrome and Firefox packages; manual nested/cross-origin Ruffle QA remains below.
 - [x] Produce browser-specific manifests from one reviewed source; the Chrome package omits Firefox-only settings.
 - [ ] Verify Firefox sidebar docking and Chrome side-panel docking against their store packages; confirm the separate pop-out fallback remains tab-bound in both browsers.
-- [ ] Test the toolbar popup, DevTools panel, capture, exact/range/unknown scans, comparison refinement, write, freeze, watches, cancellation, memory growth, and popup reopening in both browsers.
+- [ ] Test the toolbar popup, sidebar/pop-out, capture, exact/range/unknown scans, comparison refinement, write, freeze, watches, cancellation, memory growth, and popup reopening in both browsers.
 - [ ] Test a Ruffle AVM1 game, a Ruffle AVM2 game, and a non-Ruffle WebAssembly control page in both browsers.
 - [ ] Test nested and cross-origin player frames where host permissions allow access.
 - [ ] Test install, browser restart, extension update, disable/re-enable, and uninstall flows.
@@ -84,7 +84,7 @@ Release decisions confirmed on 2026-08-10:
 - [x] Verify and state that the submitted code does not send information outside the browser.
 - [x] Provide `a.abduljawad@outlook.com` and the public GitHub issue tracker as support contacts.
 - [x] Add installation instructions for both Chrome and Firefox.
-- [x] Add an end-user guide covering the simple popup, full inspector, value types, false matches, restored/cached values, freeze behavior, and recovery after a player crash.
+- [x] Add an end-user guide covering the simple popup, Advanced controls, value types, false matches, restored/cached values, freeze behavior, and recovery after a player crash.
 - [x] Add a private vulnerability-reporting path and public issue tracker in `SECURITY.md`.
 - [x] Add a changelog and draft release notes.
 - [x] Make repository-facing names and prepared URLs consistently say **Hack Engine**; public deployment verification remains open.
@@ -92,7 +92,7 @@ Release decisions confirmed on 2026-08-10:
 ## 5. Store assets and listing copy
 
 - [x] Prepare a concise summary and detailed description in `store/LISTING_COPY.md`.
-- [ ] Prepare screenshots that show the toolbar quick scan, candidate refinement, write/freeze controls, and full inspector without exposing personal tabs or browsing data.
+- [ ] Prepare screenshots that show the toolbar quick scan, candidate refinement, write/freeze controls, and Advanced controls without exposing personal tabs or browsing data.
 - [ ] Use only games/content that can be shown legally in promotional images, or use the local test harness.
 - [x] Verify the existing store icon is exactly 128×128.
 - [ ] For Chrome, prepare at least one 1280×800 screenshot (up to five) and a 440×280 small promo tile.

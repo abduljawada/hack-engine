@@ -7,7 +7,7 @@ const bridge = backgroundPort("ruffle-frame-bridge", {
 backgroundHarness.onConnect.emit(bridge);
 bridge.onMessage.emit({ kind: "bridgeReady", url: bridge.sender.url });
 
-const panel = backgroundPort("ruffle-panel:77");
+const panel = backgroundPort("hack-popup:77");
 const popup = backgroundPort("hack-popup:77");
 backgroundHarness.onConnect.emit(panel);
 backgroundHarness.onConnect.emit(popup);
@@ -122,5 +122,5 @@ const popupReceivedPanelSession = reopenedPopup.sent.some((message) => (
 ));
 
 backgroundResult.textContent = routed && panelStayedConnected && panelReceivedPopupSession && popupReceivedWorkspace && popupReceivedFreeze && sessionRestored && popupReceivedPanelSession
-  ? "PASS: popup and inspector share scans, candidates, watches, selection, and reconnection state."
-  : "FAIL: background tab session did not synchronize popup and inspector state.";
+  ? "PASS: popup and sidebar share scans, candidates, watches, selection, and reconnection state."
+  : "FAIL: background tab session did not synchronize popup and sidebar state.";

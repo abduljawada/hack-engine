@@ -23,7 +23,6 @@ const runtimeEntries = [
   "assets",
   "background.js",
   "content-bridge.js",
-  "devtools",
   "page-agent.js",
   "workspace-controls.js",
   "workspace-controls.css",
