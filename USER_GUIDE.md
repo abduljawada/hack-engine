@@ -17,7 +17,7 @@ The toolbar popup closes when focus returns to the page. Use the pin to open the
 
 Both views show candidates with recommended variable types first: Float64 for AVM1, or Int32, Uint32, then Float64 for AVM2. Candidates within each priority are ordered by address; when AVM is unknown, candidates are ordered by address. Advanced defaults to **Recommended types**, with ascending/descending Address and Value sorting and Type sorting available. Counts distinguish displayed preview rows from all scan matches. Simple always uses the recommended order.
 
-The toolbar, sidebar, and pop-out share the inspected tab's scan, candidates, watches, primary selection, and freeze state. Advanced controls and saved workspaces provide the complete supported workflow; there is no separate inspector or DevTools entry.
+The toolbar, sidebar, and pop-out share the inspected tab's scan, candidates, watches, primary selection, and freeze state. Advanced controls provide the complete supported workflow; there is no separate inspector or DevTools entry.
 
 ### Known addresses and batch management
 
@@ -25,7 +25,7 @@ Expand **Add address** in Advanced Watches to enter a decimal or hexadecimal add
 
 Enter selection mode to choose displayed candidates, then use **Watch selected**. Selection alone does not add watches. In Watches, select rows to apply a shared label or group; a blank field leaves existing metadata unchanged. Use individual editing to clear metadata. **Select visible** covers only displayed preview rows, not all scan matches. Hidden selections are removed by filtering; result-set, memory, or inspected-tab changes clear selections. Each open interface keeps its own batch selection.
 
-A workspace supports up to 256 watches. Batch feedback reports accepted and skipped entries. Bulk writes/freezes and scan history are deferred; individual writes/freezes and **Stop all freezes** remain available.
+A live session supports up to 256 watches. Batch feedback reports accepted and skipped entries. Bulk writes/freezes and scan history are deferred; individual writes/freezes and **Stop all freezes** remain available.
 
 ## Numeric formats
 
@@ -51,7 +51,7 @@ If a scan has no progress for 15 seconds, the controls show **No recent progress
 
 Scans and writes run locally. Hack Engine does not transmit browsing activity or memory values. See [PRIVACY.md](PRIVACY.md) for storage and retention details.
 
-## Recovery and saved workspaces in the 1.0 candidate
+## Session recovery tools
 
 **Undo scan** restores the candidates and comparison baseline from one completed refinement. Cancelling a refinement preserves the previous completed scan. Undo does not reverse gameplay. A new First scan replaces the previous session.
 
@@ -59,7 +59,6 @@ Scans and writes run locally. Hack Engine does not transmit browsing activity or
 
 **Stop all freezes** stops every freeze in the inspected tab. Freezes also stop when the game becomes hidden, the page leaves, or the extension connection is lost. Re-enable them explicitly after returning to the game. Background continuous freezing is not supported.
 
-**Saved workspaces** stores up to 30 named watch lists and scan settings locally. Import/export accepts up to 256 watches in a file smaller than 1 MiB. Loading opens an unverified preview. Select the correct live sources, verify that addresses/property paths still describe the intended values, and choose **Use verified values**. JavaScript paths must resolve successfully before watches are applied. No write or freeze is replayed. Exports use `hack-engine-workspace` version 3. Imports accept version 3 and migrate version 2 WebAssembly workspaces. JavaScript object identities are never exported; paths are rediscovery hints. Earlier inspector exports are unsupported; recreate those watches in Advanced and export a current workspace. Saved scan settings apply immediately to a fresh scan or after resetting the current one. Deleting a saved copy leaves live watches intact.
 
 The game/tab label remains bound to the inspected tab. Open Hack Engine from another game's toolbar to inspect that game separately. Popup closure and background restarts recover live sessions, but reloading a game creates a new memory identity and invalidates old live addresses.
 

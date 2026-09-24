@@ -41,7 +41,6 @@
   let port = null;
   let reconnectTimer = null;
   let closing = false;
-  let pendingSettings = null;
   let pollTimer = null;
   let candidateRefreshTimer = null;
   let requestSequence = 1;
@@ -149,7 +148,7 @@
     const entry = watchedCandidates.get(key) || candidateRecords.get(key);
     const diagnostic = diagnostics[key];
     if (entry?.readError) return { label: "Unavailable", detail: entry.readError };
-    if (frozenCandidates.has(key)) return { label: "Frozen", detail: "Rewritten while the game is visible. Stop all freezes is available above." };
+    if (frozenCandidates.has(key)) return { label: "Frozen", detail: "Rewritten while the game is visible. Use Unfreeze here or Stop all freezes below." };
     const labels = { checking: "Checking write…", verified: "Verified through 250 ms", persistent: "Verified through 250 ms", restored: "Game restored it", rejected: "Write rejected", unavailable: "Unavailable" };
     return diagnostic ? { label: labels[diagnostic.state] || "Live", detail: diagnostic.detail || "" }
       : { label: entry?.candidate.value === undefined ? "Waiting for value" : "Live", detail: "Current read only; no retained write diagnostic." };
@@ -522,7 +521,6 @@
       return false;
     }
     try {
-      document.dispatchEvent(new CustomEvent("hack-engine-workspace-edit", { detail: { action, ...options } }));
       port.postMessage({ kind: "workspaceCommand", action, ...options });
       return true;
     } catch {
@@ -1099,12 +1097,6 @@
     } else if (session?.results) {
       renderResults(session.results, session.frameId);
     } else if (!session) {
-      if (pendingSettings) {
-        elements.advancedType.value = pendingSettings.type;
-        elements.advancedAlignment.value = pendingSettings.alignment;
-        elements.advancedMultiplier.value = pendingSettings.multiplier;
-        pendingSettings = null;
-      }
       clearBatchSelection();
       renderedResult = null;
       clearCandidateRefreshState();
@@ -1272,7 +1264,6 @@
       const context = workspaceRequests.get(message.requestId);
       if (!context) return;
       workspaceRequests.delete(message.requestId);
-      document.dispatchEvent(new CustomEvent("hack-engine-workspace-result", { detail: { ...message, acceptedKeys: [...watchedCandidates.keys()] } }));
       const text = `${message.accepted} ${context === "metadata" ? "updated" : "accepted"}; ${message.skipped} skipped${message.skipped ? " (invalid address or watch limit reached)" : ""}.`;
       setQuickStatus(text, message.skipped ? "error" : "ready");
       if (context === "manual") ui("manual-status").textContent = text;
@@ -1344,13 +1335,6 @@
       extensionApi.runtime.sendMessage({ kind: "getQuickSession", tabId: activeTab.id }).then(applyQuickSession).catch(() => {});
     } catch { reconnectTimer = setTimeout(connectPopup, 1000); }
   }
-
-  document.addEventListener("hack-engine-settings", (event) => {
-    if (quickSession?.canRefine || quickSession?.status === "scanning") { pendingSettings = event.detail; return; }
-    elements.advancedType.value = event.detail.type;
-    elements.advancedAlignment.value = event.detail.alignment;
-    elements.advancedMultiplier.value = event.detail.multiplier;
-  });
 
   async function initialize() {
     const tab = hasBoundTab

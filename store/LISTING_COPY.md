@@ -12,7 +12,7 @@ Find, watch, and edit numeric accessible numeric state in WebAssembly and JavaSc
 
 Hack Engine is a local developer tool for inspecting accessible numeric state in WebAssembly and JavaScript browser games.
 
-Use a type-free Quick scan from the toolbar, keep controls visible in the browser sidebar, or pop them out into a separate window. Advanced controls provide explicit numeric formats, alignment, scaled values, filtering, ascending/descending address and value sorting, known-address entry, batch watch and label/group editing, detailed write feedback, and workspace import/export. All surfaces share the same scan and watches.
+Use a type-free Quick scan from the toolbar, keep controls visible in the browser sidebar, or pop them out into a separate window. Advanced controls provide explicit numeric formats, alignment, scaled values, filtering, ascending/descending address and value sorting, known-address entry, batch watch and label/group editing, and detailed write feedback. All surfaces share the same scan and watches.
 
 Hack Engine supports exact values, inclusive ranges, unknown initial values, and changed/unchanged/increased/decreased refinements. Candidate values update live, and selected addresses can be written or temporarily frozen.
 
@@ -26,7 +26,7 @@ Use Hack Engine only with games, software, and content you own or are authorized
 
 - Suggested category: Developer Tools
 - Firefox: mark the pre-1.0 listing as Experimental
-- First store version: 1.2.0
+- First store version: 1.2.4
 - License: MIT
 - Language: English
 

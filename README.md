@@ -4,14 +4,13 @@ Hack Engine helps you find, watch, and change accessible numeric values in WebAs
 
 Everything happens locally in the inspected tab. Hack Engine has no accounts, telemetry, advertising, or remote service.
 
-> Current release: **v1.2.0 release candidate — not published**. Core workflows are tested locally on Linux Firefox and Chromium; the remaining release gates are recorded in [IMPLEMENTATION_1_0.md](IMPLEMENTATION_1_0.md).
+> Current release: **v1.2.4 release candidate — not published**. Core workflows are tested locally on Linux Firefox and Chromium; the remaining release gates are recorded in [IMPLEMENTATION_1_0.md](IMPLEMENTATION_1_0.md).
 
 ## What you can do
 
 - **Find visible values:** Search for an exact number, a range, or an unknown starting value.
 - **Narrow the results:** Change the value in the game, then filter by changed, unchanged, increased, or decreased.
 - **Recover mistakes:** Undo one refinement, restore the last write when the game has not changed it, and stop all freezes.
-- **Save your work:** Keep named local workspaces, preview imports, and verify addresses against the current game before use.
 - **Practice first:** Open the included local practice game from the controls.
 - **Edit and freeze:** Replace a discovered value or keep it fixed while the game runs.
 - **Watch values live:** Keep useful candidates visible as they change and organize them with labels and groups.

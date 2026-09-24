@@ -163,34 +163,22 @@
       script.onload = resolve; script.onerror = reject; document.body.append(script);
     });
     await settle();
-    const stage = (payload) => document.dispatchEvent(new CustomEvent("hack-engine-import", { detail: payload }));
-    const valid = { format: "hack-engine-workspace", version: 2, name: "Current workspace", watches: [{ address: 128, type: "i32", multiplier: 4, label: "Coins", group: "Player" }], settings: { type: "f64", alignment: "byte", multiplier: 4 } };
-    for (const rejected of [{ ...valid, version: 1 }, { version: 1, watches: valid.watches }, { ...valid, version: 4 }, { ...valid, watches: [{ type: "f64", address: -1 }] }]) {
-      stage(rejected);
-      assert($("[data-preview]").hidden && /unsupported|invalid/i.test($(".session-feedback").textContent), "Legacy or malformed workspace was accepted");
-    }
-    migrationState.watches = [];
-    const beforeImport = changes().length;
-    stage(valid);
-    assert(!$("[data-preview]").hidden && $("[data-preview-values]").textContent.includes("Coins"), "Version 2 import preview missing");
-    click('[data-action="apply"]');
-    await settle();
-    assert(changes().length === beforeImport, "Workspace applied without address verification");
-    let importedSettings;
-    document.addEventListener("hack-engine-settings", (event) => { importedSettings = event.detail; });
-    $("[data-verified]").checked = true;
-    click('[data-action="apply"]');
-    await settle();
-    const imported = changes().at(-1);
-    assert(imported.action === "mergeWatches" && imported.watches[0].label === "Coins" && imported.watches[0].group === "Player" && imported.watches[0].multiplier === 4 && imported.watches[0].instanceId === "memory-1", "Version 2 import lost metadata or target binding");
-    assert(importedSettings.type === "f64" && importedSettings.alignment === "byte" && importedSettings.multiplier === 4, "Import lost supported scan settings");
-    assert(!popupHarnessState.commands.some((command) => ["writeValue", "setFreeze"].includes(command.payload?.kind)), "Import replayed a write or freeze");
-    migrationState.watches = Array.from({ length: 256 }, (_, index) => ({ frameId: 0, instanceId: "memory-1", type: "i32", address: 1024 + index * 4, multiplier: 1 }));
-    stage(valid); $("[data-verified]").checked = true;
-    click('[data-action="apply"]');
-    await settle();
-    assert(!$("[data-preview]").hidden && /0 watches accepted.*1 skipped/.test($(".session-feedback").textContent), "Capacity-limited import implied success or closed preview");
-    result.textContent = "PASS: Advanced manual addresses, batch boundaries, diagnostics/read recovery, capacity, stalled recovery, and version 2 import work.";
+    assert(!$("[data-action='save']") && !$("[data-action='import']"), "Removed saved-workspace controls remain");
+    assert($("[data-action='restore']") && $("[data-action='stop']"), "Session recovery controls missing");
+    popupHarnessState.emitMessage({ kind: "quickSession", session: { ...scanning, status: "complete", request: { type: "i32" }, results: { canUndo: true } } });
+    const undo = $("#advanced-tools [data-action='undo']");
+    assert(!undo.hidden && !undo.disabled, "Undo unavailable after a recoverable scan");
+    undo.click();
+    assert(popupHarnessState.commands.at(-1).payload.kind === "undoScan", "Undo did not reach the game");
+    popupHarnessState.emitMessage({ kind: "quickSession", session: null });
+    assert(undo.hidden, "Undo remains visible after reset");
+    popupHarnessState.emitMessage({ kind: "workspaceState", workspace: { frozenKeys: ["test"], lastWrite: { frameId: 0, instanceId: "memory-1", type: "i32", address: 64 } } });
+    assert(!$("[data-action='restore']").disabled && $("[data-count]").textContent === "1", "Recovery state did not update");
+    click('[data-action="restore"]');
+    assert(popupHarnessState.commands.at(-1).payload.kind === "restoreWrite", "Restore did not reach the game");
+    click('[data-action="stop"]');
+    assert(popupHarnessState.commands.at(-1).payload.kind === "stopAllFreezes", "Stop freezes did not reach the game");
+    result.textContent = "PASS: Advanced manual addresses, batch boundaries, diagnostics/read recovery, capacity, stalled recovery, and session controls work.";
   } catch (error) {
     result.textContent = `FAIL: ${error.stack || error}`;
   }

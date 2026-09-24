@@ -120,11 +120,12 @@
           <span id="advanced-session-badge" class="session-badge">New scan</span>
         </div>
 
-        <div class="runtime-guidance" aria-live="polite">
+        <details class="runtime-guidance">
+          <summary>Runtime and number format guidance</summary>
           <div><span>Runtime</span><strong id="advanced-avm-type">Unknown</strong></div>
           <div><span>Recommended variable types</span><strong id="advanced-recommended-types">All numeric types</strong></div>
           <p id="advanced-runtime-hint">AVM could not be determined. Automatic searches all numeric types.</p>
-        </div>
+        </details>
 
         <div class="advanced-form">
           <label>
@@ -288,7 +289,7 @@
         </button>
         <button id="refresh-connection" type="button">
           <img class="ui-icon" src="../assets/ui-icons/arrow-path.svg" alt="" />
-          <span>Refresh connection</span>
+          <span>Reload game tab</span>
           <img class="ui-icon chevron" src="../assets/ui-icons/chevron-right.svg" alt="" />
         </button>
         <button id="how-it-works" type="button">
@@ -298,7 +299,7 @@
         </button>
       </div>
 
-      <footer>v1.2.0</footer>
+      <footer>v1.2.4</footer>
     </main>
     <script src="popup.js"></script>
   <script src="../workspace-controls.js"></script>

@@ -18,7 +18,7 @@ All executable JavaScript is readable and included in the package. Hack Engine d
 
 ## `storage`
 
-Session storage preserves small watch metadata through background restarts. Local storage holds only user-saved workspace names, watch metadata, and scan settings. It is not used for remote sync or bulk memory dumps.
+Session storage preserves small watch metadata through background restarts. Records saved by older versions may remain unused in local storage until uninstall; no new saved workspaces are created. It is not used for remote sync or bulk memory dumps.
 
 ## Bundled practice memory
 

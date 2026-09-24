@@ -2,6 +2,17 @@
 
 All notable changes to Hack Engine are documented here.
 
+## [1.2.4] - 2026-09-24
+
+Not published to browser stores. Sidebar usability and a simpler live-session workflow.
+
+- Put scanning ahead of secondary tools, increase form readability, and compact sidebar spacing.
+- Arrange Condition and Value in a 70/30 row, with separate range bounds and a narrow-width fallback.
+- Order scan actions as Scan, Undo scan, Reset; hide Undo when unavailable.
+- Collapse Advanced runtime guidance and label the reload action explicitly.
+- Remove Saved workspaces and all save/load/import/export controls. Preserve live watches and recovery tools; leave older stored records unused.
+- Update documentation and regression checks for the simplified workflow.
+
 ## [1.2.0] - 2026-09-24
 
 Local release; not published to browser stores. Broader browser-game inspection.
