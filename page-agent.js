@@ -49,7 +49,19 @@
   let scanYieldChannel = null;
   const scanYieldQueue = [];
 
+  const javaScript = globalThis.__hackEngineJavaScript?.({ documentId, yieldToPage });
+  if (javaScript) {
+    const source = javaScript.describe();
+    instances.set(source.id, { ...source, backend: javaScript });
+  }
+  const isJavaScript = (record) => record?.kind === "javascript";
+  const viewFor = (record) => isJavaScript(record)
+    ? { byteLength: Number.MAX_SAFE_INTEGER, read: (address) => record.backend.read(address),
+        write: (address, value) => record.backend.write(address, value) }
+    : new DataView(record.memory.buffer);
+
   const typeSpecs = {
+    number: { size: 0, read: (view, address) => view.read(address), write: (view, address, value) => view.write(address, value) },
     i8: {
       size: 1,
       integer: true,
@@ -111,6 +123,19 @@
   };
 
   function send(payload) {
+    const source = instances.get(String(payload.instanceId));
+    if (source) {
+      payload.sourceKind = source.kind || "wasm";
+      if (payload.address !== undefined) {
+        payload.targetKind = isJavaScript(source) ? "javascript" : "wasm";
+        if (isJavaScript(source)) {
+          try {
+            const { path, displayPath, writable } = source.backend.metadata(payload.address);
+            Object.assign(payload, { path, displayPath, writable });
+          } catch { /* Lifecycle/error messages must still reach controls for stale properties. */ }
+        }
+      }
+    }
     if (currentSession && payload.requestId === currentSession.requestId) {
       if (payload.kind === "scanProgress") currentSession.progress = payload;
       if (payload.kind === "scanResults") {
@@ -122,9 +147,12 @@
   }
 
   function describeInstance(record) {
+    if (isJavaScript(record)) return { ...record.backend.describe(), url: location.href };
     const avmKind = record.looksLikeRuffle ? detectRuffleAvmKind() : "unknown";
     return {
       id: record.id,
+      kind: "wasm", displayName: record.looksLikeRuffle ? "Ruffle memory" : "WebAssembly memory",
+      capabilities: ["scan", "watch", "write", "freeze", "undo", "restore"],
       url: location.href,
       hint: record.hint,
       memoryBytes: record.memory.buffer.byteLength,
@@ -136,7 +164,7 @@
 
   function detectRuffle(hint, exportNames) {
     const text = `${hint || ""} ${exportNames.join(" ")}`;
-    return /ruffle/i.test(text) || Boolean(document.querySelector(RUFFLE_PLAYER_SELECTOR));
+    return /ruffle/i.test(text);
   }
 
   function detectRuffleAvmKind() {
@@ -161,11 +189,13 @@
       return memories;
     }
 
-    for (const namespace of Object.values(imports)) {
+    for (const namespaceDescriptor of Object.values(Object.getOwnPropertyDescriptors(imports))) {
+      const namespace = namespaceDescriptor.value;
       if (!namespace || typeof namespace !== "object") {
         continue;
       }
-      for (const value of Object.values(namespace)) {
+      for (const memoryDescriptor of Object.values(Object.getOwnPropertyDescriptors(namespace))) {
+        const value = memoryDescriptor.value;
         if (value instanceof WebAssembly.Memory) {
           memories.push(value);
         }
@@ -188,7 +218,7 @@
 
     for (const memory of memories) {
       const duplicate = [...instances.values()].find(
-        (record) => record.instance === instance && record.memory === memory,
+        (record) => record.memory === memory,
       );
       if (duplicate) {
         continue;
@@ -197,6 +227,7 @@
       const id = `${documentId}.${nextInstanceId++}`;
       const record = {
         id,
+        kind: "wasm",
         instance,
         memory,
         hint,
@@ -225,10 +256,18 @@
     return "";
   }
 
+  const NativeInstance = WebAssembly.Instance;
+  WebAssembly.Instance = new Proxy(NativeInstance, {
+    construct(target, args, newTarget) {
+      const instance = Reflect.construct(target, args, newTarget);
+      try { captureInstance(instance, args[1]); } catch { /* Inspection must not break a game. */ }
+      return instance;
+    },
+  });
   const originalInstantiate = WebAssembly.instantiate.bind(WebAssembly);
   WebAssembly.instantiate = async function instrumentedInstantiate(source, imports) {
     const result = await originalInstantiate(source, imports);
-    captureInstance(extractInstance(result), imports, responseHint(source));
+    try { captureInstance(extractInstance(result), imports, responseHint(source)); } catch { /* Preserve successful instantiation. */ }
     return result;
   };
 
@@ -245,7 +284,7 @@
       } catch {
         // The successful instantiation is more important than a missing URL hint.
       }
-      captureInstance(extractInstance(result), imports, responseHint(resolvedSource));
+      try { captureInstance(extractInstance(result), imports, responseHint(resolvedSource)); } catch { /* Preserve successful instantiation. */ }
       return result;
     };
   }
@@ -675,7 +714,7 @@
     stride,
   }) {
     const matches = scanValueMatcher(type, condition, rawValue, rawMaxValue, multiplier);
-    let view = new DataView(record.memory.buffer);
+    let view = viewFor(record);
     const slotCount = slotCountFor(view.byteLength, spec, stride);
     const candidates = createCandidateSet(slotCount, type, stride);
 
@@ -689,7 +728,7 @@
       if (inspected % SCAN_CHUNK_SIZE === 0) {
         send({ kind: "scanProgress", requestId, inspected, total: slotCount });
         await yieldToPage(requestId);
-        view = new DataView(record.memory.buffer);
+        view = viewFor(record);
       }
     }
 
@@ -856,7 +895,7 @@
       return finalizeCandidateSet(candidates);
     }
     const matches = scanComparisonMatcher(type, condition, rawValue, multiplier);
-    let view = new DataView(record.memory.buffer);
+    let view = viewFor(record);
     if (sparsePrevious) {
       const sparseLimit = sparseLowerBound(previous.sparseSlots, slotCount);
       for (let sparseIndex = 0; sparseIndex < sparseLimit; sparseIndex += 1) {
@@ -869,7 +908,7 @@
         if (inspected % SCAN_CHUNK_SIZE === 0) {
           send({ kind: "scanProgress", requestId, inspected, total: sparseLimit });
           await yieldToPage(requestId);
-          view = new DataView(record.memory.buffer);
+          view = viewFor(record);
         }
       }
       return finalizeCandidateSet(candidates);
@@ -900,7 +939,7 @@
           total: slotCount,
         });
         await yieldToPage(requestId);
-        view = new DataView(record.memory.buffer);
+        view = viewFor(record);
       }
     }
     return finalizeCandidateSet(candidates);
@@ -925,7 +964,7 @@
       sparseCapacity: sparsePrevious ? previous.count : 0,
     });
     const matches = scanValueMatcher(type, condition, rawValue, rawMaxValue, multiplier);
-    let view = new DataView(record.memory.buffer);
+    let view = viewFor(record);
     if (sparsePrevious) {
       const sparseLimit = sparseLowerBound(previous.sparseSlots, slotCount);
       for (let sparseIndex = 0; sparseIndex < sparseLimit; sparseIndex += 1) {
@@ -938,7 +977,7 @@
         if (inspected % SCAN_CHUNK_SIZE === 0) {
           send({ kind: "scanProgress", requestId, inspected, total: sparseLimit });
           await yieldToPage(requestId);
-          view = new DataView(record.memory.buffer);
+          view = viewFor(record);
         }
       }
       return finalizeCandidateSet(candidates);
@@ -967,7 +1006,7 @@
         const inspected = Math.min((byteIndex + 1) * 8, slotCount);
         send({ kind: "scanProgress", requestId, inspected, total: slotCount });
         await yieldToPage(requestId);
-        view = new DataView(record.memory.buffer);
+        view = viewFor(record);
       }
     }
     return finalizeCandidateSet(candidates);
@@ -1496,7 +1535,7 @@
   }
 
   function sendAutoScanResults(requestId, record, group) {
-    const view = new DataView(record.memory.buffer);
+    const view = viewFor(record);
     const preview = [];
     let total = 0;
     let allCandidates = true;
@@ -1744,14 +1783,57 @@
       lastWrite: lastWrite ? { instanceId: lastWrite.record.id, type: lastWrite.type, address: lastWrite.address } : null });
   }
 
+  function sendJavaScriptResults(requestId, record, type, group) {
+    const preview = group.entries.slice(0, RESULT_PREVIEW_LIMIT).map((entry) => {
+      let value = null;
+      try { value = record.backend.read(entry.address); } catch { /* Stale candidate remains visibly unavailable. */ }
+      return { ...entry, value, displayValue: value, multiplier: 1 };
+    });
+    send({ kind: "scanResults", requestId, instanceId: record.id, type, multiplier: 1,
+      searchedTypes: ["number"], total: group.entries.length, preview, coverage: group.coverage,
+      memoryBytes: 0, candidateStorage: "properties", allCandidates: false });
+  }
+
+  async function javaScriptScan(options, record) {
+    const { requestId, type = "smart", condition = "exact", refine, rawValue, rawMaxValue } = options;
+    if (!["smart", "auto", "number"].includes(type)) throw new Error("Choose Automatic for JavaScript numbers.");
+    if (!refine && !["exact", "range", "unknown"].includes(condition)) throw new Error("First scans support exact, range, or unknown initial values.");
+    if (refine && condition === "unknown") throw new Error("Unknown initial value is only available for a first scan.");
+    const key = scanKey(record.id, type);
+    const previous = refine ? scans.get(key) : null;
+    if (refine && !previous?.javascript) throw new Error("Run a first scan before filtering.");
+    const matches = condition === "unknown" ? () => true
+      : ["exact", "range"].includes(condition) ? scanValueMatcher("number", condition, rawValue, rawMaxValue, 1)
+      : scanComparisonMatcher("number", condition, rawValue, 1);
+    const discovered = previous || await record.backend.discover({ requestId, rootPath: options.rootPath });
+    const entries = [];
+    for (let index = 0; index < discovered.entries.length; index++) {
+      const entry = discovered.entries[index];
+      try {
+        const value = record.backend.read(entry.address);
+        if (matches(value, entry.value)) entries.push({ ...entry, value });
+      } catch { /* Removed properties do not survive refinement. */ }
+      if (index % 500 === 0) {
+        send({ kind: "scanProgress", requestId, inspected: index, total: discovered.entries.length });
+        await yieldToPage(requestId);
+      }
+    }
+    await yieldToPage(requestId);
+    const group = { javascript: true, entries, coverage: discovered.coverage, options: { ...options, multiplier: 1 } };
+    if (!refine) await clearInstanceScans(record.id);
+    scans.set(key, group);
+    await commitCheckpoint(key, previous, group);
+    sendJavaScriptResults(requestId, record, type, group);
+  }
+
   async function memoryScan(options) {
     const id = String(options.instanceId);
     if (activeScans.size) throw new Error("A scan is already running in this game frame. Cancel it before starting another.");
     if (!instances.has(id)) throw new Error("This game was reloaded. Select its new memory and start again.");
     const record = instances.get(id);
-    if (record.memory.buffer.byteLength > MAX_SCAN_BYTES) throw new Error("This memory exceeds the 256 MiB scan limit. Choose a smaller captured memory.");
+    if (!isJavaScript(record) && record.memory.buffer.byteLength > MAX_SCAN_BYTES) throw new Error("This memory exceeds the 256 MiB scan limit. Choose a smaller captured memory.");
     const existing = scans.get(scanKey(id, options.type));
-    if ((options.condition === "unknown" || options.condition === "range" || existing?.snapshot) && navigator.storage?.estimate) {
+    if (!isJavaScript(record) && (options.condition === "unknown" || options.condition === "range" || existing?.snapshot) && navigator.storage?.estimate) {
       const estimate = await navigator.storage.estimate().catch(() => ({}));
       const required = Math.ceil(record.memory.buffer.byteLength * 1.1);
       if (Number.isFinite(estimate.quota) && estimate.quota - (estimate.usage || 0) < required) {
@@ -1764,13 +1846,14 @@
     currentSession = { updatedAt: Date.now(), requestId: options.requestId, instanceId: id, request: { ...options }, status: "scanning", canRefine: !!options.refine, results: null };
     activeScans.set(id, String(options.requestId));
     try {
-      await performMemoryScan(options);
+      if (isJavaScript(record)) await javaScriptScan(options, record);
+      else await performMemoryScan(options);
     } catch (error) {
       // Refinement builds new candidate sets; keep the last committed baseline.
       for (const snapshot of ownedSnapshots) {
         if (!priorSnapshots.has(snapshot)) await deleteSnapshot(snapshot).catch(() => {});
       }
-      currentSession = options.refine ? priorSession : null;
+      currentSession = options.refine || isJavaScript(record) ? priorSession : null;
       throw error;
     } finally {
       activeScans.delete(id);
@@ -1790,14 +1873,15 @@
     scans.set(key, previous);
     if (discarded?.snapshot && discarded.snapshot !== previous.snapshot) await deleteSnapshot(discarded.snapshot);
     currentSession = { updatedAt: Date.now(), requestId, instanceId: record.id, request: previous.options, status: "complete", canRefine: true };
-    if (previous.multi) sendAutoScanResults(requestId, record, previous);
+    if (previous.javascript) sendJavaScriptResults(requestId, record, type, previous);
+    else if (previous.multi) sendAutoScanResults(requestId, record, previous);
     else sendScanResults(requestId, record, type, previous, previous.options?.multiplier || 1);
     emitSession();
   }
 
   function sendScanResults(requestId, record, type, candidates, multiplier = 1) {
     const spec = typeSpecs[type];
-    const view = new DataView(record.memory.buffer);
+    const view = viewFor(record);
     const preview = candidates.preview.map((address) => {
       const value = address + spec.size <= view.byteLength
         ? spec.read(view, address)
@@ -1866,7 +1950,7 @@
 
   function sampleAddress(record, spec, address, requestedValue, stage, startedAt) {
     try {
-      const view = new DataView(record.memory.buffer);
+      const view = viewFor(record);
       if (address + spec.size > view.byteLength) {
         throw new Error("Address is outside the current WASM memory.");
       }
@@ -1993,23 +2077,23 @@
   function writeValue({ requestId, instanceId, type, address, rawValue, multiplier: rawMultiplier = 1 }) {
     const record = instances.get(String(instanceId));
     const spec = typeSpecs[type];
-    if (!record || !spec) {
+    if (!record || !spec || (isJavaScript(record) !== (type === "number"))) {
       throw new Error("Invalid instance or value type.");
     }
     const numericAddress = Number(address);
     if (!Number.isSafeInteger(numericAddress) || numericAddress < 0) {
       throw new Error("Address must be a non-negative integer byte offset.");
     }
-    const view = new DataView(record.memory.buffer);
+    const view = viewFor(record);
     if (numericAddress + spec.size > view.byteLength) {
       throw new Error("Address is outside the current WASM memory.");
     }
     const multiplier = parseMultiplier(rawMultiplier);
     const value = parseDisplayValue(type, rawValue, multiplier);
-    const before = new Uint8Array(record.memory.buffer, numericAddress, spec.size).slice();
+    const before = isJavaScript(record) ? spec.read(view, numericAddress) : new Uint8Array(record.memory.buffer, numericAddress, spec.size).slice();
     spec.write(view, numericAddress, value);
     lastWrite = { record, type, address: numericAddress, before,
-      after: new Uint8Array(record.memory.buffer, numericAddress, spec.size).slice() };
+      after: isJavaScript(record) ? spec.read(view, numericAddress) : new Uint8Array(record.memory.buffer, numericAddress, spec.size).slice() };
     const activeFreeze = freezes.get(freezeKey(record.id, type, numericAddress));
     if (activeFreeze) {
       activeFreeze.value = value;
@@ -2054,26 +2138,22 @@
     if (!Array.isArray(entries) || entries.length > MAX_WATCH_VALUES) {
       throw new Error(`A watch refresh supports at most ${MAX_WATCH_VALUES} addresses.`);
     }
-    const view = new DataView(record.memory.buffer);
+    const view = viewFor(record);
     const values = entries.map((entry) => {
       const spec = typeSpecs[entry?.type];
       const address = Number(entry?.address);
       const id = String(entry?.id ?? "");
       if (
         !id ||
-        !spec ||
+        !spec || (isJavaScript(record) !== (entry.type === "number")) ||
         !Number.isSafeInteger(address) ||
         address < 0 ||
         address + spec.size > view.byteLength
       ) {
         return { id, type: entry?.type, address, error: "Address is unavailable." };
       }
-      return {
-        id,
-        type: entry.type,
-        address,
-        value: wireNumber(spec.read(view, address)),
-      };
+      try { return { id, type: entry.type, address, value: wireNumber(spec.read(view, address)) }; }
+      catch (error) { return { id, type: entry.type, address, error: error.message }; }
     });
     send({
       kind: "watchValues",
@@ -2098,6 +2178,16 @@
       throw new Error("The previous write is no longer available in this game session.");
     }
     const { record, before, after } = lastWrite;
+    if (isJavaScript(record)) {
+      if (!Object.is(record.backend.read(address), after)) throw new Error("The game changed this property after the write. Restore was cancelled.");
+      record.backend.write(address, before);
+      freezes.delete(freezeKey(instanceId, type, address));
+      activeWriteDiagnostics.delete(freezeKey(instanceId, type, address));
+      lastWrite = null;
+      send({ kind: "writeRestored", requestId, instanceId, type, address });
+      emitSession();
+      return;
+    }
     const current = new Uint8Array(record.memory.buffer, address, before.length);
     if (!current.every((value, index) => value === after[index])) {
       throw new Error("The game changed this address after the write. Restore was cancelled to preserve its current value.");
@@ -2114,7 +2204,7 @@
     freezeFrameHandle = null;
     for (const [key, entry] of freezes) {
       try {
-        const view = new DataView(entry.record.memory.buffer);
+        const view = viewFor(entry.record);
         if (entry.address + entry.spec.size > view.byteLength) {
           freezes.delete(key);
           continue;
@@ -2122,6 +2212,8 @@
         entry.spec.write(view, entry.address, entry.value);
       } catch {
         freezes.delete(key);
+        send({ kind: "freezeChanged", instanceId: entry.record.id, type: entry.type, address: entry.address, enabled: false, reason: "Value is unavailable." });
+        emitSession();
       }
     }
     if (freezes.size > 0) {
@@ -2146,7 +2238,7 @@
   }) {
     const record = instances.get(String(instanceId));
     const spec = typeSpecs[type];
-    if (!record || !spec) {
+    if (!record || !spec || (isJavaScript(record) !== (type === "number"))) {
       throw new Error("Invalid instance or value type.");
     }
     const numericAddress = Number(address);
@@ -2157,7 +2249,7 @@
     if (enabled) {
       const multiplier = parseMultiplier(rawMultiplier);
       const value = parseDisplayValue(type, rawValue, multiplier);
-      const view = new DataView(record.memory.buffer);
+      const view = viewFor(record);
       if (numericAddress + spec.size > view.byteLength) {
         throw new Error("Address is outside the current WASM memory.");
       }
@@ -2214,6 +2306,20 @@
     Promise.resolve()
       .then(() => {
         switch (command?.kind) {
+          case "listJavaScriptRoots":
+            if (!javaScript || command.instanceId !== javaScript.describe().id) throw new Error("JavaScript source is unavailable.");
+            send({ kind: "javaScriptRoots", requestId: command.requestId, instanceId: command.instanceId, roots: javaScript.roots() });
+            break;
+          case "resolveJavaScriptPaths": {
+            if (!javaScript || command.instanceId !== javaScript.describe().id) throw new Error("JavaScript source is unavailable.");
+            if (!Array.isArray(command.paths) || command.paths.length > MAX_WATCH_VALUES) throw new Error("Invalid property paths.");
+            const entries = [], errors = [];
+            for (const path of command.paths) {
+              try { entries.push(javaScript.resolve(path)); } catch (error) { errors.push({ path, message: error.message }); }
+            }
+            send({ kind: "javaScriptPathsResolved", requestId: command.requestId, instanceId: command.instanceId, entries, errors });
+            break;
+          }
           case "getSessionState":
             emitSession();
             break;

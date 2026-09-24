@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Hack Engine helps you find, watch, and change numeric values in browser games running through Ruffle."
+      content="Hack Engine helps you find, watch, and change accessible numeric values in WebAssembly and JavaScript browser games."
     />
     <meta name="theme-color" content="#10131a" />
     <title>Hack Engine — Memory tools for browser games</title>
@@ -30,7 +30,7 @@
     <main id="main">
       <section id="top" class="hero">
         <div class="hero-copy">
-          <p class="eyebrow">Memory tools for Ruffle games</p>
+          <p class="eyebrow">Value tools for browser games</p>
           <h1>Find the value.<br /><span>Take control.</span></h1>
           <p class="lede">
             Hack Engine lets you search, watch, edit, and freeze numeric values in browser games—right beside the page you are playing.
@@ -119,7 +119,7 @@
           <p>No memory-inspection experience is required for the standard workflow.</p>
         </div>
         <ol class="workflow-list">
-          <li><span>1</span><div><h3>Open the game</h3><p>Load an embedded Ruffle game, then open Hack Engine from the browser toolbar.</p></div></li>
+          <li><span>1</span><div><h3>Open the game</h3><p>Load a WebAssembly or JavaScript game, then open Hack Engine from the browser toolbar.</p></div></li>
           <li><span>2</span><div><h3>Run the first scan</h3><p>Enter a number shown in the game—such as money, lives, or energy—and scan for it.</p></div></li>
           <li><span>3</span><div><h3>Change and narrow</h3><p>Make the number change in the game, enter its new value, and scan again until only a few candidates remain.</p></div></li>
           <li><span>4</span><div><h3>Watch or edit</h3><p>Select the likely candidate to watch it live, set a new value, or freeze it in place.</p></div></li>
@@ -194,7 +194,7 @@ npm run build</code></pre>
       <section class="section-block note-section">
         <h2>Built for responsible, local use</h2>
         <p>
-          Hack Engine works when a game's numeric state reaches captured WebAssembly memory. Some values may be stored elsewhere or recalculated by the game. Editing the wrong value can reset or crash the player, so use Hack Engine only with software you own or are authorized to inspect.
+          Hack Engine searches captured WebAssembly memory and reachable JavaScript numeric properties. Private variables, worker state, and server-controlled values are outside this release. Editing the wrong value can reset or crash the player, so use Hack Engine only with software you own or are authorized to inspect.
         </p>
       </section>
     </main>

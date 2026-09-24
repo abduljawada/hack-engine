@@ -1,10 +1,10 @@
 # Hack Engine
 
-Hack Engine helps you find, watch, and change numeric values in browser games running through Ruffle. It brings a familiar memory-scanning workflow into the browser, without a native debugger or changes to your operating system's security settings.
+Hack Engine helps you find, watch, and change accessible numeric values in WebAssembly and JavaScript browser games. It brings a familiar memory-scanning workflow into the browser, without a native debugger or changes to your operating system's security settings.
 
 Everything happens locally in the inspected tab. Hack Engine has no accounts, telemetry, advertising, or remote service.
 
-> Current release: **v1.1.0 release candidate — not published**. Core workflows are tested locally on Linux Firefox and Chromium; the remaining release gates are recorded in [IMPLEMENTATION_1_0.md](IMPLEMENTATION_1_0.md).
+> Current release: **v1.2.0 release candidate — not published**. Core workflows are tested locally on Linux Firefox and Chromium; the remaining release gates are recorded in [IMPLEMENTATION_1_0.md](IMPLEMENTATION_1_0.md).
 
 ## What you can do
 
@@ -20,13 +20,17 @@ Everything happens locally in the inspected tab. Hack Engine has no accounts, te
 
 ## How to use Hack Engine
 
-1. Open a page containing an embedded Ruffle game and reload it after installing Hack Engine.
+1. Open a browser game and reload it after installing Hack Engine.
 2. Open Hack Engine from the browser toolbar. Use the pin button if you want the controls to remain beside the game.
 3. Enter the value currently shown in the game and choose **First scan**.
 4. Change that value in the game, enter the new value, and choose **Next scan**.
 5. Repeat until only a small number of candidates remain, then select one to watch, edit, or freeze it.
 
-If the exact value is not known, start with **Unknown initial value** and refine after the game changes. **Value range** helps with rounded or approximate values. Advanced mode also provides explicit number-format, alignment, multiplier, and captured-memory controls. Add known addresses, select displayed candidates to watch in a batch, apply watch labels/groups together, and sort addresses or values in either direction. Write feedback follows verification through 250 ms; expandable details distinguish verification from game restoration or failed reads.
+If the exact value is not known, start with **Unknown initial value** and refine after the game changes. **Value range** helps with rounded or approximate values. Advanced mode also provides explicit number-format, alignment, multiplier, and inspection-source controls. Add known addresses, select displayed candidates to watch in a batch, apply watch labels/groups together, and sort addresses or values in either direction. Write feedback follows verification through 250 ms; expandable details distinguish verification from game restoration or failed reads.
+
+## JavaScript games
+
+Choose **JavaScript objects** as the source and scan normally. Advanced controls offer an object picker to narrow discovery. Results show property paths instead of memory addresses. If discovery reaches a limit, the panel reports partial coverage; choose a narrower object and scan again. A replaced object makes its old watches unavailable rather than redirecting writes.
 
 ## Browser support
 
@@ -59,7 +63,7 @@ Reload the game page after loading the extension so Hack Engine can detect the p
 
 ## Good to know
 
-- Hack Engine works when a game's numeric state reaches captured WebAssembly memory. Some values may instead live in JavaScript, encoded objects, or other storage that is not currently searchable.
+- Hack Engine searches captured WebAssembly memory and reachable JavaScript object properties. Private variables, worker state, encoded values, and server-controlled state are outside this release. See [compatibility](COMPATIBILITY.md) for tested coverage and limits.
 - A displayed number may be rounded, scaled, copied, or recalculated by the game. Range scans, comparison scans, and Advanced mode can help identify the useful value.
 - Editing the wrong address can reset or crash the embedded player. Use Hack Engine only with games and software you own or are authorized to inspect.
 
@@ -67,7 +71,7 @@ Reload the game page after loading the extension so Hack Engine can detect the p
 
 - Complete the remaining compatibility matrix and signed-store qualification for v1.0.
 - Reusable scan profiles, value history, address notes, and pointer research.
-- Broader game compatibility, recovery tools, and browser hardening.
+- Worker inspection and broader runtime compatibility.
 
 ## Documentation and support
 

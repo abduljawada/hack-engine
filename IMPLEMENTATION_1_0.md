@@ -2,6 +2,14 @@
 
 Updated September 21, 2026. Approved scope: [essential-feature roadmap](ROADMAP_1_0_PROPOSAL.md). Status: **implemented development candidate; public release qualification remains open**. The original design file is preserved.
 
+## Broader inspection expansion — September 24, 2026
+
+The development candidate now includes bounded JavaScript object discovery alongside the existing WebAssembly scanner. It captures synchronous Wasm instances, scopes Ruffle hints per module, preserves JavaScript object identity through writes/freezes, and exports workspace v3 with v2 migration. Worker and private-state inspection remain deferred. See [COMPATIBILITY.md](COMPATIBILITY.md) for exact coverage, resource limits, and pinned real-game evidence.
+
+Validation on Linux: 22 unit tests and all 20 Chromium page fixtures passed. Installed Firefox 155.0.1 and Chromium 152.0.7977.82 packages passed the Wasm and JavaScript scan/refine/undo/watch/edit/restore/freeze/stop workflow, mixed-workspace reload/revalidation, and v2 import. Chromium background-worker termination recovered the completed JavaScript scan. Local release/source archives passed packaging validation; Firefox lint reported zero errors, warnings, and notices. Two unmodified MIT-licensed external games were checked with production page scripts at startup in Chromium; that is separate from installed-extension qualification.
+
+Native-panel interaction, other operating systems, minimum browser versions, the Ruffle game corpus, and signed store distribution remain the release gates below. No publication was performed.
+
 ## Implemented
 
 - **M1 — reliable sessions:** document-scoped memory IDs, ownership-aware snapshot cleanup, reconnecting controls, session metadata persistence, authoritative page-state reconciliation after background restart, and stale-document/bridge rejection.

@@ -165,7 +165,7 @@
     await settle();
     const stage = (payload) => document.dispatchEvent(new CustomEvent("hack-engine-import", { detail: payload }));
     const valid = { format: "hack-engine-workspace", version: 2, name: "Current workspace", watches: [{ address: 128, type: "i32", multiplier: 4, label: "Coins", group: "Player" }], settings: { type: "f64", alignment: "byte", multiplier: 4 } };
-    for (const rejected of [{ ...valid, version: 1 }, { version: 1, watches: valid.watches }, { ...valid, version: 3 }, { ...valid, watches: [{ type: "f64", address: -1 }] }]) {
+    for (const rejected of [{ ...valid, version: 1 }, { version: 1, watches: valid.watches }, { ...valid, version: 4 }, { ...valid, watches: [{ type: "f64", address: -1 }] }]) {
       stage(rejected);
       assert($("[data-preview]").hidden && /unsupported|invalid/i.test($(".session-feedback").textContent), "Legacy or malformed workspace was accepted");
     }

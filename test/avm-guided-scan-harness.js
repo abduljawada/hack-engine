@@ -22,7 +22,9 @@ async function createMemory(valueWriter) {
     0x05, 0x03, 0x01, 0x00, 0x01,
     0x07, 0x0a, 0x01, 0x06, 0x6d, 0x65, 0x6d, 0x6f, 0x72, 0x79, 0x02, 0x00,
   ]);
-  const { instance } = await WebAssembly.instantiate(module);
+  const response = new Response(module, { headers: { "Content-Type": "application/wasm" } });
+  Object.defineProperty(response, "url", { value: currentScenario === "unknown" ? "fixture.wasm" : "ruffle-fixture.wasm" });
+  const { instance } = await WebAssembly.instantiateStreaming(response);
   currentInstance = instance;
   valueWriter(new DataView(instance.exports.memory.buffer));
 }

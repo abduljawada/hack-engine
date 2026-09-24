@@ -6,7 +6,7 @@ Hack Engine uses `tabs` to identify and reload the tab the user is inspecting, a
 
 ## `<all_urls>` host access
 
-Ruffle games can be embedded on arbitrary sites and in child frames. Hack Engine must install its capture hook at `document_start`, before Ruffle instantiates WebAssembly; requesting access only after the toolbar is opened would miss the memory instance and make the advertised feature unreliable. Host access is used only to install the local capture bridge and inspect WebAssembly memory in the current page and permitted frames.
+Browser games can be embedded on arbitrary sites and in child frames. Hack Engine must install its capture hook at `document_start`, before games instantiate WebAssembly; requesting access only after the toolbar is opened would miss the memory instance and make the advertised feature unreliable. Host access is used only to install the local capture bridge and inspect WebAssembly memory and user-selected JavaScript numeric properties in the current page and permitted frames.
 
 ## Chrome `sidePanel`
 

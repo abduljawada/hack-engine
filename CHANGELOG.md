@@ -2,6 +2,17 @@
 
 All notable changes to Hack Engine are documented here.
 
+## [1.2.0] - 2026-09-24
+
+Local release; not published to browser stores. Broader browser-game inspection.
+
+- Add bounded, on-demand JavaScript numeric property discovery, object selection, and stable live targets alongside WebAssembly memory.
+- Extend scan/refine/undo, watches, verified writes/restore, and freeze/stop to JavaScript values; reject stale objects and unrepresentable typed-array writes.
+- Capture synchronous Wasm instances, deduplicate shared memory, and scope Ruffle hints to identified modules.
+- Export workspace v3 with JavaScript path hints; import v2 Wasm workspaces and require current-session resolution/revalidation.
+- Add JavaScript practice, page/browser regressions, and installed Firefox/Chromium mixed-source workflow tests.
+- Workers, private variables, and server state remain outside this expansion.
+
 ## [1.1.0] - 2026-09-23
 
 Local release; not published to browser stores. External compatibility and signed-store qualification remain open.

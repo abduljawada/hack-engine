@@ -10,6 +10,7 @@ const version = JSON.parse(readFileSync(join(projectRoot, "manifest.json"), "utf
 const archivePath = join(distRoot, `hack-engine-source-v${version}.zip`);
 const sourceEntries = [
   "CHANGELOG.md",
+  "COMPATIBILITY.md",
   "LICENSE",
   "PRIVACY.md",
   "README.md",
@@ -25,6 +26,7 @@ const sourceEntries = [
   "package-lock.json",
   "package.json",
   "page-agent.js",
+  "javascript-source.js",
   "workspace-controls.js",
   "workspace-controls.css",
   "practice",

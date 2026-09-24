@@ -19,6 +19,7 @@
     i32: ["-2147483648", "2147483647"],
     u32: ["0", "4294967295"],
     f32: ["-3.4028234663852886e+38", "3.4028234663852886e+38"],
+    number: ["-1.7976931348623157e+308", "1.7976931348623157e+308"],
     f64: ["-1.7976931348623157e+308", "1.7976931348623157e+308"],
   });
   const popupParameters = new URLSearchParams(location.search);
@@ -61,6 +62,8 @@
   let watchdogProgress = null;
   let stalledRequest = null;
   let renderedResult = null;
+  let rootsRequest = null;
+  let sourceChosen = false;
   const ui = (id) => document.getElementById(id);
 
   const elements = {
@@ -190,7 +193,7 @@
   function batchCheckbox(key, candidate) {
     const checkbox = document.createElement("input"); checkbox.type = "checkbox";
     checkbox.dataset.batchKey = key; checkbox.checked = batchSelection.has(key);
-    checkbox.setAttribute("aria-label", `Select ${candidate.type} at ${formatAddress(candidate.address)}`);
+    checkbox.setAttribute("aria-label", `Select ${candidate.type} at ${candidateLocation(candidate)}`);
     checkbox.addEventListener("change", () => toggleBatch(key));
     return checkbox;
   }
@@ -313,6 +316,12 @@
 
   function formatAddress(address) {
     return `0x${Number(address).toString(16).padStart(8, "0")}`;
+  }
+
+  function candidateLocation(candidate) {
+    return candidate.kind === "javascript" || candidate.type === "number"
+      ? candidate.displayPath || (candidate.path || []).join(".") || "JavaScript value"
+      : formatAddress(candidate.address);
   }
 
   function newTabOptions(url) {
@@ -479,7 +488,7 @@
 
   function selectedInstance() {
     const records = [...instances.values()];
-    return records.find((record) => record.looksLikeRuffle) || records[0] || null;
+    return instances.get(elements.advancedInstance.value) || records.find((record) => record.looksLikeRuffle) || records.find((record) => record.kind !== "javascript") || records[0] || null;
   }
 
   function sessionInstance() {
@@ -571,11 +580,9 @@
     updateViewVisibility();
 
     if (detected) {
-      elements.statusTitle.textContent = summary.ruffleCount > 0
-        ? "Ruffle memory detected"
-        : "WebAssembly memory detected";
+      elements.statusTitle.textContent = "Game inspection available";
     } else if (summary.connected) {
-      elements.statusTitle.textContent = "No memory captured — start or reload the game";
+      elements.statusTitle.textContent = "No source available — start or reload the game";
     } else {
       elements.statusTitle.textContent = /^(about:|chrome:|edge:)/.test(activeTab?.url || "")
         ? "This browser page cannot be inspected"
@@ -622,27 +629,45 @@
       const option = document.createElement("option");
       option.value = `${record.frameId}:${record.id}`;
       const mib = Number(record.memoryBytes) / (1024 * 1024);
-      option.textContent = `${record.looksLikeRuffle ? "Ruffle" : "WASM"} · ${Number.isFinite(mib) ? `${mib.toFixed(1)} MiB` : record.id}`;
+      option.textContent = `${record.displayName || (record.looksLikeRuffle ? "Ruffle" : record.kind === "javascript" ? "JavaScript" : "WebAssembly")} · frame ${record.frameId}${record.kind === "javascript" ? "" : ` · ${mib.toFixed(1)} MiB`}`;
       elements.advancedInstance.append(option);
     }
-    if ([...elements.advancedInstance.options].some((option) => option.value === previous)) {
+    if ((sourceChosen || quickSession) && [...elements.advancedInstance.options].some((option) => option.value === previous)) {
       elements.advancedInstance.value = previous;
     } else {
-      const preferred = selectedInstance();
+      const preferred = records.find((record) => record.looksLikeRuffle) || records.find((record) => record.kind !== "javascript") || records[0];
       elements.advancedInstance.value = preferred ? `${preferred.frameId}:${preferred.id}` : "";
     }
     elements.advancedInstanceLabel.hidden = records.length <= 1;
     const manual = ui("manual-instance");
     const previousManual = manual.value;
-    manual.replaceChildren(...records.map((record) => new Option(
+    manual.replaceChildren(...records.filter((record) => record.kind !== "javascript").map((record) => new Option(
       `${record.looksLikeRuffle ? "Ruffle" : "WASM"} · frame ${record.frameId} · ${(record.memoryBytes / 1048576).toFixed(1)} MiB · ${record.id.slice(-8)}`,
       `${record.frameId}:${record.id}`)));
     if (instances.has(previousManual)) manual.value = previousManual;
+    const simple = ui("quick-instance");
+    simple.replaceChildren(...[...elements.advancedInstance.options].map((option) => new Option(option.textContent, option.value)));
+    simple.value = elements.advancedInstance.value;
+    ui("quick-instance-label").hidden = records.length <= 1;
   }
 
   function updateRuntimeGuidance() {
     const usesSession = quickSession?.canRefine || quickSession?.status === "scanning";
     const record = usesSession ? sessionInstance() : advancedSelectedInstance();
+    const javascript = record?.kind === "javascript";
+    elements.advancedType.closest("label").hidden = javascript;
+    elements.advancedAlignment.closest("label").hidden = javascript;
+    elements.advancedMultiplier.closest("label").hidden = javascript;
+    document.querySelector(".manual-address-form").hidden = javascript;
+    ui("javascript-root-controls").hidden = !javascript;
+    ui("javascript-root").disabled = !!usesSession;
+    ui("javascript-load-roots").disabled = !!usesSession;
+    if (javascript) {
+      elements.advancedAvmType.textContent = "JavaScript";
+      elements.advancedRecommendedTypes.textContent = "Finite numbers";
+      elements.advancedRuntimeHint.textContent = "Scans reachable objects, arrays and numeric typed arrays. Private or server-controlled state may be inaccessible. Choose an object below to narrow discovery.";
+      return;
+    }
     const avmKind = usesSession && quickSession?.results?.avmKind !== undefined
       ? quickSession.results.avmKind
       : record?.looksLikeRuffle ? record.avmKind : "unknown";
@@ -656,7 +681,7 @@
       elements.advancedRuntimeHint.textContent = "Start with Int32 or Uint32 for whole numbers, Float64 for decimals. Automatic narrows decimal searches to Float64 after applying the multiplier.";
     } else {
       elements.advancedAvmType.textContent = "Unknown";
-      elements.advancedRuntimeHint.textContent = "AVM could not be determined. Automatic searches all numeric types.";
+      elements.advancedRuntimeHint.textContent = "Automatic searches all numeric types in this WebAssembly memory.";
     }
   }
 
@@ -694,6 +719,7 @@
     elements.advancedType.disabled = canRefine || scanning;
     elements.advancedAlignment.disabled = canRefine || scanning;
     elements.advancedInstance.disabled = canRefine || scanning;
+    ui("quick-instance").disabled = canRefine || scanning;
     elements.advancedMultiplier.disabled = canRefine || scanning;
     elements.advancedSessionBadge.textContent = scanning
       ? "Scanning"
@@ -725,7 +751,7 @@
     if (!selectedCandidate) {
       return;
     }
-    const address = formatAddress(selectedCandidate.address);
+    const address = candidateLocation(selectedCandidate);
     const value = candidateValueText(selectedCandidate);
     elements.selectedAddress.textContent = address;
     elements.advancedSelectedAddress.textContent = address;
@@ -743,6 +769,8 @@
     return {
       frameId: candidate.frameId,
       instanceId: String(candidate.instanceId),
+      kind: candidate.kind || (candidate.type === "number" ? "javascript" : "wasm"),
+      ...(candidate.path ? { path: candidate.path, displayPath: candidate.displayPath } : {}),
       type: candidate.type,
       multiplier: Number(candidate.multiplier) || 1,
       address: candidate.address,
@@ -845,7 +873,7 @@
       row.dataset.candidateKey = key;
       const address = document.createElement("span");
       address.className = "candidate-address";
-      address.textContent = formatAddress(entry.candidate.address);
+      address.textContent = candidateLocation(entry.candidate);
       row.append(address, makeValueCell(entry));
       row.addEventListener("click", () => selectCandidate(entry.candidate));
       elements.candidates.append(row);
@@ -857,7 +885,7 @@
     const filter = elements.advancedFilter.value.trim().toLowerCase();
     const records = [...candidateRecords.entries()].filter(([, entry]) => {
       const candidate = entry.candidate;
-      return !filter || `${formatAddress(candidate.address)} ${candidateValueText(candidate)} ${candidate.type}`.toLowerCase().includes(filter);
+      return !filter || `${candidateLocation(candidate)} ${candidateValueText(candidate)} ${candidate.type}`.toLowerCase().includes(filter);
     });
     const sort = elements.advancedSort.value;
     records.sort((leftEntry, rightEntry) => {
@@ -872,7 +900,10 @@
       if (sort === "type") {
         return String(left.candidate.type).localeCompare(String(right.candidate.type)) || left.candidate.address - right.candidate.address;
       }
-      return (left.candidate.address - right.candidate.address) * (sort === "addressDesc" ? -1 : 1);
+      const order = left.candidate.type === "number" && right.candidate.type === "number"
+        ? candidateLocation(left.candidate).localeCompare(candidateLocation(right.candidate))
+        : left.candidate.address - right.candidate.address;
+      return order * (sort === "addressDesc" ? -1 : 1);
     });
     const visible = new Set(records.map(([key]) => key));
     if (activeWorkspace === "candidates") for (const key of batchSelection) if (!visible.has(key)) batchSelection.delete(key);
@@ -884,7 +915,7 @@
       row.dataset.candidateKey = key;
       const address = document.createElement("span");
       address.className = "candidate-address";
-      address.textContent = formatAddress(entry.candidate.address);
+      address.textContent = candidateLocation(entry.candidate);
       const type = document.createElement("span");
       type.className = "candidate-type";
       type.textContent = entry.candidate.type;
@@ -925,7 +956,7 @@
       select.dataset.candidateKey = key;
       const address = document.createElement("span");
       address.className = "candidate-address";
-      address.textContent = formatAddress(entry.candidate.address);
+      address.textContent = candidateLocation(entry.candidate);
       const type = document.createElement("span");
       type.className = "candidate-type";
       type.textContent = entry.candidate.type;
@@ -934,7 +965,7 @@
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "watch-remove";
-      remove.setAttribute("aria-label", `Remove watch at ${formatAddress(entry.candidate.address)}`);
+      remove.setAttribute("aria-label", `Remove watch at ${candidateLocation(entry.candidate)}`);
       remove.textContent = "×";
       remove.addEventListener("click", () => {
         if (frozenCandidates.has(key)) {
@@ -965,7 +996,7 @@
           restoredInput = input;
         }
         input.placeholder = field === "label" ? "Watch label" : "Group";
-        input.setAttribute("aria-label", `${input.placeholder} for ${formatAddress(entry.candidate.address)}`);
+        input.setAttribute("aria-label", `${input.placeholder} for ${candidateLocation(entry.candidate)}`);
         input.addEventListener("change", () => {
           entry.candidate[field] = input.value;
           sendWorkspace("upsertWatch", { watch: entry.candidate });
@@ -1014,7 +1045,7 @@
     renderWatches();
 
     const searchedTypes = Array.isArray(payload?.searchedTypes) ? payload.searchedTypes : [];
-    elements.broaden.hidden = !(
+    elements.broaden.hidden = sessionInstance()?.kind === "javascript" || !(
       quickSession?.request?.refine === false &&
       ["exact", "range"].includes(quickSession?.request?.condition) &&
       searchedTypes.length > 0 &&
@@ -1024,12 +1055,15 @@
     if (payload?.allCandidates) {
       setQuickStatus("Baseline captured. Change the game value, choose a comparison, then run Next scan.", "ready");
     } else if (Number(payload?.total) === 0) {
-      setQuickStatus("No matches. Undo the last scan, widen the range, search all number formats, or reset.", "error");
+      setQuickStatus(payload.coverage?.numbers === 0 || payload.noAccessibleState ? "No accessible numeric state found. Choose another object or source and scan again." : "No matching values. Undo the last scan, widen the range, or reset.", "error");
     } else {
       setQuickStatus(
         `${candidateTotal.toLocaleString()} candidates remain; showing ${preview.length}.`,
         "ready",
       );
+    }
+    if (payload.coverage?.partial || payload.partial || payload.coverage?.complete === false) {
+      setQuickStatus(`${elements.quickStatus.textContent} Discovery was incomplete; choose a narrower object and scan again.`, "ready");
     }
     updateScanControls();
     refreshCandidateValues();
@@ -1056,7 +1090,7 @@
           ? "No recent progress. The scan may still be running; Cancel remains available."
           : progress?.total
           ? `Scanning… ${Number(progress.inspected).toLocaleString()} / ${Number(progress.total).toLocaleString()}`
-          : "Scanning memory…",
+          : "Scanning values…",
       );
     } else if (session?.status === "error" || session?.status === "disconnected") {
       setQuickStatus(session.error || "The scan could not continue.", "error");
@@ -1082,7 +1116,7 @@
       elements.advancedCandidates.replaceChildren();
       elements.advancedResultCount.textContent = "0";
       renderWatches();
-      setQuickStatus("Ready to scan this memory.");
+      setQuickStatus("Ready to scan this source.");
     }
     updateScanControls();
   }
@@ -1097,6 +1131,16 @@
   }
 
   function handlePagePayload(message, payload) {
+    if (payload?.kind === "javaScriptRoots" && rootsRequest?.requestId === payload.requestId && rootsRequest.frameId === message.frameId) {
+      const picker = ui("javascript-root");
+      picker.replaceChildren(new Option("Automatic discovery", ""));
+      for (const root of payload.roots || []) {
+        if (Array.isArray(root.path)) picker.append(new Option(root.displayPath || root.path.join("."), JSON.stringify(root.path)));
+      }
+      rootsRequest = null;
+      setQuickStatus(`${payload.roots?.length || 0} accessible objects available. Select one or use automatic discovery.`);
+      return;
+    }
     if (payload?.kind === "instanceCaptured") {
       addInstances(message.frameId, message.url, [payload.instance]);
       return;
@@ -1322,7 +1366,26 @@
 
   elements.condition.addEventListener("change", updateConditionControls);
   elements.advancedCondition.addEventListener("change", updateConditionControls);
-  elements.advancedInstance.addEventListener("change", updateRuntimeGuidance);
+  function sourceChanged() {
+    sourceChosen = true;
+    ui("quick-instance").value = elements.advancedInstance.value;
+    ui("javascript-root").replaceChildren(new Option("Automatic discovery", ""));
+    rootsRequest = null;
+    updateRuntimeGuidance();
+  }
+  elements.advancedInstance.addEventListener("change", sourceChanged);
+  ui("quick-instance").addEventListener("change", () => {
+    elements.advancedInstance.value = ui("quick-instance").value;
+    sourceChanged();
+  });
+  ui("javascript-load-roots").addEventListener("click", () => {
+    const record = advancedSelectedInstance();
+    if (!record || record.kind !== "javascript") return;
+    const requestId = nextRequestId("roots");
+    rootsRequest = { requestId, frameId: record.frameId };
+    send({ kind: "listJavaScriptRoots", requestId, instanceId: record.id }, record.frameId);
+    setQuickStatus("Looking for accessible objects…");
+  });
   for (const button of elements.viewButtons) {
     button.addEventListener("click", () => setActiveView(button.dataset.view));
   }
@@ -1370,11 +1433,12 @@
     const record = refine ? sessionInstance() : advanced ? advancedSelectedInstance() : selectedInstance();
     if (!record) {
       setQuickStatus(
-        refine ? "The memory used by this scan is no longer available. Reset and scan again." : "No WebAssembly memory is available.",
+        refine ? "The memory used by this scan is no longer available. Reset and scan again." : "No inspection source is available.",
         "error",
       );
       return false;
     }
+    if (record.kind === "javascript") { multiplier = 1; type = "smart"; alignment = "aligned"; }
     const needsValue = ["exact", "range", "increasedBy", "decreasedBy"].includes(condition);
     if (needsValue && rawValue.trim() === "") {
       setQuickStatus("Enter a value to scan for.", "error");
@@ -1402,6 +1466,7 @@
       alignment: refine ? previous?.alignment || "aligned" : alignment,
       type: refine ? previous?.type || "smart" : type,
       refine,
+      ...(record.kind === "javascript" ? { rootPath: refine ? previous?.rootPath : advanced && ui("javascript-root").value ? JSON.parse(ui("javascript-root").value) : undefined } : {}),
     };
     quickSession = {
       requestId,
@@ -1418,7 +1483,7 @@
       instanceId: record.id,
       ...request,
     }, record.frameId)) {
-      setQuickStatus(condition === "unknown" ? "Capturing the initial snapshot…" : "Scanning memory…");
+      setQuickStatus(condition === "unknown" ? "Capturing the initial snapshot…" : "Scanning values…");
       updateScanControls();
       return true;
     }

@@ -1,7 +1,8 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hack Engine practice game</title><link rel="stylesheet" href="practice.css"></head>
-<body><main><h1>Find your first value</h1><p>This local practice game keeps its score in WebAssembly memory. It does not send data anywhere.</p>
-<section><p>Score <strong id="score">100</strong></p><button id="spend">Spend 7 points</button><button id="restart">Restart practice</button></section>
+<body><main><h1>Find your first value</h1><p>This local practice game has separate WebAssembly and accessible JavaScript scores. It does not send data anywhere.</p>
+<section><p>WebAssembly score <strong id="score">100</strong></p><button id="spend">Spend 7 points</button><button id="restart">Restart practice</button></section>
+<section><p>JavaScript score <strong id="score-js">100</strong></p><button id="spend-js">Spend 7 JavaScript points</button><p>Choose JavaScript in Hack Engine’s source picker. In Advanced, browse objects and select <strong>hackEnginePracticeJS</strong> to narrow the scan.</p></section>
 <ol><li>Open Hack Engine from the browser toolbar and pin its panel.</li><li>Search for the score shown above using <strong>Exact value</strong>.</li><li>Spend 7 points, enter the new score, then choose <strong>Next scan</strong>.</li><li>Select the remaining address and write <strong>500</strong>.</li><li>Try <strong>Restore last write</strong>, or freeze the score and spend again.</li><li>Use <strong>Stop all freezes</strong> when you finish. A hidden practice tab stops freezing automatically.</li></ol>
 <p>To practice Undo scan, refine with a deliberately incorrect score, then select Undo scan.</p><p id="result" role="status">Loading practice memory…</p></main>
-<script src="../page-agent.js"></script><script src="practice-bridge.js"></script><script src="practice.js"></script></body></html>
+<script src="../javascript-source.js"></script><script src="../page-agent.js"></script><script src="practice-bridge.js"></script><script src="practice.js"></script></body></html>

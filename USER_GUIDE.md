@@ -1,12 +1,12 @@
 # Hack Engine user guide
 
-Hack Engine finds, watches, and edits numeric values in WebAssembly memory used by embedded Ruffle players. Use it only with software and content you are authorized to inspect.
+Hack Engine finds, watches, and edits accessible numeric values in WebAssembly and JavaScript browser games. Use it only with software and content you are authorized to inspect.
 
 ## Getting started
 
-1. Open or reload the page containing the Ruffle player after installing Hack Engine. Capture must happen before Ruffle creates its WebAssembly instance.
+1. Open or reload the game page after installing Hack Engine. Capture must happen before the game creates its WebAssembly instance.
 2. Open Hack Engine from the browser toolbar.
-3. Enter the displayed value and choose **First scan**. The Simple view selects likely numeric representations from public Ruffle metadata.
+3. Enter the displayed value and choose **First scan**. Choose the detected WebAssembly memory or JavaScript objects. Ruffle hints apply only to identified Ruffle modules.
 4. Change the value in the game, choose the new exact value or a comparison such as **Changed**, then choose **Next scan**.
 5. Select a candidate. Selection adds it to the shared watch list automatically.
 6. Enter a replacement and choose **Write value**. Use **Freeze** only when the game repeatedly restores the address.
@@ -33,7 +33,7 @@ If the Simple scan does not find the value, try **All numeric types** in Advance
 
 ## Why a displayed value may not appear
 
-A value can be rounded for display, duplicated, recalculated every frame, encoded, split across fields, held in JavaScript rather than WebAssembly memory, or stored in an unsupported object representation. Use a small range for rounded values and comparison scans when the initial representation is unknown.
+A value can be rounded for display, duplicated, recalculated every frame, encoded, split across fields, held in private JavaScript variables, or stored in an unsupported object representation. Use a small range for rounded values and comparison scans when the initial representation is unknown.
 
 ## Writes, restored values, and freezes
 
@@ -55,14 +55,24 @@ Scans and writes run locally. Hack Engine does not transmit browsing activity or
 
 **Undo scan** restores the candidates and comparison baseline from one completed refinement. Cancelling a refinement preserves the previous completed scan. Undo does not reverse gameplay. A new First scan replaces the previous session.
 
-**Restore last write** restores the previous bytes only while the same game document and memory are alive and the address still contains the value Hack Engine wrote. If the game has changed it, restoration is refused. This is not a game-state rollback.
+**Restore last write** restores the previous value only while the same live target exists and still contains the value Hack Engine wrote. If the game has changed it, restoration is refused. This is not a game-state rollback.
 
 **Stop all freezes** stops every freeze in the inspected tab. Freezes also stop when the game becomes hidden, the page leaves, or the extension connection is lost. Re-enable them explicitly after returning to the game. Background continuous freezing is not supported.
 
-**Saved workspaces** stores up to 30 named watch lists and scan settings locally. Import/export accepts up to 256 watches in a file smaller than 1 MiB. Loading opens an unverified preview. Select the correct live memory, verify that the addresses still describe the intended values, and choose **Use verified addresses**. No write or freeze is replayed. Import accepts only the current `hack-engine-workspace` version 2 format. Earlier inspector exports are unsupported; recreate those watches in Advanced and export a current workspace. Saved scan settings apply immediately to a fresh scan or after resetting the current one. Deleting a saved copy leaves live watches intact.
+**Saved workspaces** stores up to 30 named watch lists and scan settings locally. Import/export accepts up to 256 watches in a file smaller than 1 MiB. Loading opens an unverified preview. Select the correct live sources, verify that addresses/property paths still describe the intended values, and choose **Use verified values**. JavaScript paths must resolve successfully before watches are applied. No write or freeze is replayed. Exports use `hack-engine-workspace` version 3. Imports accept version 3 and migrate version 2 WebAssembly workspaces. JavaScript object identities are never exported; paths are rediscovery hints. Earlier inspector exports are unsupported; recreate those watches in Advanced and export a current workspace. Saved scan settings apply immediately to a fresh scan or after resetting the current one. Deleting a saved copy leaves live watches intact.
 
 The game/tab label remains bound to the inspected tab. Open Hack Engine from another game's toolbar to inspect that game separately. Popup closure and background restarts recover live sessions, but reloading a game creates a new memory identity and invalidates old live addresses.
 
 Scans are limited to captured memories of at most 256 MiB. Snapshot scans check available site storage before starting; if storage is unavailable, the error explains the limit and a failed refinement retains its previous results. Reset releases the current scan and its undo checkpoint. Private/incognito windows are excluded from this candidate.
 
-Choose **Open practice game** to learn the complete workflow using bundled local WebAssembly memory, without an external website or account.
+Choose **Open practice game** to learn the complete workflow using bundled local WebAssembly memory and a JavaScript score, without an external website or account.
+
+## JavaScript discovery
+
+Select **JavaScript objects** for reachable numeric own properties in plain objects, arrays, and numeric typed arrays. First scan discovers available values; subsequent scans filter those same live properties. Advanced offers an object picker; it accepts selections, never executable expressions. Number format, alignment, scaling, and manual byte addresses apply only to WebAssembly.
+
+Discovery skips ordinary getters and browser/DOM internals. JavaScript Proxy inspection traps can still execute; this is not an isolated debugger. Closures, module-private state, class instances, Map/Set contents, BigInt, workers, and server state are not searched.
+
+Limits are eight object levels, 20,000 objects, and 100,000 inspected properties/elements per scan. Partial results are labelled; narrowing the root helps. The page retains at most 200,000 property handles across scans and reclaims stale ones; reload if that ceiling is reached. WebAssembly scans retain their 256 MiB limit.
+
+Read-only values can be watched but cannot be edited. Typed-array writes must fit their storage exactly. Deleting a property, replacing its object, or changing it to an accessor invalidates the old handle when observed. Reloading invalidates every old handle. The extension cannot detect a property being deleted and recreated between observations.

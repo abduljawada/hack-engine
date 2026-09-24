@@ -19,9 +19,10 @@
       <div class="session-actions"><button type="button" data-action="load">Load preview</button><button type="button" data-action="delete">Delete saved copy</button></div>
       <div data-preview hidden>
         <p data-preview-summary></p><pre data-preview-values></pre>
-        <label>Current game memory <select data-target></select></label>
-        <label class="verification"><input type="checkbox" data-verified> I have verified these addresses belong to the selected game session.</label>
-        <button type="button" data-action="apply">Use verified addresses</button>
+        <label>Current WebAssembly memory <select data-target></select></label>
+        <label>Current JavaScript source <select data-js-target></select></label>
+        <label class="verification"><input type="checkbox" data-verified> I have verified these values belong to the selected game session.</label>
+        <button type="button" data-action="apply">Use verified values</button>
       </div>
       <input data-file type="file" accept="application/json,.json" hidden>
     </details>
@@ -65,16 +66,20 @@
     el("[data-count]").textContent = String(workspace.frozenKeys?.length || 0);
   }
   function renderTargets() {
-    const select = el("[data-target]");
-    const selected = select.value;
-    select.replaceChildren();
-    for (const [key, record] of memories) {
-      const option = document.createElement("option");
-      option.value = key;
-      option.textContent = `${record.looksLikeRuffle ? "Ruffle" : "WASM"} · frame ${record.frameId} · ${(record.memoryBytes / 1048576).toFixed(1)} MiB · ${record.id.slice(-8)}`;
-      select.append(option);
+    for (const javascript of [false, true]) {
+      const select = el(javascript ? "[data-js-target]" : "[data-target]");
+      const selected = select.value;
+      select.replaceChildren();
+      for (const [key, record] of memories) {
+        if ((record.kind === "javascript") !== javascript) continue;
+        const option = document.createElement("option");
+        option.value = key;
+        option.textContent = javascript ? `JavaScript · frame ${record.frameId} · ${record.id.slice(-8)}` : `${record.looksLikeRuffle ? "Ruffle" : "WASM"} · frame ${record.frameId} · ${(record.memoryBytes / 1048576).toFixed(1)} MiB · ${record.id.slice(-8)}`;
+        select.append(option);
+      }
+      if (memories.has(selected)) select.value = selected;
+      select.parentElement.hidden = Boolean(staged) && !staged.watches.some((watch) => (watch.kind === "javascript") === javascript);
     }
-    if (memories.has(selected)) select.value = selected;
     el("[data-verified]").checked = false;
   }
   function connect() {
@@ -106,10 +111,28 @@
         }
         if (message.kind === "frameConnected") send({ kind: "listInstances" }, message.frameId);
         if (message.kind === "frameDisconnected") {
+          if (pendingImport) { pendingImport = null; action("apply").disabled = false; notice("Game disconnected; preview and verify the workspace again."); }
           for (const [key, record] of memories) if (record.frameId === message.frameId) memories.delete(key);
           renderTargets();
         }
         const payload = message.payload;
+        if (pendingImport?.resolving && payload?.requestId === pendingImport.requestId) {
+          if (payload.kind === "error") {
+            pendingImport = null; action("apply").disabled = false;
+          } else if (payload.kind === "javaScriptPathsResolved") {
+            const imported = pendingImport;
+            const entries = payload.entries || [];
+            if (message.frameId !== imported.jsRecord.frameId || payload.instanceId !== imported.jsRecord.id || !memories.has(`${message.frameId}:${payload.instanceId}`) || payload.errors?.length || entries.length !== imported.javascript.length || entries.some((entry, index) => !Number.isSafeInteger(entry.address) || entry.address < 0 || entry.type !== "number" || entry.kind !== "javascript" || JSON.stringify(entry.path) !== JSON.stringify(imported.javascript[index].path))) {
+              pendingImport = null; action("apply").disabled = false;
+              notice("Some JavaScript paths could not be resolved in this session. Nothing was imported; check the game and preview again.");
+            } else {
+              imported.resolving = false;
+              const watches = imported.watches.concat(entries.map((entry, index) => ({ ...imported.javascript[index], ...entry, frameId: message.frameId, instanceId: payload.instanceId })));
+              port.postMessage({ kind: "workspaceCommand", requestId: imported.requestId, action: "mergeWatches", watches });
+              notice("Applying verified watches…");
+            }
+          }
+        }
         if (message.kind === "pageMessage" && ["instanceList", "instanceCaptured"].includes(payload?.kind)) {
           if (payload.kind === "instanceList") {
             for (const [key, record] of memories) if (record.frameId === message.frameId) memories.delete(key);
@@ -121,7 +144,7 @@
         }
         if (String(payload?.requestId || "").startsWith("quick:tools:")) {
           if (payload.kind === "error") notice(payload.message);
-          if (payload.kind === "writeRestored") notice("Previous bytes restored. This does not roll back the game's overall state.");
+          if (payload.kind === "writeRestored") notice("Previous value restored. This does not roll back the game's overall state.");
           if (payload.kind === "scanResults") notice("Previous scan restored.");
         }
         refresh();
@@ -139,16 +162,22 @@
     } catch { port = null; reconnectTimer = setTimeout(connect, 1000); }
   }
   function validate(payload) {
-    if (payload?.format !== "hack-engine-workspace" || payload.version !== 2) throw new Error("Unsupported workspace format.");
+    if (payload?.format !== "hack-engine-workspace" || ![2, 3].includes(payload.version)) throw new Error("Unsupported workspace format.");
     if (!Array.isArray(payload.watches) || payload.watches.length > 256) throw new Error("A workspace supports up to 256 watches.");
     const watches = payload.watches.map((watch) => {
+      if (payload.version === 3 && watch?.kind === "javascript") {
+        if (watch.type !== "number" || !Array.isArray(watch.path) || !watch.path.length || watch.path.length > 9 || watch.path.some((part) => typeof part !== "string" || part.length > 4096)) throw new Error("The workspace contains an invalid JavaScript property path.");
+        return { kind: "javascript", type: "number", path: [...watch.path], displayPath: typeof watch.displayPath === "string" ? watch.displayPath.slice(0, 4096) : watch.path.join("."), multiplier: 1,
+          label: String(watch.label || "").slice(0, 80), group: String(watch.group || "").slice(0, 80) };
+      }
+      if (watch?.kind && watch.kind !== "wasm") throw new Error("The workspace contains an unsupported source kind.");
       if (!types.has(watch?.type) || !Number.isSafeInteger(watch.address) || watch.address < 0 || !Number.isFinite(watch.multiplier ?? 1) || (watch.multiplier ?? 1) <= 0) throw new Error("The workspace contains an invalid address or number format.");
-      return { type: watch.type, address: watch.address, multiplier: watch.multiplier ?? 1,
+      return { kind: "wasm", type: watch.type, address: watch.address, multiplier: watch.multiplier ?? 1,
         label: String(watch.label || "").slice(0, 80), group: String(watch.group || "").slice(0, 80) };
     });
-    return { format: "hack-engine-workspace", version: 2, name: String(payload.name || "Imported workspace").slice(0, 80), watches,
+    return { format: "hack-engine-workspace", version: 3, name: String(payload.name || "Imported workspace").slice(0, 80), watches,
       settings: payload.settings && typeof payload.settings === "object" ? {
-        type: [...types, "smart", "auto"].includes(payload.settings.type) ? payload.settings.type : "smart",
+        type: [...types, "smart", "auto", "number"].includes(payload.settings.type) ? payload.settings.type : "smart",
         alignment: payload.settings.alignment === "byte" ? "byte" : "aligned",
         multiplier: Number.isFinite(payload.settings.multiplier) && payload.settings.multiplier > 0 ? payload.settings.multiplier : 1,
       } : { type: "smart", alignment: "aligned", multiplier: 1 } };
@@ -157,7 +186,7 @@
     const watches = new Map((workspace.watches || []).map((watch) => [watchKey(watch), watch]));
     for (const [key, watch] of pendingWatches) watches.set(key, watch);
     for (const key of removedWatches) watches.delete(key);
-    return validate({ format: "hack-engine-workspace", version: 2, name: el("[data-name]").value.trim() || tab?.title || "My game",
+    return validate({ format: "hack-engine-workspace", version: 3, name: el("[data-name]").value.trim() || tab?.title || "My game",
       watches: [...watches.values()], settings: session?.request });
   }
   async function saved() { return (await api.storage.local.get("savedWorkspaces")).savedWorkspaces || {}; }
@@ -169,14 +198,16 @@
     for (const [id, value] of Object.entries(items)) select.add(new Option(value.name, id));
   }
   function preview(payload) {
+    if (pendingImport) throw new Error("Wait for the current import to finish.");
     staged = validate(payload);
     el("[data-preview]").hidden = false;
     host.querySelector("details").open = true;
-    el("[data-preview-summary]").textContent = `${staged.name}: ${staged.watches.length} unverified addresses. Reloaded games can move values to different addresses.`;
-    el("[data-preview-values]").textContent = staged.watches.map((watch) => `${watch.label || "Watch"} · ${watch.type} · 0x${watch.address.toString(16)}`).join("\n");
+    el("[data-preview-summary]").textContent = `${staged.name}: ${staged.watches.length} unverified values. Addresses and JavaScript paths must be checked in the current game.`;
+    el("[data-preview-values]").textContent = staged.watches.map((watch) => `${watch.label || "Watch"} · ${watch.type} · ${watch.kind === "javascript" ? watch.displayPath : `0x${watch.address.toString(16)}`}`).join("\n");
     renderTargets();
     notice("Preview only. No values or freezes have been applied.");
   }
+  for (const selector of ["[data-target]", "[data-js-target]"]) el(selector).addEventListener("change", () => { el("[data-verified]").checked = false; });
   host.addEventListener("click", async (event) => {
     const name = event.target.closest("[data-action]")?.dataset.action;
     try {
@@ -207,16 +238,29 @@
       }
       if (name === "import") el("[data-file]").click();
       if (name === "apply") {
+        if (pendingImport) return;
         if (!port) throw new Error("Wait for the game connection to recover.");
+        if (!staged || !el("[data-verified]").checked) throw new Error("Select the current game sources and verify their values first.");
         const record = memories.get(el("[data-target]").value);
-        if (!staged || !record || !el("[data-verified]").checked) throw new Error("Select the current game and verify its addresses first.");
+        const jsRecord = memories.get(el("[data-js-target]").value);
+        const wasm = staged.watches.filter((watch) => watch.kind !== "javascript");
+        const javascript = staged.watches.filter((watch) => watch.kind === "javascript");
+        if (wasm.length && (!record || record.kind === "javascript")) throw new Error("Select a current WebAssembly memory.");
+        if (javascript.length && jsRecord?.kind !== "javascript") throw new Error("Select a current JavaScript source.");
         const widths = { i8: 1, u8: 1, i16: 2, u16: 2, i32: 4, u32: 4, f32: 4, f64: 8 };
-        if (staged.watches.some((watch) => watch.address + widths[watch.type] > record.memoryBytes)) throw new Error("An address is outside this game's memory.");
+        if (wasm.some((watch) => watch.address + widths[watch.type] > record.memoryBytes)) throw new Error("An address is outside this game's memory.");
         const id = requestId();
-        pendingImport = { requestId: id, settings: staged.settings };
+        pendingImport = { requestId: id, settings: staged.settings, javascript, jsRecord,
+          watches: wasm.map((watch) => ({ ...watch, frameId: record.frameId, instanceId: record.id })) };
         action("apply").disabled = true;
-        port.postMessage({ kind: "workspaceCommand", requestId: id, action: "mergeWatches", watches: staged.watches.map((watch) => ({ ...watch, frameId: record.frameId, instanceId: record.id })) });
-        notice("Applying verified watches…");
+        if (javascript.length) {
+          pendingImport.resolving = true;
+          send({ kind: "resolveJavaScriptPaths", requestId: id, instanceId: jsRecord.id, paths: javascript.map((watch) => watch.path) }, jsRecord.frameId);
+          notice("Resolving JavaScript paths in the selected game…");
+        } else {
+          port.postMessage({ kind: "workspaceCommand", requestId: id, action: "mergeWatches", watches: pendingImport.watches });
+          notice("Applying verified watches…");
+        }
       }
     } catch (error) { pendingImport = null; action("apply").disabled = false; notice(error.message || String(error)); }
   });

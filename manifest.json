@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Hack Engine",
-  "version": "1.1.0",
-  "description": "Inspect, watch, and edit WebAssembly memory used by embedded Ruffle players.",
+  "version": "1.2.0",
+  "description": "Find, watch, and edit accessible numeric state in WebAssembly and JavaScript browser games.",
   "homepage_url": "https://abduljawada.github.io/hack-engine/",
   "permissions": [
     "tabs",
@@ -46,6 +46,7 @@
         "<all_urls>"
       ],
       "js": [
+        "javascript-source.js",
         "page-agent.js"
       ],
       "run_at": "document_start",

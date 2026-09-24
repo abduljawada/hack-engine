@@ -142,3 +142,27 @@ test("transient diagnostics are bounded and keep watched entries", async () => {
   assert.equal(Object.keys(entries).length, 257);
   assert.equal(entries[diagnosticKey].requestId, "write:0");
 });
+
+test("mixed JavaScript and Wasm watches survive recovery and lose stale document identities", async () => {
+  const store = {};
+  let bg = background(store); await tick();
+  const ui = port("hack-popup:77"); bg.connect(ui);
+  const jsWatch = { kind: "javascript", frameId: 0, instanceId: "doc-A.js", type: "number", address: 1, path: ["game", "score"], displayPath: "game.score", label: "JS score" };
+  ui.onMessage.emit({ kind: "workspaceCommand", action: "mergeWatches", watches: [watch, jsWatch] });
+  assert.equal(workspaceState(ui).watches.length, 2);
+  assert.equal(workspaceState(ui).watches[1].kind, "javascript");
+  assert.equal(workspaceState(ui).watches[1].multiplier, 1);
+  await tick();
+  bg = background(store); await tick();
+  const reopened = port("hack-popup:77"); bg.connect(reopened);
+  const bridge = port("ruffle-frame-bridge", { tab: { id: 77 }, frameId: 0 }); bg.connect(bridge);
+  const sameDocument = state(); sameDocument.payload.instances.push({ id: "doc-A.js", kind: "javascript" });
+  bridge.onMessage.emit(sameDocument);
+  assert.equal(workspaceState(reopened).watches.length, 2);
+  reopened.onMessage.emit({ kind: "routeCommand", frameId: 0, payload: { kind: "resolveJavaScriptPaths", requestId: "resolve:1", instanceId: "doc-A.js", paths: [["game", "score"]] } });
+  assert.equal(bridge.sent.at(-1).payload.kind, "resolveJavaScriptPaths");
+  bridge.onMessage.emit({ kind: "pageMessage", payload: { kind: "javaScriptPathsResolved", requestId: "resolve:1", instanceId: "doc-A.js", entries: [jsWatch], errors: [] } });
+  assert.equal(reopened.sent.at(-1).payload.entries[0].displayPath, "game.score");
+  bridge.onMessage.emit(state("doc-B.1"));
+  assert.equal(workspaceState(reopened).watches.length, 0);
+});

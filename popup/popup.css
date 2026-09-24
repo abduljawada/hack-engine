@@ -451,3 +451,8 @@ main { container-type: inline-size; }
   .session-badge { white-space: normal; }
   .workspace-pane button { overflow-wrap: anywhere; }
 }
+
+/* Property paths may be much longer than memory addresses. */
+.candidate-address, #selected-address, #advanced-selected-address { min-width: 0; overflow-wrap: anywhere; }
+#quick-instance-label { display: grid; gap: 5px; margin-bottom: 10px; }
+#javascript-root-controls { display: grid; gap: 8px; }

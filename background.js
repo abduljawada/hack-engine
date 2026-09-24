@@ -81,11 +81,12 @@
   }
 
   function normalizeWatch(watch) {
-    const multiplier = Number(watch?.multiplier);
+    const javascript = watch?.kind === "javascript";
+    const multiplier = javascript ? 1 : Number(watch?.multiplier);
     if (
       !Number.isInteger(watch?.frameId) ||
       typeof watch.instanceId !== "string" ||
-      !["i8", "u8", "i16", "u16", "i32", "u32", "f32", "f64"].includes(watch.type) ||
+      (javascript ? watch.type !== "number" || !Array.isArray(watch.path) || !watch.path.length || watch.path.length > 9 || watch.path.some((part) => typeof part !== "string") : !["i8", "u8", "i16", "u16", "i32", "u32", "f32", "f64"].includes(watch.type)) ||
       !Number.isSafeInteger(watch.address) ||
       watch.address < 0 ||
       !Number.isFinite(multiplier) ||
@@ -95,6 +96,8 @@
     }
     return {
       key: watchKey(watch),
+      kind: javascript ? "javascript" : "wasm",
+      ...(javascript ? { path: [...watch.path], displayPath: typeof watch.displayPath === "string" ? watch.displayPath : watch.path.join(".") } : {}),
       frameId: watch.frameId,
       instanceId: watch.instanceId,
       type: watch.type,
@@ -179,6 +182,7 @@
         multiplier: payload.multiplier,
         alignment: payload.alignment,
         type: payload.type,
+        rootPath: payload.rootPath,
         refine: Boolean(payload.refine),
       },
       progress: null,

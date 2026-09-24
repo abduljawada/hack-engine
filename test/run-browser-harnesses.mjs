@@ -7,6 +7,8 @@ import { join } from "node:path";
 const chromePath = browserPath("chrome");
 const baseUrl = process.argv[2] ?? "http://127.0.0.1:8765";
 const allHarnesses = [
+  ["JavaScript workflow", "/test/javascript-harness.html", 30000],
+  ["Wasm capture", "/test/wasm-capture-harness.html", 30000],
   ["recovery", "/test/recovery-harness.html", 90_000],
   ["exact scan", "/test/harness.html", 30_000],
   ["scan cancellation", "/test/scan-cancellation-harness.html", 90_000],

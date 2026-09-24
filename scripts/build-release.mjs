@@ -24,6 +24,7 @@ const runtimeEntries = [
   "background.js",
   "content-bridge.js",
   "page-agent.js",
+  "javascript-source.js",
   "workspace-controls.js",
   "workspace-controls.css",
   "practice",

@@ -14,7 +14,7 @@
           <h1>Hack Engine</h1>
           <div class="header-status" aria-live="polite">
             <span id="status-dot" class="status-dot searching" aria-hidden="true"></span>
-            <span id="status-title">Looking for Ruffle memory…</span>
+            <span id="status-title">Looking for game state…</span>
           </div>
         </div>
         <button
@@ -43,6 +43,7 @@
           <span id="automatic-badge" class="automatic-badge">Automatic</span>
         </div>
 
+        <label id="quick-instance-label" hidden>Inspection source<select id="quick-instance"></select></label>
         <div class="quick-form">
           <label>
             Condition
@@ -76,7 +77,7 @@
           <button id="reset-quick-scan" class="compact-action" type="button" hidden>Reset</button>
         </div>
 
-        <div id="quick-status" class="quick-status" aria-live="polite">Ready to scan this memory.</div>
+        <div id="quick-status" class="quick-status" aria-live="polite">Ready to scan this source.</div>
 
         <section id="quick-results" class="quick-results" hidden>
           <div class="results-heading">
@@ -114,13 +115,13 @@
         <div class="advanced-heading">
           <div>
             <span class="context-label">Advanced view</span>
-            <h2>Memory scan</h2>
+            <h2>Value scan</h2>
           </div>
           <span id="advanced-session-badge" class="session-badge">New scan</span>
         </div>
 
         <div class="runtime-guidance" aria-live="polite">
-          <div><span>Detected AVM type</span><strong id="advanced-avm-type">Unknown</strong></div>
+          <div><span>Runtime</span><strong id="advanced-avm-type">Unknown</strong></div>
           <div><span>Recommended variable types</span><strong id="advanced-recommended-types">All numeric types</strong></div>
           <p id="advanced-runtime-hint">AVM could not be determined. Automatic searches all numeric types.</p>
         </div>
@@ -174,11 +175,16 @@
               </select>
             </label>
           </div>
+          <div id="javascript-root-controls" hidden>
+            <label>Object to inspect<select id="javascript-root"><option value="">Automatic discovery</option></select></label>
+            <button id="javascript-load-roots" type="button">Find accessible objects</button>
+            <p class="preview-count">Discovery stops at eight levels, 20,000 objects, or 100,000 properties. A narrower object can reveal values beyond those limits.</p>
+          </div>
           <details class="advanced-options">
             <summary>More options</summary>
             <div>
               <label id="advanced-instance-label" hidden>
-                Captured memory
+                Inspection source
                 <select id="advanced-instance"></select>
               </label>
               <label>
@@ -208,7 +214,7 @@
 
           <section id="advanced-candidate-pane" class="workspace-pane">
             <div class="candidate-tools">
-              <input id="advanced-filter" type="search" placeholder="Filter address, value, or type" aria-label="Filter candidates" />
+              <input id="advanced-filter" type="search" placeholder="Filter path, address, value, or type" aria-label="Filter candidates" />
               <select id="advanced-sort" aria-label="Sort candidates">
                 <option value="recommended">Recommended types</option>
                 <option value="address">Address ↑</option><option value="addressDesc">Address ↓</option>
@@ -292,7 +298,7 @@
         </button>
       </div>
 
-      <footer>v1.1.0</footer>
+      <footer>v1.2.0</footer>
     </main>
     <script src="popup.js"></script>
   <script src="../workspace-controls.js"></script>
