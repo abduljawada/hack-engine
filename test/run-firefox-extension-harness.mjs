@@ -149,16 +149,26 @@ try {
     throw new Error("Firefox extension bridge harness did not complete within 30 seconds.");
   }
   const origin = `moz-extension://${testExtensionUuid}`;
-  await bidi.call("browsingContext.navigate", { context, url: `${origin}/practice/index.html`, wait: "complete" });
-  let practiceTab;
+  const fixtureUrl = new URL("/test/fixtures/game/index.html", harnessUrl).href;
+  await bidi.call("browsingContext.navigate", { context, url: fixtureUrl, wait: "complete" });
+  let fixtureReady = false;
   for (let attempt = 0; attempt < 100; attempt++) {
-    const result = await bidi.call("script.evaluate", { expression: "document.querySelector('#result')?.textContent?.startsWith('Ready') ? browser.tabs.getCurrent().then(tab => tab.id) : null", target: { context }, awaitPromise: true });
-    if (result.result?.type === "number") { practiceTab = result.result.value; break; }
+    const result = await readResult(bidi, context);
+    if (result?.startsWith("Ready")) { fixtureReady = true; break; }
     await delay(100);
   }
-  if (!practiceTab) throw new Error("Firefox practice game did not initialize.");
+  if (!fixtureReady) throw new Error("Firefox game test fixture did not initialize.");
   const controls = await bidi.call("browsingContext.create", { type: "tab", background: true });
-  await bidi.call("browsingContext.navigate", { context: controls.context, url: `${origin}/popup/popup.html?sidebar=1&tabId=${practiceTab}`, wait: "complete" });
+  const popupUrl = `${origin}/popup/popup.html?sidebar=1`;
+  await bidi.call("browsingContext.navigate", { context: controls.context, url: popupUrl, wait: "complete" });
+  const tabResult = await bidi.call("script.evaluate", {
+    expression: `browser.tabs.query({}).then(tabs => tabs.find(tab => tab.url === ${JSON.stringify(fixtureUrl)})?.id)`,
+    target: { context: controls.context },
+    awaitPromise: true,
+  });
+  const practiceTab = tabResult.result?.type === "number" ? tabResult.result.value : null;
+  if (!Number.isInteger(practiceTab)) throw new Error("Firefox game test fixture tab was not found.");
+  await bidi.call("browsingContext.navigate", { context: controls.context, url: `${popupUrl}&tabId=${practiceTab}`, wait: "complete" });
   const uiResult = await bidi.call("script.evaluate", { expression: extensionUiScenario, target: { context: controls.context }, awaitPromise: true });
   if (uiResult.type === "exception") throw new Error(uiResult.exceptionDetails.text);
   console.log(uiResult.result?.value);

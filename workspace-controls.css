@@ -7,4 +7,3 @@
 .session-tools :focus-visible { outline: 2px solid #8affcd; outline-offset: 3px; }
 .session-tools [hidden] { display: none !important; }
 .session-feedback:empty { display: none; }
-.session-tools .practice-action { margin-top: 10px; }

@@ -6,7 +6,6 @@
   const assert = (condition, text) => { if (!condition) throw new Error(text); };
   const click = (selector) => { assert($(selector), `Missing ${selector}`); $(selector).click(); };
   const set = (selector, value, event = "input") => { $(selector).value = value; $(selector).dispatchEvent(new Event(event)); };
-  const changes = () => popupHarnessState.commands.filter((command) => command.kind === "workspaceCommand");
   const reads = () => popupHarnessState.commands.filter((command) => command.payload?.kind === "readValues");
   const showCandidates = () => popupHarnessState.emitPagePayload({ kind: "scanResults", requestId: "quick:migration", instanceId: "memory-1", type: "i32", multiplier: 1, total: 1000,
     preview: [{ address: 16, type: "i32", value: 5 }, { address: 32, type: "i32", value: 15 }, { address: 48, type: "i32", value: 10 }], allCandidates: false,
@@ -16,41 +15,7 @@
     click('[data-view="advanced"]');
     click('[data-workspace="watches"]');
     assert(!$("#open-inspector"), "Legacy inspector launcher remains");
-    set("#manual-type", "i32", "change");
-    set("#manual-multiplier", "4");
-    for (const invalid of ["12junk", "0x10oops", "1e3", "-1", "1.5", "", "999999999999999999999", "4718591"]) {
-      const before = changes().length;
-      set("#manual-address", invalid);
-      click("#manual-add");
-      await settle();
-      assert(changes().length === before, `Invalid address accepted: ${invalid}`);
-      assert($("#manual-status").textContent.trim(), `Invalid address lacks feedback: ${invalid}`);
-    }
-    migrationState.holdReads = true;
-    set("#manual-address", "0x100");
-    const beforeManual = changes().length;
-    click("#manual-add");
-    await settle();
-    assert(reads().at(-1)?.payload.entries.some((entry) => entry.address === 256 && entry.type === "i32"), "Manual address was not read with explicit type");
-    assert(changes().length === beforeManual, "Manual address added before successful read");
-    migrationState.holdReads = false;
-    migrationState.heldReads.splice(0).forEach((respond) => respond());
-    await settle();
-    assert(migrationState.watches.length === 1 && migrationState.watches[0].address === 256 && migrationState.watches[0].multiplier === 4, "Valid hex address was not added with multiplier");
-    assert(!popupHarnessState.commands.some((command) => ["writeValue", "setFreeze"].includes(command.payload?.kind)), "Manual add wrote or froze memory");
-    migrationState.watches[0].label = "Health";
-    migrationState.watches[0].group = "Player";
-    publishMigrationWorkspace();
-    set("#manual-address", "256");
-    click("#manual-add");
-    await settle();
-    assert(migrationState.watches.length === 1 && migrationState.watches[0].label === "Health" && migrationState.watches[0].group === "Player", "Duplicate address lost metadata");
-    migrationState.failReads = true;
-    set("#manual-address", "512");
-    click("#manual-add");
-    await settle();
-    assert(migrationState.watches.length === 1, "Failed manual read added a watch");
-    migrationState.failReads = false;
+    assert(!$("#manual-address") && !$("#manual-add"), "Removed manual address controls remain");
 
     click('[data-workspace="candidates"]');
     showCandidates();
@@ -61,7 +26,7 @@
     assert(document.querySelectorAll(".advanced-candidate").length === 0, "Candidate filter failed");
     set("#advanced-filter", "");
     for (const row of document.querySelectorAll(".advanced-candidate")) { row.click(); await settle(); }
-    assert(migrationState.watches.length === 4, "Individual candidate selection did not add watches");
+    assert(migrationState.watches.length === 3, "Individual candidate selection did not add watches");
     for (const [view, prefix] of [["simple", "quick"], ["advanced", "advanced"]]) {
       click(`[data-view="${view}"]`);
       set(`#${prefix}-write-value`, "777");
@@ -79,14 +44,11 @@
       await settle();
     }
     click('[data-workspace="watches"]');
-    click("#watch-select-mode");
-    click("#watch-select-visible");
-    set("#batch-label", "");
-    set("#batch-group", "Tracked");
-    click("#batch-metadata");
+    assert(!$("#watch-select-mode") && !$("[aria-label^='Group for']"), "Removed watch selection or groups remain");
+    const labelInput = $("[aria-label^='Watch label']");
+    labelInput.value = "Updated health"; labelInput.dispatchEvent(new Event("change"));
     await settle();
-    assert(migrationState.watches.every((watch) => watch.group === "Tracked"), "Batch group not applied");
-    assert(migrationState.watches.find((watch) => watch.address === 256).label === "Health", "Blank batch label erased metadata");
+    assert(migrationState.watches[0].label === "Updated health", "Individual label edit was not saved");
     const key = migrationKey(migrationState.watches[0]);
     for (const [state, expected] of [["checking", "Checking"], ["verified", "250 ms"], ["restored", "Game restored"], ["rejected", "rejected"], ["unavailable", "Unavailable"]]) {
       migrationState.diagnostics = { [key]: { requestId: "quick:write-test", state, detail: `Timing detail ${state}` } };
@@ -131,31 +93,16 @@
     popupHarnessState.resetInstances();
     publishMigrationWorkspace();
     await settle();
-    migrationState.watches = Array.from({ length: 256 }, (_, index) => ({ frameId: 0, instanceId: "memory-1", type: "i32", multiplier: 1, address: 1024 + index * 4, label: "", group: "" }));
+    migrationState.watches = Array.from({ length: 256 }, (_, index) => ({ frameId: 0, instanceId: "memory-1", type: "i32", multiplier: 1, address: 1024 + index * 4, label: "" }));
     publishMigrationWorkspace();
-    set("#manual-address", "8192");
-    click("#manual-add");
-    await settle();
-    assert(migrationState.watches.length === 256, "Watch capacity exceeded");
-    assert(/limit|256|skip|full/i.test($("#manual-status").textContent), "Watch capacity failure lacks feedback");
     click('[data-workspace="candidates"]');
     showCandidates();
+    await settle();
+    click(".advanced-candidate");
+    await settle();
+    assert(migrationState.watches.length === 256, "Watch capacity exceeded");
+    assert(/limit|256|skip|full/i.test($("#advanced-status").textContent), "Watch capacity failure lacks feedback");
     click('[data-workspace="watches"]');
-    click("#watch-select-mode");
-    click("#watch-select-visible");
-    click('[data-workspace="watches"]');
-    click('[data-workspace="candidates"]');
-    assert(document.querySelectorAll('[data-batch-key]:checked').length === 0, "Workspace switch retained selection");
-    click('[data-workspace="watches"]');
-    click("#watch-select-mode");
-    click("#watch-select-visible");
-    popupHarnessState.emitPagePayload({ kind: "scanResults", requestId: "quick:replacement", instanceId: "memory-1", type: "i32", total: 1, preview: [{ address: 64, type: "i32", value: 8 }] });
-    assert(document.querySelectorAll('[data-batch-key]:checked').length === 0, "New result set retained selection");
-    click('[data-workspace="watches"]');
-    click("#watch-select-mode");
-    click("#watch-select-visible");
-    $("#advanced-instance").dispatchEvent(new Event("change"));
-    assert(document.querySelectorAll('[data-batch-key]:checked').length === 0, "Memory switch retained selection");
     const scanning = { requestId: "quick:stalled", status: "scanning", frameId: 0, instanceId: "memory-1", canRefine: true, progress: null };
     popupHarnessState.emitMessage({ kind: "quickSession", session: scanning });
     assert(migrationState.stalledCallbacks.length > 0, "Missing 15-second stalled scan timer");
@@ -178,6 +125,10 @@
     await settle();
     assert(!$("[data-action='save']") && !$("[data-action='import']"), "Removed saved-workspace controls remain");
     assert($("[data-action='restore']") && $("[data-action='stop']"), "Session recovery controls missing");
+    assert($("#quick-write").nextElementSibling.dataset.action === "restore" && $("#advanced-write").nextElementSibling.dataset.action === "restore", "Undo write is not beside Write");
+    assert($(".workspace-heading [data-action='stop']"), "Stop freezes is not beside Watches");
+    popupHarnessState.emitMessage({ kind: "workspaceState", workspace: { frozenKeys: [], lastWrite: null } });
+    assert([...document.querySelectorAll("[data-action='restore'], [data-action='stop']")].every((button) => button.hidden), "Unavailable recovery actions remain visible");
     popupHarnessState.emitMessage({ kind: "quickSession", session: { ...scanning, status: "complete", request: { type: "i32" }, results: { canUndo: true } } });
     const undo = $("#advanced-tools [data-action='undo']");
     assert(!undo.hidden && !undo.disabled, "Undo unavailable after a recoverable scan");
@@ -186,12 +137,12 @@
     popupHarnessState.emitMessage({ kind: "quickSession", session: null });
     assert(undo.hidden, "Undo remains visible after reset");
     popupHarnessState.emitMessage({ kind: "workspaceState", workspace: { frozenKeys: ["test"], lastWrite: { frameId: 0, instanceId: "memory-1", type: "i32", address: 64 } } });
-    assert(!$("[data-action='restore']").disabled && $("[data-count]").textContent === "1", "Recovery state did not update");
+    assert(!$("[data-action='restore']").hidden && !$("[data-action='stop']").hidden && !$("[data-action='restore']").disabled && $("[data-count]").textContent === "1", "Recovery state did not update");
     click('[data-action="restore"]');
     assert(popupHarnessState.commands.at(-1).payload.kind === "restoreWrite", "Restore did not reach the game");
     click('[data-action="stop"]');
     assert(popupHarnessState.commands.at(-1).payload.kind === "stopAllFreezes", "Stop freezes did not reach the game");
-    result.textContent = "PASS: Advanced manual addresses, batch boundaries, diagnostics/read recovery, capacity, stalled recovery, and session controls work.";
+    result.textContent = "PASS: Advanced candidate selection, individual labels, diagnostics/read recovery, capacity, stalled recovery, and session controls work.";
   } catch (error) {
     result.textContent = `FAIL: ${error.stack || error}`;
   }

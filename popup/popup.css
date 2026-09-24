@@ -304,19 +304,6 @@ select, input { font-size: 14px; }
 }
 .advanced-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr); gap: 8px; }
 .advanced-grid > label { min-width: 0; }
-.advanced-options {
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: rgb(17 21 29 / 55%);
-}
-.advanced-options summary {
-  padding: 9px 10px;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 700;
-}
-.advanced-options > div { display: grid; gap: 9px; padding: 0 10px 10px; }
 .advanced-workspace { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 11px; }
 .workspace-tabs {
   display: grid;
@@ -405,7 +392,7 @@ body.advanced-active .secondary-actions { display: none; }
 }
 
 .watch-metadata { grid-column: 1 / -1; display: flex; gap: 6px; width: 100%; }
-.watch-metadata input { min-width: 0; width: 50%; }
+.watch-metadata input { min-width: 0; width: 100%; }
 
 /* Keep the core scan readable in a narrow persistent panel. */
 body.sidebar-panel main { padding: 12px; }
@@ -430,23 +417,13 @@ main > .session-tools button,
 main > .session-tools input,
 main > .session-tools select { background: var(--surface); border-color: var(--line); border-radius: 7px; }
 
-.preview-count, .selected-feedback, .watch-detail, #manual-status {
+.preview-count, .selected-feedback, .watch-detail {
   color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere;
 }
 .selected-feedback:empty { display: none; }
-.manual-address-form { padding: 10px 0; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
-.manual-address-form summary { cursor: pointer; margin-bottom: 8px; }
-.manual-address-form label, .batch-tools label { display: grid; gap: 5px; min-width: 0; margin-block: 7px; }
-.manual-address-form input, .manual-address-form select, .batch-tools input { width: 100%; min-width: 0; box-sizing: border-box; }
-.batch-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 8px 0; }
-.batch-tools label { flex: 1 1 130px; }
-.batch-tools span { width: 100%; color: var(--muted); font-size: 11px; }
-.workspace-pane > button, .batch-tools button, #manual-add { padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; }
+.workspace-pane > button { padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; }
 .workspace-pane button:disabled { opacity: .5; cursor: default; }
 .workspace-pane > button[aria-pressed="true"] { border-color: var(--accent); }
-.batch-row { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: center; gap: 4px; }
-[data-batch-key] { width: 16px; height: 16px; accent-color: var(--accent); }
-.watch-row:has(> [data-batch-key]:not([hidden])) { grid-template-columns: 22px minmax(0, 1fr) 30px; }
 .watch-diagnostic { grid-column: 1 / -1; padding: 0 8px 6px; min-width: 0; }
 .watch-state { font-size: 11px; color: var(--accent); cursor: pointer; }
 .watch-detail { margin: 5px 0; }
@@ -466,8 +443,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .advanced-form:has(#advanced-value-label[hidden]) > label:first-child { grid-column: 1 / -1; }
 .value-fields:not(:has(> label:not([hidden]))) { display: none; }
 @media (max-width: 380px) {
-  .manual-address-form .advanced-grid { grid-template-columns: 1fr; }
-  .batch-tools { align-items: stretch; }
   .watch-metadata { flex-wrap: wrap; }
   .watch-metadata input { flex: 1 1 110px; }
 }
@@ -498,5 +473,10 @@ main { container-type: inline-size; }
 
 /* Property paths may be much longer than memory addresses. */
 .candidate-address, #selected-address, #advanced-selected-address { min-width: 0; overflow-wrap: anywhere; }
-#quick-instance-label { display: grid; gap: 5px; margin-bottom: 10px; }
+#quick-instance-label, #advanced-instance-label { display: grid; gap: 5px; margin-bottom: 10px; }
 #javascript-root-controls { display: grid; gap: 8px; }
+
+.workspace-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.workspace-heading .workspace-tabs { flex: 1 1 180px; margin-bottom: 0; }
+.stop-freezes { margin-top: 10px; }
+main > .session-tools:has(.session-feedback:empty) { display: none; }

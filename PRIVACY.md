@@ -2,7 +2,7 @@
 
 Candidate policy updated: September 24, 2026
 
-Hack Engine is a local browser developer tool for inspecting accessible numeric state in WebAssembly and JavaScript browser games. This policy describes the `1.2.5` release candidate.
+Hack Engine is a local browser developer tool for inspecting accessible numeric state in WebAssembly and JavaScript browser games. This policy describes the `1.2.6` release candidate.
 
 ## Information the extension handles
 

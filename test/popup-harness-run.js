@@ -95,7 +95,7 @@ async function checkJavaScriptSources() {
   ui("quick-instance").value = "0:js-1";
   ui("quick-instance").dispatchEvent(new Event("change"));
   assert(ui("advanced-instance").value === "0:js-1", "Source selectors must agree");
-  assert(ui("advanced-type").closest("label").hidden && document.querySelector(".manual-address-form").hidden, "JavaScript hides memory-only controls");
+  assert(ui("advanced-type").closest("label").hidden, "JavaScript hides memory-only controls");
   popupHarnessState.interceptCommand = ({ payload }, emit) => {
     if (payload?.kind === "listJavaScriptRoots") {
       emit({ kind: "javaScriptRoots", requestId: payload.requestId, roots: [{ path: ["game"], displayPath: "game" }] });
@@ -112,7 +112,6 @@ async function checkJavaScriptSources() {
   ui("javascript-load-roots").click();
   assert(ui("javascript-root").options.length === 2, "Object picker lists accessible roots");
   ui("javascript-root").value = '["game"]';
-  ui("advanced-multiplier").value = "100";
   ui("advanced-scan").click();
   await delay();
   const scan = popupHarnessState.commands.filter(({ payload }) => payload.kind === "memoryScan").at(-1).payload;
@@ -166,7 +165,6 @@ setTimeout(async () => {
     viewSwitcher.querySelector('[data-view="advanced"]').click();
     document.querySelector("#advanced-type").value = "f64";
     document.querySelector("#advanced-alignment").value = "byte";
-    document.querySelector("#advanced-multiplier").value = "4";
     document.querySelector("#advanced-value").value = "8";
     document.querySelector("#advanced-scan").click();
     await delay();
@@ -181,7 +179,7 @@ setTimeout(async () => {
       document.querySelector("#quick-tools").hidden &&
       !document.querySelector("#advanced-tools").hidden &&
       advancedCommand?.payload.alignment === "byte" &&
-      advancedCommand.payload.multiplier === 4 &&
+      advancedCommand.payload.multiplier === 1 &&
       advancedRow?.querySelector(".candidate-value")?.textContent === "9" &&
       advancedRow?.querySelector(".candidate-type")?.textContent === "f64" &&
       document.querySelector("#advanced-scan").textContent === "Next scan";
@@ -334,11 +332,6 @@ setTimeout(async () => {
     freezeCommand.payload.enabled === true &&
     document.querySelector("#quick-freeze").classList.contains("freeze-active");
 
-  popupHarnessState.closed = false;
-  document.querySelector("#refresh-connection").click();
-  await delay();
-  const refreshed = popupHarnessState.reloadedTabs.at(-1) === 77;
-
   document.querySelector("#how-it-works").click();
   await delay();
   const helpOpened =
@@ -347,7 +340,7 @@ setTimeout(async () => {
 
   const javascriptSources = await checkJavaScriptSources();
   popupHarnessResult.textContent =
-    javascriptSources && rendered && recommendedSorting && nativePopupStayedSimple && pinDocked && firstPopoutOpened && secondPopoutReused && automaticScan && liveCandidateRefresh && quickMinPreset && quickMaxPreset && typedActions && refreshed && helpOpened
+    javascriptSources && rendered && recommendedSorting && nativePopupStayedSimple && pinDocked && firstPopoutOpened && secondPopoutReused && automaticScan && liveCandidateRefresh && quickMinPreset && quickMaxPreset && typedActions && helpOpened
       ? "PASS: compact toolbar popup, live candidates, Firefox sidebar docking, pop-out reuse, and typed quick-scan actions work."
       : "FAIL: toolbar quick-scan behavior did not match the active Ruffle state.";
   } catch (error) { popupHarnessResult.textContent = `FAIL: ${error.stack || error}`; }

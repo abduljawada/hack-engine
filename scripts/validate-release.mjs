@@ -37,7 +37,7 @@ for (const browser of ["firefox", "chrome"]) {
   for (const path of walk(root)) {
     const relative = path.slice(root.length + 1);
     assert(!/(^|\/)(?:\._[^/]*|\.DS_Store)$/.test(relative), `${browser} package contains transfer metadata: ${relative}`);
-    assert(!/(^|\/)(test|docs|scripts|dist|devtools|node_modules|\.git)(\/|$)/.test(relative), `${browser} package contains development path: ${relative}`);
+    assert(!/(^|\/)(test|practice|docs|scripts|dist|devtools|node_modules|\.git)(\/|$)/.test(relative), `${browser} package contains development path: ${relative}`);
     if (path.endsWith(".js")) {
       const source = readFileSync(path, "utf8");
       assert(!/\beval\s*\(/.test(source), `${browser} package contains eval in ${relative}`);

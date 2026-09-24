@@ -104,7 +104,6 @@
       multiplier,
       address: watch.address,
       label: typeof watch.label === "string" ? watch.label.slice(0, 80) : "",
-      group: typeof watch.group === "string" ? watch.group.slice(0, 80) : "",
       hint: typeof watch.hint === "string" ? watch.hint : "",
       url: typeof watch.url === "string" ? watch.url : "",
     };
@@ -421,11 +420,8 @@
       return;
     }
 
-    const practiceTab = port.name.startsWith("hack-practice:") &&
-      port.sender?.url === extensionApi.runtime.getURL?.("practice/index.html")
-      ? Number(port.name.slice("hack-practice:".length)) : null;
-    if ((port.name !== "ruffle-frame-bridge" || !port.sender?.tab) && !Number.isSafeInteger(practiceTab)) return;
-    const tabId = practiceTab ?? port.sender.tab.id;
+    if (port.name !== "ruffle-frame-bridge" || !port.sender?.tab) return;
+    const tabId = port.sender.tab.id;
     const frameId = port.sender.frameId ?? 0;
     const key = bridgeKey(tabId, frameId);
     const entry = {

@@ -53,10 +53,6 @@
   let hasScanResults = false;
   let candidateTotal = 0;
   let diagnostics = {};
-  const batchSelection = new Set();
-  let batchMode = false;
-  const manualRequests = new Map();
-  const workspaceRequests = new Map();
   let scanWatchdog;
   let watchdogRequest = null;
   let watchdogProgress = null;
@@ -110,7 +106,6 @@
     advancedAlignment: document.querySelector("#advanced-alignment"),
     advancedInstance: document.querySelector("#advanced-instance"),
     advancedInstanceLabel: document.querySelector("#advanced-instance-label"),
-    advancedMultiplier: document.querySelector("#advanced-multiplier"),
     advancedScan: document.querySelector("#advanced-scan"),
     advancedCancel: document.querySelector("#cancel-advanced-scan"),
     advancedReset: document.querySelector("#reset-advanced-scan"),
@@ -134,7 +129,6 @@
     advancedWrite: document.querySelector("#advanced-write"),
     advancedFreeze: document.querySelector("#advanced-freeze"),
     popOut: document.querySelector("#pop-out-window"),
-    refreshConnection: document.querySelector("#refresh-connection"),
     howItWorks: document.querySelector("#how-it-works"),
   };
 
@@ -165,105 +159,6 @@
     for (const node of document.querySelectorAll(".selected-feedback")) node.textContent = state ? `${state.label}${state.detail ? ` · ${state.detail}` : ""}` : "";
   }
 
-  function clearBatchSelection() {
-    batchSelection.clear(); batchMode = false;
-    updateBatchTools();
-  }
-
-  function updateBatchTools() {
-    for (const [prefix, workspace] of [["watch", "watches"]]) {
-      const enabled = batchMode && activeWorkspace === workspace;
-      ui(`${prefix}-select-mode`).setAttribute("aria-pressed", String(enabled));
-      ui(`${prefix}-batch-tools`).hidden = !enabled;
-      ui(`${prefix}-selected-count`).textContent = `${enabled ? batchSelection.size : 0} selected`;
-    }
-    ui("batch-metadata").disabled = !port || batchSelection.size === 0;
-    for (const checkbox of document.querySelectorAll("[data-batch-key]")) {
-      checkbox.checked = batchSelection.has(checkbox.dataset.batchKey);
-      checkbox.hidden = !batchMode;
-    }
-  }
-
-  function toggleBatch(key) {
-    if (batchSelection.has(key)) batchSelection.delete(key); else batchSelection.add(key);
-    updateBatchTools();
-  }
-
-  function batchCheckbox(key, candidate) {
-    const checkbox = document.createElement("input"); checkbox.type = "checkbox";
-    checkbox.dataset.batchKey = key; checkbox.checked = batchSelection.has(key);
-    checkbox.setAttribute("aria-label", `Select ${candidate.type} at ${candidateLocation(candidate)}`);
-    checkbox.addEventListener("change", () => toggleBatch(key));
-    return checkbox;
-  }
-
-  function sendManagedWatches(watches, context, select = false) {
-    const requestId = nextRequestId("workspace");
-    workspaceRequests.set(requestId, context);
-    const options = select ? { requestId, watch: watches[0], select: true } : { requestId, watches };
-    if (!sendWorkspace(select ? "upsertWatch" : "mergeWatches", options)) {
-      workspaceRequests.delete(requestId);
-      setQuickStatus("Connection lost; watches were not changed.", "error");
-      return false;
-    }
-    return true;
-  }
-
-  function clearManualRequests(message) {
-    for (const request of manualRequests.values()) clearTimeout(request.timer);
-    manualRequests.clear(); ui("manual-add").disabled = false;
-    ui("manual-status").textContent = message;
-  }
-
-  function addManualAddress() {
-    const status = ui("manual-status");
-    try {
-      if (!port) throw new Error("Wait for the game connection to recover.");
-      const raw = ui("manual-address").value.trim();
-      if (!/^(?:0x[0-9a-f]+|[0-9]+)$/i.test(raw)) throw new Error("Enter a complete decimal or hexadecimal address.");
-      const address = Number(raw), type = ui("manual-type").value;
-      const record = instances.get(ui("manual-instance").value);
-      const multiplier = Number(ui("manual-multiplier").value);
-      const width = { i8: 1, u8: 1, i16: 2, u16: 2, i32: 4, u32: 4, f32: 4, f64: 8 }[type];
-      if (!record || !width) throw new Error("Choose current game memory and an explicit numeric type.");
-      if (!Number.isSafeInteger(address) || address < 0 || address + width > record.memoryBytes) throw new Error("Address is outside this game's memory.");
-      if (!Number.isFinite(multiplier) || multiplier <= 0) throw new Error("Multiplier must be a positive finite number.");
-      const candidate = { frameId: record.frameId, instanceId: record.id, address, type, multiplier };
-      const key = candidateKey(candidate);
-      if (!watchedCandidates.has(key) && watchedCandidates.size >= MAX_SHARED_WATCHES) throw new Error("The watch list is full (256 addresses).");
-      clearManualRequests("");
-      const requestId = nextRequestId("manual-read");
-      const timer = setTimeout(() => {
-        manualRequests.delete(requestId); ui("manual-add").disabled = false;
-        status.textContent = "Read timed out. Nothing was added; try again when the game responds.";
-      }, 10000);
-      manualRequests.set(requestId, { candidate, timer });
-      ui("manual-add").disabled = true; status.textContent = "Reading address…";
-      if (!send({ kind: "readValues", requestId, instanceId: record.id, entries: [{ id: key, address, type }] }, record.frameId)) clearManualRequests("Read could not be sent. Nothing was added.");
-    } catch (error) { status.textContent = error.message; }
-  }
-
-  function completeManualRead(message, payload) {
-    if (!["watchValues", "error"].includes(payload.kind)) return;
-    const request = manualRequests.get(payload.requestId);
-    clearTimeout(request.timer); manualRequests.delete(payload.requestId); ui("manual-add").disabled = false;
-    const candidate = request.candidate;
-    const key = candidateKey(candidate);
-    const value = payload.values?.find((value) => value.id === key);
-    if (message.frameId !== candidate.frameId || !instances.has(`${candidate.frameId}:${candidate.instanceId}`) || String(payload.instanceId ?? candidate.instanceId) !== candidate.instanceId) {
-      ui("manual-status").textContent = "Game memory changed. Read the address again."; return;
-    }
-    if (payload.kind === "error" || !value || value.error) {
-      ui("manual-status").textContent = payload.message || value?.error || "This address could not be read. Nothing was added."; return;
-    }
-    const existing = watchedCandidates.get(key);
-    const watch = existing ? { ...existing.candidate } : candidate;
-    watch.value = value.value; watch.displayValue = displayCandidateValue(value.value, watch.multiplier);
-    if (existing) updateCandidateValue(existing, value.value);
-    ui("manual-status").textContent = "Address read; adding verified watch…";
-    if (!sendManagedWatches([sharedWatch(watch)], "manual", true)) ui("manual-status").textContent = "Connection lost. Nothing was added; try again after reconnecting.";
-  }
-
   function updateScanWatchdog() {
     if (!port || quickSession?.status !== "scanning") {
       clearTimeout(scanWatchdog); watchdogRequest = null; watchdogProgress = null; stalledRequest = null; return;
@@ -282,26 +177,8 @@
   }
 
   function installAdvancedControls() {
-    ui("manual-add").addEventListener("click", addManualAddress);
-    for (const id of ["manual-instance", "advanced-instance"]) ui(id).addEventListener("change", () => {
-      clearBatchSelection(); clearManualRequests(""); renderCandidateLists(); renderWatches();
-    });
-    for (const [prefix, workspace] of [["watch", "watches"]]) {
-      ui(`${prefix}-select-mode`).addEventListener("click", () => {
-        batchMode = !batchMode; batchSelection.clear(); renderCandidateLists(); renderWatches();
-      });
-      ui(`${prefix}-select-visible`).addEventListener("click", () => {
-        const selector = "#advanced-watches [data-candidate-key]";
-        for (const node of document.querySelectorAll(selector)) batchSelection.add(node.dataset.candidateKey);
-        updateBatchTools();
-      });
-      ui(`${prefix}-clear-selection`).addEventListener("click", () => { batchSelection.clear(); updateBatchTools(); });
-    }
-    ui("batch-metadata").addEventListener("click", () => {
-      const label = ui("batch-label").value.trim(), group = ui("batch-group").value.trim();
-      if (!label && !group) { setQuickStatus("Enter a label or group; blank fields keep existing values."); return; }
-      const watches = [...batchSelection].map((key) => watchedCandidates.get(key)).filter(Boolean).map(({ candidate }) => ({ ...sharedWatch(candidate), ...(label ? { label } : {}), ...(group ? { group } : {}) }));
-      sendManagedWatches(watches, "metadata");
+    ui("advanced-instance").addEventListener("change", () => {
+      renderCandidateLists(); renderWatches();
     });
   }
 
@@ -555,7 +432,6 @@
   }
 
   function setActiveWorkspace(workspace) {
-    clearBatchSelection();
     activeWorkspace = workspace === "watches" ? "watches" : "candidates";
     for (const button of elements.workspaceButtons) {
       button.setAttribute("aria-selected", String(button.dataset.workspace === activeWorkspace));
@@ -633,12 +509,6 @@
       elements.advancedInstance.value = preferred ? `${preferred.frameId}:${preferred.id}` : "";
     }
     elements.advancedInstanceLabel.hidden = records.length <= 1;
-    const manual = ui("manual-instance");
-    const previousManual = manual.value;
-    manual.replaceChildren(...records.filter((record) => record.kind !== "javascript").map((record) => new Option(
-      `${record.looksLikeRuffle ? "Ruffle" : "WASM"} · frame ${record.frameId} · ${(record.memoryBytes / 1048576).toFixed(1)} MiB · ${record.id.slice(-8)}`,
-      `${record.frameId}:${record.id}`)));
-    if (instances.has(previousManual)) manual.value = previousManual;
     const simple = ui("quick-instance");
     simple.replaceChildren(...[...elements.advancedInstance.options].map((option) => new Option(option.textContent, option.value)));
     simple.value = elements.advancedInstance.value;
@@ -651,8 +521,6 @@
     const javascript = record?.kind === "javascript";
     elements.advancedType.closest("label").hidden = javascript;
     elements.advancedAlignment.closest("label").hidden = javascript;
-    elements.advancedMultiplier.closest("label").hidden = javascript;
-    document.querySelector(".manual-address-form").hidden = javascript;
     ui("javascript-root-controls").hidden = !javascript;
     ui("javascript-root").disabled = !!usesSession;
     ui("javascript-load-roots").disabled = !!usesSession;
@@ -672,7 +540,7 @@
       elements.advancedRuntimeHint.textContent = "Automatic searches Float64 for this runtime.";
     } else if (avmKind === "avm2") {
       elements.advancedAvmType.textContent = "AVM2";
-      elements.advancedRuntimeHint.textContent = "Start with Int32 or Uint32 for whole numbers, Float64 for decimals. Automatic narrows decimal searches to Float64 after applying the multiplier.";
+      elements.advancedRuntimeHint.textContent = "Start with Int32 or Uint32 for whole numbers, Float64 for decimals. Automatic narrows decimal searches to Float64.";
     } else {
       elements.advancedAvmType.textContent = "Unknown";
       elements.advancedRuntimeHint.textContent = "Automatic searches all numeric types in this WebAssembly memory.";
@@ -714,7 +582,6 @@
     elements.advancedAlignment.disabled = canRefine || scanning;
     elements.advancedInstance.disabled = canRefine || scanning;
     ui("quick-instance").disabled = canRefine || scanning;
-    elements.advancedMultiplier.disabled = canRefine || scanning;
     elements.advancedSessionBadge.textContent = scanning
       ? "Scanning"
       : canRefine
@@ -774,7 +641,6 @@
       multiplier: Number(candidate.multiplier) || 1,
       address: candidate.address,
       label: candidate.label || watchedCandidates.get(candidateKey(candidate))?.candidate.label || "",
-      group: candidate.group || watchedCandidates.get(candidateKey(candidate))?.candidate.group || "",
       hint: instance?.hint || "",
       url: instance?.url || "",
     };
@@ -815,7 +681,6 @@
       };
       candidate.multiplier = Number(watch.multiplier) || 1;
       candidate.label = watch.label || "";
-      candidate.group = watch.group || "";
       incoming.set(key, existing || { candidate, valueCells: new Set() });
     }
     watchedCandidates.clear();
@@ -833,7 +698,6 @@
     } else {
       selectedCandidate = null;
     }
-    for (const key of batchSelection) if (activeWorkspace === "watches" && !watchedCandidates.has(key)) batchSelection.delete(key);
     renderWatches();
     updateSelectionUI();
     refreshCandidateValues();
@@ -921,7 +785,6 @@
       row.addEventListener("click", () => selectCandidate(entry.candidate));
       elements.advancedCandidates.append(row);
     }
-    updateBatchTools();
     updateSelectionUI();
   }
 
@@ -956,7 +819,7 @@
       type.className = "candidate-type";
       type.textContent = entry.candidate.type;
       select.append(address, makeValueCell(entry), type);
-      select.addEventListener("click", () => batchMode ? toggleBatch(key) : selectCandidate(entry.candidate));
+      select.addEventListener("click", () => selectCandidate(entry.candidate));
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "watch-remove";
@@ -972,7 +835,6 @@
         sendWorkspace("removeWatch", { key });
       });
       row.append(select, remove);
-      if (batchMode && activeWorkspace === "watches") row.prepend(batchCheckbox(key, entry.candidate));
       const state = document.createElement("details"); state.className = "watch-diagnostic";
       state.dataset.watchKey = key;
       state.open = expanded.has(key);
@@ -981,7 +843,7 @@
       state.append(summary, detail); row.append(state);
       const metadata = document.createElement("div");
       metadata.className = "watch-metadata";
-      for (const field of ["label", "group"]) {
+      for (const field of ["label"]) {
         const input = document.createElement("input");
         input.type = "text"; input.maxLength = 80;
         input.dataset.metadataKey = key; input.dataset.metadataField = field;
@@ -990,7 +852,7 @@
           input.value = draft.value;
           restoredInput = input;
         }
-        input.placeholder = field === "label" ? "Watch label" : "Group";
+        input.placeholder = "Watch label";
         input.setAttribute("aria-label", `${input.placeholder} for ${candidateLocation(entry.candidate)}`);
         input.addEventListener("change", () => {
           entry.candidate[field] = input.value;
@@ -1008,14 +870,12 @@
     elements.advancedWatchCount.textContent = String(watchedCandidates.size);
     elements.advancedWatchEmpty.hidden = watchedCandidates.size > 0;
     elements.advancedWorkspace.hidden = false;
-    updateBatchTools();
     updateSelectionUI();
   }
 
   function renderResults(payload, frameId = quickSession?.frameId) {
     const resultIdentity = `${frameId}:${payload.instanceId}:${payload.requestId}`;
     const retainedSelection = renderedResult === resultIdentity ? selectedCandidate : null;
-    if (renderedResult !== resultIdentity) clearBatchSelection();
     renderedResult = resultIdentity;
     const preview = Array.isArray(payload?.preview)
       ? payload.preview.slice(0, MAX_ADVANCED_CANDIDATES)
@@ -1081,7 +941,6 @@
       elements.advancedMaxValue.value = session.request.rawMaxValue ?? elements.advancedMaxValue.value;
       elements.advancedType.value = session.request.type || "smart";
       elements.advancedAlignment.value = session.request.alignment || "aligned";
-      elements.advancedMultiplier.value = session.request.multiplier ?? 1;
     }
     if (session?.status === "scanning") {
       const progress = session.progress;
@@ -1099,7 +958,6 @@
     } else if (session?.results) {
       renderResults(session.results, session.frameId);
     } else if (!session) {
-      clearBatchSelection();
       renderedResult = null;
       clearCandidateRefreshState();
       hasScanResults = false;
@@ -1144,10 +1002,6 @@
         if (record.frameId === message.frameId) instances.delete(key);
       }
       addInstances(message.frameId, message.url, payload.instances);
-      return;
-    }
-    if (manualRequests.has(payload?.requestId)) {
-      completeManualRead(message, payload);
       return;
     }
     if (!String(payload?.requestId || "").startsWith("quick:")) {
@@ -1262,14 +1116,7 @@
   }
 
   function handlePortMessage(message) {
-    if (message?.kind === "workspaceCommandResult") {
-      const context = workspaceRequests.get(message.requestId);
-      if (!context) return;
-      workspaceRequests.delete(message.requestId);
-      const text = `${message.accepted} ${context === "metadata" ? "updated" : "accepted"}; ${message.skipped} skipped${message.skipped ? " (invalid address or watch limit reached)" : ""}.`;
-      setQuickStatus(text, message.skipped ? "error" : "ready");
-      if (context === "manual") ui("manual-status").textContent = text;
-    } else if (message?.kind === "quickSession") {
+    if (message?.kind === "quickSession") {
       applyQuickSession(message.session);
     } else if (message?.kind === "workspaceState") {
       applySharedWorkspace(message.workspace);
@@ -1279,8 +1126,6 @@
       for (const entry of [...candidateRecords.values(), ...watchedCandidates.values()]) {
         if (entry.candidate.frameId === message.frameId) markUnavailable(entry, "Game memory disconnected. Reconnect to read this address.");
       }
-      clearBatchSelection();
-      clearManualRequests("Game memory disconnected. Read the address again.");
       for (const [key, record] of instances) {
         if (record.frameId === message.frameId) {
           instances.delete(key);
@@ -1327,7 +1172,6 @@
         if (port !== nextPort) return;
         port = null;
         clearTimeout(scanWatchdog);
-        clearManualRequests("Connection lost. Read the address again after reconnecting.");
         for (const entry of [...candidateRecords.values(), ...watchedCandidates.values()]) markUnavailable(entry, "Connection lost.");
         setQuickStatus("Reconnecting to this game…", "error");
         updateScanControls();
@@ -1493,7 +1337,7 @@
       condition: elements.advancedCondition.value,
       rawValue: elements.advancedValue.value,
       rawMaxValue: elements.advancedMaxValue.value,
-      multiplier: elements.advancedMultiplier.value,
+      multiplier: 1,
       alignment: elements.advancedAlignment.value,
       type: elements.advancedType.value,
       advanced: true,
@@ -1514,7 +1358,6 @@
   elements.advancedCancel.addEventListener("click", cancelScan);
 
   function resetScan() {
-    clearBatchSelection();
     renderedResult = null;
     const record = sessionInstance() || selectedInstance();
     if (!record) {
@@ -1623,14 +1466,6 @@
   elements.freeze.addEventListener("click", () => toggleFreeze(elements.writeValue));
   elements.advancedFreeze.addEventListener("click", () => toggleFreeze(elements.advancedWriteValue));
 
-  elements.refreshConnection.addEventListener("click", async () => {
-    if (!activeTab?.id) {
-      return;
-    }
-    elements.statusTitle.textContent = "Reloading this tab…";
-    await extensionApi.tabs.reload(activeTab.id);
-  });
-
   elements.howItWorks.addEventListener("click", async () => {
     await extensionApi.tabs.create(newTabOptions(
       "https://abduljawada.github.io/hack-engine/#capabilities",
@@ -1642,7 +1477,6 @@
 
   window.addEventListener("unload", () => {
     clearTimeout(scanWatchdog);
-    clearManualRequests("");
     clearInterval(pollTimer);
     clearInterval(candidateRefreshTimer);
     closing = true;

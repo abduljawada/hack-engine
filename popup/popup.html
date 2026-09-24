@@ -127,6 +127,7 @@
           <p id="advanced-runtime-hint">AVM could not be determined. Automatic searches all numeric types.</p>
         </details>
 
+        <label id="advanced-instance-label" hidden>Inspection source<select id="advanced-instance"></select></label>
         <div class="advanced-form">
           <label>
             Condition
@@ -181,19 +182,6 @@
             <button id="javascript-load-roots" type="button">Find accessible objects</button>
             <p class="preview-count">Discovery stops at eight levels, 20,000 objects, or 100,000 properties. A narrower object can reveal values beyond those limits.</p>
           </div>
-          <details class="advanced-options">
-            <summary>More options</summary>
-            <div>
-              <label id="advanced-instance-label" hidden>
-                Inspection source
-                <select id="advanced-instance"></select>
-              </label>
-              <label>
-                Stored-value multiplier
-                <input id="advanced-multiplier" type="number" min="0" step="any" value="1" />
-              </label>
-            </div>
-          </details>
         </div>
 
         <div class="scan-actions">
@@ -228,26 +216,6 @@
           </section>
 
           <section id="advanced-watch-pane" class="workspace-pane" hidden>
-            <details class="manual-address-form">
-              <summary>Add address</summary>
-              <label>Current game memory <select id="manual-instance"></select></label>
-              <label>Address <input id="manual-address" type="text" placeholder="0x1000 or 4096" spellcheck="false"></label>
-              <div class="advanced-grid">
-                <label>Number format <select id="manual-type"><option value="i32">Int32</option><option value="u32">Uint32</option><option value="f64">Float64</option><option value="f32">Float32</option><option value="i16">Int16</option><option value="u16">Uint16</option><option value="i8">Int8</option><option value="u8">Uint8</option></select></label>
-                <label>Multiplier <input id="manual-multiplier" type="number" min="0" step="any" value="1"></label>
-              </div>
-              <button id="manual-add" type="button">Read and add watch</button>
-              <p id="manual-status" role="status"></p>
-            </details>
-            <button id="watch-select-mode" type="button" aria-pressed="false">Select watches</button>
-            <div id="watch-batch-tools" class="batch-tools" hidden>
-              <span id="watch-selected-count" aria-live="polite">0 selected</span>
-              <button id="watch-select-visible" type="button">Select visible</button>
-              <button id="watch-clear-selection" type="button">Clear selection</button>
-              <label>Label <input id="batch-label" maxlength="80" placeholder="Leave blank to keep labels"></label>
-              <label>Group <input id="batch-group" maxlength="80" placeholder="Leave blank to keep groups"></label>
-              <button id="batch-metadata" type="button" disabled>Apply label/group</button>
-            </div>
             <p id="advanced-watch-empty" class="empty-state">Select a candidate to add it here automatically.</p>
             <div id="advanced-watches" class="advanced-watches"></div>
           </section>
@@ -280,11 +248,6 @@
           <span>Pop out window</span>
           <img class="ui-icon chevron" src="../assets/ui-icons/chevron-right.svg" alt="" />
         </button>
-        <button id="refresh-connection" type="button">
-          <img class="ui-icon" src="../assets/ui-icons/arrow-path.svg" alt="" />
-          <span>Reload game tab</span>
-          <img class="ui-icon chevron" src="../assets/ui-icons/chevron-right.svg" alt="" />
-        </button>
         <button id="how-it-works" type="button">
           <img class="ui-icon" src="../assets/ui-icons/question-mark-circle.svg" alt="" />
           <span>How it works</span>
@@ -292,7 +255,7 @@
         </button>
       </div>
 
-      <footer>v1.2.5</footer>
+      <footer>v1.2.6</footer>
     </main>
     <script src="popup.js"></script>
   <script src="../workspace-controls.js"></script>

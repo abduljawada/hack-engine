@@ -36,7 +36,7 @@ Breakout allocates memory while playing, so candidate counts and captured memory
 
 The external checks inject the production `javascript-source.js` and `page-agent.js` at document start using browser test automation. Commands then use the normal page message protocol. A canvas observer records text the game already draws; it does not expose module-private game objects. These checks establish real-game page-agent behavior. They **do not** independently qualify extension installation, permissions, sidebar routing, session recovery, or Firefox behavior on these external games.
 
-For this implementation, 22 unit checks and 20 page/browser fixture checks passed, and installed Firefox and Chromium extension scenarios passed. Those installed scenarios exercise the bundled practice game, including mixed-source scan/refine/undo, watches, edits, and freeze. These results do not extend the external-game qualification to Firefox.
+For this implementation, 22 unit checks and 20 page/browser fixture checks passed, and installed Firefox and Chromium extension scenarios passed. Those installed scenarios exercise a local test-only game fixture, including mixed-source scan/refine/undo, watches, edits, and freeze. These results do not extend the external-game qualification to Firefox.
 
 Installed Firefox and Chromium qualification uses the repository's extension/practice scenario, including mixed JavaScript/WebAssembly sources. Popup harnesses separately test toolbar, sidebar and pop-out controls. Consult `STORE_PUBLISHING_CHECKLIST.md` and the actual release verification output for installation status; external game results are not a substitute for those checks.
 

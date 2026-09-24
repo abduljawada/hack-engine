@@ -13,23 +13,22 @@ Hack Engine finds, watches, and edits accessible numeric values in WebAssembly a
 
 ## Persistent and advanced views
 
-The toolbar popup closes when focus returns to the page. Use the pin to open the persistent sidebar. The sidebar's **Advanced** view adds explicit number format, alignment, multiplier, and captured-memory controls plus filtering, sorting, and watches.
+The toolbar popup closes when focus returns to the page. Use the pin to open the persistent sidebar. The sidebar's **Advanced** view adds explicit number format, alignment, and inspection-source controls plus filtering, sorting, and watches.
 
 Both views show candidates with recommended variable types first: Float64 for AVM1, or Int32, Uint32, then Float64 for AVM2. Candidates within each priority are ordered by address; when AVM is unknown, candidates are ordered by address. Advanced defaults to **Recommended types**, with ascending/descending Address and Value sorting and Type sorting available. Counts distinguish displayed preview rows from all scan matches. Simple always uses the recommended order.
 
 The toolbar, sidebar, and pop-out share the inspected tab's scan, candidates, watches, primary selection, and freeze state. Advanced controls provide the complete supported workflow; there is no separate inspector or DevTools entry.
 
-### Known addresses and batch management
+### Known addresses and watch labels
 
-Expand **Add address** in Advanced Watches to enter a decimal or hexadecimal address, explicit numeric type, captured memory, and positive multiplier. Hack Engine validates the address and reads it before adding a watch. Adding never writes or freezes; an existing watch is selected without losing its labels or group.
 
-Select a candidate to add it to Watches and open its editor. In Watches, select rows to apply a shared label or group; a blank field leaves existing metadata unchanged. Use individual editing to clear metadata. **Select visible** covers only displayed preview rows, not all scan matches. Hidden selections are removed by filtering; result-set, memory, or inspected-tab changes clear selections. Each open interface keeps its own batch selection.
+Select a candidate to add it to Watches and open its editor. Select an individual watch to edit or clear its label. Use descriptive names such as **Coins** or **Health** to identify useful values at a glance.
 
-A live session supports up to 256 watches. Batch feedback reports accepted and skipped entries. Bulk writes/freezes and scan history are deferred; individual writes/freezes and **Stop all freezes** remain available.
+A live session supports up to 256 watches. Each watch can be edited or frozen individually; **Stop all freezes** stops every active freeze in the inspected tab.
 
 ## Numeric formats
 
-If the Simple scan does not find the value, try **All numeric types** in Advanced. Common Ruffle representations include `Float64` for AVM1 numbers and `Int32`, `Uint32`, or `Float64` for AVM2 values. **Any byte** alignment is slower but can find unaligned values. A stored-value multiplier handles games that save a displayed value in scaled form.
+If the Simple scan does not find the value, try **All numeric types** in Advanced. Common Ruffle representations include `Float64` for AVM1 numbers and `Int32`, `Uint32`, or `Float64` for AVM2 values. **Any byte** alignment is slower but can find unaligned values.
 
 ## Why a displayed value may not appear
 
@@ -43,7 +42,7 @@ A matching address may be a display copy rather than authoritative game state. H
 
 ## Recovery
 
-If a write corrupts or crashes the player, reload the tab. If Hack Engine reports a disconnected frame after an extension update, reload the game page and reopen the controls. Reset a scan before changing its number format, alignment, or multiplier.
+If a write corrupts or crashes the player, reload the tab. If Hack Engine reports a disconnected frame after an extension update, reload the game page and reopen the controls. Reset a scan before changing its number format or alignment.
 
 If a scan has no progress for 15 seconds, the controls show **No recent progress** and request session state once. A slow scan may still be running: Cancel remains available, and another scan stays blocked until completion, acknowledged cancellation, or document invalidation. Cancelling or failing a refinement retains the last completed candidates and baseline.
 
@@ -55,7 +54,7 @@ Scans and writes run locally. Hack Engine does not transmit browsing activity or
 
 **Undo scan** restores the candidates and comparison baseline from one completed refinement. Cancelling a refinement preserves the previous completed scan. Undo does not reverse gameplay. A new First scan replaces the previous session.
 
-**Restore last write** restores the previous value only while the same live target exists and still contains the value Hack Engine wrote. If the game has changed it, restoration is refused. This is not a game-state rollback.
+**Undo write** restores the previous value only while the same live target exists and still contains the value Hack Engine wrote. If the game has changed it, restoration is refused. This is not a game-state rollback.
 
 **Stop all freezes** stops every freeze in the inspected tab. Freezes also stop when the game becomes hidden, the page leaves, or the extension connection is lost. Re-enable them explicitly after returning to the game. Background continuous freezing is not supported.
 
@@ -64,11 +63,10 @@ The game/tab label remains bound to the inspected tab. Open Hack Engine from ano
 
 Scans are limited to captured memories of at most 256 MiB. Snapshot scans check available site storage before starting; if storage is unavailable, the error explains the limit and a failed refinement retains its previous results. Reset releases the current scan and its undo checkpoint. Private/incognito windows are excluded from this candidate.
 
-Choose **Open practice game** to learn the complete workflow using bundled local WebAssembly memory and a JavaScript score, without an external website or account.
 
 ## JavaScript discovery
 
-Select **JavaScript objects** for reachable numeric own properties in plain objects, arrays, and numeric typed arrays. First scan discovers available values; subsequent scans filter those same live properties. Advanced offers an object picker; it accepts selections, never executable expressions. Number format, alignment, scaling, and manual byte addresses apply only to WebAssembly.
+Select **JavaScript objects** for reachable numeric own properties in plain objects, arrays, and numeric typed arrays. First scan discovers available values; subsequent scans filter those same live properties. Advanced offers an object picker; it accepts selections, never executable expressions. Number format, alignment, and scaling apply only to WebAssembly.
 
 Discovery skips ordinary getters and browser/DOM internals. JavaScript Proxy inspection traps can still execute; this is not an isolated debugger. Closures, module-private state, class instances, Map/Set contents, BigInt, workers, and server state are not searched.
 

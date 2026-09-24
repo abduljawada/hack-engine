@@ -2,6 +2,18 @@
 
 All notable changes to Hack Engine are documented here.
 
+## [1.2.6] - 2026-09-24
+
+Not published to browser stores. Simplify scanning, watches, and recovery controls.
+
+- Remove Select watches and groups; retain individual watch labels.
+- Remove the bundled practice game and relocate the browser workflow fixture to tests only.
+- Remove manual address entry, Reload game tab, and the stored-value multiplier control.
+- Move Advanced Inspection source above Condition and remove the empty More options pane.
+- Show Stop all freezes beside Watches in Advanced or below the Simple editor only while values are frozen.
+- Rename Restore last write to Undo write, place it beside Write, and hide it until a write is available to restore.
+- Update user documentation, packaging exclusions, and browser regression checks.
+
 ## [1.2.5] - 2026-09-24
 
 Not published to browser stores. Focused sidebar cleanup and a Write/Freeze fix.

@@ -148,22 +148,33 @@ try {
       `Chrome extension bridge harness did not complete within 30 seconds.\nTargets:\n${targetSummary}\nChrome output:\n${chromeOutput.trim()}`,
     );
   }
-  await pageCdp.call("Page.navigate", { url: `chrome-extension://${installedExtension.id}/practice/index.html` });
-  let practiceTab;
+  const fixtureUrl = new URL("/test/fixtures/game/index.html", harnessUrl).href;
+  await pageCdp.call("Page.navigate", { url: fixtureUrl });
+  let fixtureReady = false;
   for (let attempt = 0; attempt < 100; attempt++) {
     try {
-      const result = await pageCdp.call("Runtime.evaluate", { expression: "(async () => ({ tab: (await chrome.tabs.getCurrent()).id, ready: document.querySelector('#result')?.textContent }))()", awaitPromise: true, returnByValue: true });
-      if (result.result?.value?.ready?.startsWith("Ready")) { practiceTab = result.result.value.tab; break; }
+      const result = await readResult(pageCdp);
+      if (result?.startsWith("Ready")) { fixtureReady = true; break; }
     } catch {}
     await delay(100);
   }
-  if (!practiceTab) throw new Error("Packaged practice game did not initialize.");
-  const created = await browserCdp.call("Target.createTarget", { url: `chrome-extension://${installedExtension.id}/popup/popup.html?sidebar=1&tabId=${practiceTab}`, background: true });
+  if (!fixtureReady) throw new Error("Game test fixture did not initialize.");
+  const popupUrl = `chrome-extension://${installedExtension.id}/popup/popup.html?sidebar=1`;
+  const created = await browserCdp.call("Target.createTarget", { url: popupUrl, background: true });
   const { port: debugPort } = new URL(browserSocketUrl);
   const targets = await fetch(`http://127.0.0.1:${debugPort}/json/list`).then((response) => response.json());
   const target = targets.find((item) => item.id === created.targetId);
   const controls = connectCdp(target.webSocketDebuggerUrl);
   try {
+    await delay(300);
+    const tabResult = await controls.call("Runtime.evaluate", {
+      expression: `chrome.tabs.query({}).then(tabs => tabs.find(tab => tab.url === ${JSON.stringify(fixtureUrl)})?.id)`,
+      awaitPromise: true,
+      returnByValue: true,
+    });
+    const practiceTab = tabResult.result?.value;
+    if (!Number.isInteger(practiceTab)) throw new Error("Game test fixture tab was not found.");
+    await controls.call("Page.navigate", { url: `${popupUrl}&tabId=${practiceTab}` });
     await delay(300);
     const result = await controls.call("Runtime.evaluate", { expression: extensionUiScenario, awaitPromise: true, returnByValue: true });
     if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);

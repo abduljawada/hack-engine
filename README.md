@@ -4,16 +4,15 @@ Hack Engine helps you find, watch, and change accessible numeric values in WebAs
 
 Everything happens locally in the inspected tab. Hack Engine has no accounts, telemetry, advertising, or remote service.
 
-> Current release: **v1.2.5 release candidate — not published**. Core workflows are tested locally on Linux Firefox and Chromium; the remaining release gates are recorded in [IMPLEMENTATION_1_0.md](IMPLEMENTATION_1_0.md).
+> Current release: **v1.2.6 release candidate — not published**. Core workflows are tested locally on Linux Firefox and Chromium; the remaining release gates are recorded in [IMPLEMENTATION_1_0.md](IMPLEMENTATION_1_0.md).
 
 ## What you can do
 
 - **Find visible values:** Search for an exact number, a range, or an unknown starting value.
 - **Narrow the results:** Change the value in the game, then filter by changed, unchanged, increased, or decreased.
 - **Recover mistakes:** Undo one refinement, restore the last write when the game has not changed it, and stop all freezes.
-- **Practice first:** Open the included local practice game from the controls.
 - **Edit and freeze:** Replace a discovered value or keep it fixed while the game runs.
-- **Watch values live:** Keep useful candidates visible as they change and organize them with labels and groups.
+- **Watch values live:** Keep useful candidates visible as they change and give each watch a descriptive label.
 - **Start simple, go deeper:** Use Quick scan for the common workflow, then open Advanced controls when you need more options.
 - **Keep one shared workspace:** Candidates, watches, selections, and freezes stay synchronized between the toolbar, sidebar, and pop-out.
 
@@ -25,7 +24,7 @@ Everything happens locally in the inspected tab. Hack Engine has no accounts, te
 4. Change that value in the game, enter the new value, and choose **Next scan**.
 5. Repeat until only a small number of candidates remain, then select one to watch, edit, or freeze it.
 
-If the exact value is not known, start with **Unknown initial value** and refine after the game changes. **Value range** helps with rounded or approximate values. Advanced mode also provides explicit number-format, alignment, multiplier, and inspection-source controls. Add known addresses, select individual candidates to watch, apply watch labels/groups together, and sort addresses or values in either direction. Write feedback follows verification through 250 ms; expandable details distinguish verification from game restoration or failed reads.
+If the exact value is not known, start with **Unknown initial value** and refine after the game changes. **Value range** helps with rounded or approximate values. Advanced mode also provides explicit number-format, alignment, multiplier, and inspection-source controls. Add known addresses, select individual candidates to watch, edit each watch's label, and sort addresses or values in either direction. Write feedback follows verification through 250 ms; expandable details distinguish verification from game restoration or failed reads.
 
 ## JavaScript games
 
@@ -85,7 +84,7 @@ Hack Engine is released under the [MIT License](LICENSE). Questions can also be 
 
 ## Development checks
 
-`npm run test:unit` checks background recovery and document invalidation. Serve this directory at `http://127.0.0.1:8765`, then run `npm run test:browser` for page-level regressions. After `npm run build`, `npm run test:firefox` and `npm run test:chrome` install the actual packages in disposable profiles and exercise the practice game and persistent controls. Browser discovery supports Linux, macOS, and Windows; set `FIREFOX_PATH` or `CHROME_PATH` to override it. Current qualification evidence is Linux-only.
+`npm run test:unit` checks background recovery and document invalidation. Serve this directory at `http://127.0.0.1:8765`, then run `npm run test:browser` for page-level regressions. After `npm run build`, `npm run test:firefox` and `npm run test:chrome` install the actual packages in disposable profiles and exercise a local test fixture and persistent controls. Browser discovery supports Linux, macOS, and Windows; set `FIREFOX_PATH` or `CHROME_PATH` to override it. Current qualification evidence is Linux-only.
 
 The Firefox UI test uses its documented `--remote-allow-system-access` automation flag only in the temporary test profile. Do not point these runners at a personal browser profile.
 

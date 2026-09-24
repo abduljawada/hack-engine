@@ -27,7 +27,6 @@ const runtimeEntries = [
   "javascript-source.js",
   "workspace-controls.js",
   "workspace-controls.css",
-  "practice",
   "popup",
 ];
 
