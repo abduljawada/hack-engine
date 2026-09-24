@@ -41,6 +41,7 @@
   let port = null;
   let reconnectTimer = null;
   let closing = false;
+  let editorSelectionKey = "";
   let pollTimer = null;
   let candidateRefreshTimer = null;
   let requestSequence = 1;
@@ -170,13 +171,12 @@
   }
 
   function updateBatchTools() {
-    for (const [prefix, workspace] of [["candidate", "candidates"], ["watch", "watches"]]) {
+    for (const [prefix, workspace] of [["watch", "watches"]]) {
       const enabled = batchMode && activeWorkspace === workspace;
       ui(`${prefix}-select-mode`).setAttribute("aria-pressed", String(enabled));
       ui(`${prefix}-batch-tools`).hidden = !enabled;
       ui(`${prefix}-selected-count`).textContent = `${enabled ? batchSelection.size : 0} selected`;
     }
-    ui("batch-watch").disabled = !port || batchSelection.size === 0;
     ui("batch-metadata").disabled = !port || batchSelection.size === 0;
     for (const checkbox of document.querySelectorAll("[data-batch-key]")) {
       checkbox.checked = batchSelection.has(checkbox.dataset.batchKey);
@@ -286,21 +286,17 @@
     for (const id of ["manual-instance", "advanced-instance"]) ui(id).addEventListener("change", () => {
       clearBatchSelection(); clearManualRequests(""); renderCandidateLists(); renderWatches();
     });
-    for (const [prefix, workspace] of [["candidate", "candidates"], ["watch", "watches"]]) {
+    for (const [prefix, workspace] of [["watch", "watches"]]) {
       ui(`${prefix}-select-mode`).addEventListener("click", () => {
         batchMode = !batchMode; batchSelection.clear(); renderCandidateLists(); renderWatches();
       });
       ui(`${prefix}-select-visible`).addEventListener("click", () => {
-        const selector = workspace === "candidates" ? "#advanced-candidates [data-candidate-key]" : "#advanced-watches [data-candidate-key]";
+        const selector = "#advanced-watches [data-candidate-key]";
         for (const node of document.querySelectorAll(selector)) batchSelection.add(node.dataset.candidateKey);
         updateBatchTools();
       });
       ui(`${prefix}-clear-selection`).addEventListener("click", () => { batchSelection.clear(); updateBatchTools(); });
     }
-    ui("batch-watch").addEventListener("click", () => {
-      const watches = [...batchSelection].map((key) => candidateRecords.get(key)).filter(Boolean).map((entry) => sharedWatch(entry.candidate));
-      sendManagedWatches(watches, "watch");
-    });
     ui("batch-metadata").addEventListener("click", () => {
       const label = ui("batch-label").value.trim(), group = ui("batch-group").value.trim();
       if (!label && !group) { setQuickStatus("Enter a label or group; blank fields keep existing values."); return; }
@@ -747,14 +743,19 @@
     elements.editor.hidden = !hasSelection;
     elements.advancedEditor.hidden = !hasSelection;
     if (!selectedCandidate) {
+      editorSelectionKey = "";
       return;
     }
     const address = candidateLocation(selectedCandidate);
     const value = candidateValueText(selectedCandidate);
     elements.selectedAddress.textContent = address;
     elements.advancedSelectedAddress.textContent = address;
-    elements.writeValue.value = value;
-    elements.advancedWriteValue.value = value;
+    // Workspace/diagnostic updates must not replace a draft used by Write/Freeze.
+    if (editorSelectionKey !== selectedKey) {
+      elements.writeValue.value = value;
+      elements.advancedWriteValue.value = value;
+      editorSelectionKey = selectedKey;
+    }
     const frozen = frozenCandidates.has(selectedKey);
     for (const button of [elements.freeze, elements.advancedFreeze]) {
       button.textContent = frozen ? "Unfreeze" : "Freeze";
@@ -794,6 +795,7 @@
   }
 
   function selectCandidate(candidate) {
+    editorSelectionKey = "";
     selectedCandidate = candidate;
     addWatch(candidate);
     updateSelectionUI();
@@ -903,8 +905,6 @@
         : left.candidate.address - right.candidate.address;
       return order * (sort === "addressDesc" ? -1 : 1);
     });
-    const visible = new Set(records.map(([key]) => key));
-    if (activeWorkspace === "candidates") for (const key of batchSelection) if (!visible.has(key)) batchSelection.delete(key);
     ui("advanced-preview-count").textContent = `${records.length} visible · ${candidateRecords.size} previewed · ${candidateTotal.toLocaleString()} total matches`;
     for (const [key, entry] of records) {
       const row = document.createElement("button");
@@ -918,11 +918,8 @@
       type.className = "candidate-type";
       type.textContent = entry.candidate.type;
       row.append(address, makeValueCell(entry), type);
-      row.addEventListener("click", () => batchMode ? toggleBatch(key) : selectCandidate(entry.candidate));
-      if (batchMode && activeWorkspace === "candidates") {
-        const wrapper = document.createElement("div"); wrapper.className = "batch-row";
-        wrapper.append(batchCheckbox(key, entry.candidate), row); elements.advancedCandidates.append(wrapper);
-      } else elements.advancedCandidates.append(row);
+      row.addEventListener("click", () => selectCandidate(entry.candidate));
+      elements.advancedCandidates.append(row);
     }
     updateBatchTools();
     updateSelectionUI();
@@ -1017,6 +1014,7 @@
 
   function renderResults(payload, frameId = quickSession?.frameId) {
     const resultIdentity = `${frameId}:${payload.instanceId}:${payload.requestId}`;
+    const retainedSelection = renderedResult === resultIdentity ? selectedCandidate : null;
     if (renderedResult !== resultIdentity) clearBatchSelection();
     renderedResult = resultIdentity;
     const preview = Array.isArray(payload?.preview)
@@ -1038,6 +1036,10 @@
         multiplier: Number(candidate.multiplier ?? payload.multiplier) || 1,
       };
       candidateRecords.set(candidateKey(record), { candidate: record, valueCells: new Set() });
+    }
+    if (retainedSelection) {
+      const key = candidateKey(retainedSelection);
+      selectedCandidate = candidateRecords.get(key)?.candidate || watchedCandidates.get(key)?.candidate || null;
     }
     renderCandidateLists();
     renderWatches();
@@ -1562,13 +1564,16 @@
       setQuickStatus("Select a candidate and enter its new value.", "error");
       return;
     }
+    const rawValue = input.value;
+    elements.writeValue.value = rawValue;
+    elements.advancedWriteValue.value = rawValue;
     send({
       kind: "writeValue",
       requestId: nextRequestId("write"),
       instanceId: selectedCandidate.instanceId,
       type: selectedCandidate.type,
       address: selectedCandidate.address,
-      rawValue: input.value,
+      rawValue,
       multiplier: selectedCandidate.multiplier,
     }, selectedCandidate.frameId);
     setQuickStatus("Writing and checking the value…");

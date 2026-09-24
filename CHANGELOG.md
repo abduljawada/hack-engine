@@ -2,6 +2,15 @@
 
 All notable changes to Hack Engine are documented here.
 
+## [1.2.5] - 2026-09-24
+
+Not published to browser stores. Focused sidebar cleanup and a Write/Freeze fix.
+
+- Remove Select candidates and its batch controls; retain individual candidate selection and watch metadata controls.
+- Place the inspected tab name directly beneath the connection status.
+- Preserve the selected value's edit draft across background updates so Write followed by Freeze uses the entered value.
+- Synchronize the submitted write value between Simple and Advanced editors, and add a regression check for both views.
+
 ## [1.2.4] - 2026-09-24
 
 Not published to browser stores. Sidebar usability and a simpler live-session workflow.

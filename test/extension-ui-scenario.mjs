@@ -20,19 +20,36 @@ export const extensionUiScenario = `(${async function () {
   await wait(() => ui('#advanced-result-count').textContent === '0' && !ui('[data-action="undo"]').disabled, 'Wrong refinement');
   ui('[data-action="undo"]').click();
   await wait(() => ui('#advanced-result-count').textContent === '1' && ui('.advanced-candidate'), 'Undo scan');
-  const initialWatchCount = ui('#advanced-watch-count').textContent;
   const address = Number(ui('.advanced-candidate').dataset.candidateKey.split(':').at(-1));
-  ui('#candidate-select-mode').click(); ui('#candidate-select-visible').click();
-  if (ui('#advanced-watch-count').textContent !== initialWatchCount) throw new Error('Batch selection added a watch automatically');
-  if (document.querySelectorAll('#advanced-candidates input[data-batch-key]:checked').length !== 1) throw new Error('Batch preview selection failed');
-  ui('#batch-watch').click();
-  await wait(() => ui('#advanced-watch-count').textContent === '1', 'Batch watch');
-  ui('#candidate-select-mode').click();
+  if (ui('#candidate-select-mode') || ui('#batch-watch')) throw new Error('Removed candidate selection controls remain');
   ui('.advanced-candidate').click();
+  await wait(() => ui('#advanced-watch-count').textContent === '1', 'Individual candidate watch');
   ui('#advanced-write-value').value = '500'; ui('#advanced-write').click();
   await wait(() => !ui('[data-action="restore"]').disabled, 'Write bookkeeping');
   await wait(() => [...document.querySelectorAll('.watch-state')].some((node) => node.textContent.includes('Verified through 250 ms')), 'Final write diagnostic');
   if (!ui('#advanced-editor .selected-feedback').textContent.includes('250 ms')) throw new Error('Selected value missed final diagnostic');
+  if (ui('#advanced-write-value').value !== '500') throw new Error('Write acknowledgement replaced the entered value');
+  ui('#advanced-freeze').click();
+  await wait(() => ui('[data-count]').textContent === '1', 'Freeze written value');
+  const frozenValue = await new Promise((resolve, reject) => {
+    const targetTab = Number(new URLSearchParams(location.search).get('tabId'));
+    const port = api.runtime.connect({ name: 'hack-popup:' + targetTab });
+    const requestId = 'quick:release-freeze-check';
+    const [frameId, instanceId] = ui('.advanced-candidate').dataset.candidateKey.split(':');
+    const timer = setTimeout(() => { port.disconnect(); reject(new Error('Frozen-value read timed out')); }, 15000);
+    port.onMessage.addListener((message) => {
+      if (message.payload?.requestId !== requestId) return;
+      clearTimeout(timer); port.disconnect();
+      if (message.payload.kind === 'watchValues') resolve(message.payload.values[0]?.value);
+      else reject(new Error('Frozen-value read failed'));
+    });
+    port.postMessage({ kind: 'routeCommand', frameId: Number(frameId), payload: {
+      kind: 'readValues', requestId, instanceId, entries: [{ id: 'release-check', type: 'i32', address }],
+    } });
+  });
+  if (ui('#advanced-write-value').value !== '500' || frozenValue !== 500) throw new Error('Write then Freeze used an older value: ' + frozenValue);
+  ui('[data-action="stop"]').click();
+  await wait(() => ui('[data-count]').textContent === '0', 'Stop written-value freeze');
   ui('[data-action="restore"]').click();
   await wait(() => ui('[data-action="restore"]').disabled, 'Restore write');
   ui('#advanced-write-value').value = '200'; ui('#advanced-freeze').click();

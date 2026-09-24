@@ -56,18 +56,28 @@
     showCandidates();
     await settle();
     assert($("#advanced-preview-count").textContent.includes("3"), "Preview size not shown separately");
-    const beforeSelection = changes().length;
-    click("#candidate-select-mode");
-    click("#candidate-select-visible");
-    assert(document.querySelectorAll('#advanced-candidates input[data-batch-key]:checked').length === 3, "Select visible did not select preview rows");
-    assert(changes().length === beforeSelection, "Selection unexpectedly changed watches");
+    assert(!$("#candidate-select-mode") && !$("#batch-watch"), "Removed candidate batch controls remain");
     set("#advanced-filter", "missing");
+    assert(document.querySelectorAll(".advanced-candidate").length === 0, "Candidate filter failed");
     set("#advanced-filter", "");
-    assert(document.querySelectorAll('#advanced-candidates input[data-batch-key]:checked').length === 0, "Filtered hidden rows retained selection");
-    click("#candidate-select-visible");
-    click("#batch-watch");
-    await settle();
-    assert(migrationState.watches.length === 4, "Watch selected did not add selected preview");
+    for (const row of document.querySelectorAll(".advanced-candidate")) { row.click(); await settle(); }
+    assert(migrationState.watches.length === 4, "Individual candidate selection did not add watches");
+    for (const [view, prefix] of [["simple", "quick"], ["advanced", "advanced"]]) {
+      click(`[data-view="${view}"]`);
+      set(`#${prefix}-write-value`, "777");
+      // Background diagnostics can arrive before the write acknowledgement.
+      publishMigrationWorkspace();
+      assert($(`#${prefix}-write-value`).value === "777", `${view}: workspace update replaced the edit draft`);
+      click(`#${prefix}-write`);
+      await settle();
+      publishMigrationWorkspace();
+      click(`#${prefix}-freeze`);
+      const freeze = popupHarnessState.commands.filter((command) => command.payload?.kind === "setFreeze").at(-1);
+      assert(freeze?.payload.enabled && freeze.payload.rawValue === "777", `${view}: Write then Freeze used an old value`);
+      await settle();
+      click(`#${prefix}-freeze`);
+      await settle();
+    }
     click('[data-workspace="watches"]');
     click("#watch-select-mode");
     click("#watch-select-visible");
@@ -130,17 +140,20 @@
     assert(/limit|256|skip|full/i.test($("#manual-status").textContent), "Watch capacity failure lacks feedback");
     click('[data-workspace="candidates"]');
     showCandidates();
-    click("#candidate-select-mode");
-    click("#candidate-select-visible");
+    click('[data-workspace="watches"]');
+    click("#watch-select-mode");
+    click("#watch-select-visible");
     click('[data-workspace="watches"]');
     click('[data-workspace="candidates"]');
     assert(document.querySelectorAll('[data-batch-key]:checked').length === 0, "Workspace switch retained selection");
-    click("#candidate-select-mode");
-    click("#candidate-select-visible");
+    click('[data-workspace="watches"]');
+    click("#watch-select-mode");
+    click("#watch-select-visible");
     popupHarnessState.emitPagePayload({ kind: "scanResults", requestId: "quick:replacement", instanceId: "memory-1", type: "i32", total: 1, preview: [{ address: 64, type: "i32", value: 8 }] });
     assert(document.querySelectorAll('[data-batch-key]:checked').length === 0, "New result set retained selection");
-    click("#candidate-select-mode");
-    click("#candidate-select-visible");
+    click('[data-workspace="watches"]');
+    click("#watch-select-mode");
+    click("#watch-select-visible");
     $("#advanced-instance").dispatchEvent(new Event("change"));
     assert(document.querySelectorAll('[data-batch-key]:checked').length === 0, "Memory switch retained selection");
     const scanning = { requestId: "quick:stalled", status: "scanning", frameId: 0, instanceId: "memory-1", canRefine: true, progress: null };

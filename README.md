@@ -4,7 +4,7 @@ Hack Engine helps you find, watch, and change accessible numeric values in WebAs
 
 Everything happens locally in the inspected tab. Hack Engine has no accounts, telemetry, advertising, or remote service.
 
-> Current release: **v1.2.4 release candidate — not published**. Core workflows are tested locally on Linux Firefox and Chromium; the remaining release gates are recorded in [IMPLEMENTATION_1_0.md](IMPLEMENTATION_1_0.md).
+> Current release: **v1.2.5 release candidate — not published**. Core workflows are tested locally on Linux Firefox and Chromium; the remaining release gates are recorded in [IMPLEMENTATION_1_0.md](IMPLEMENTATION_1_0.md).
 
 ## What you can do
 
@@ -25,7 +25,7 @@ Everything happens locally in the inspected tab. Hack Engine has no accounts, te
 4. Change that value in the game, enter the new value, and choose **Next scan**.
 5. Repeat until only a small number of candidates remain, then select one to watch, edit, or freeze it.
 
-If the exact value is not known, start with **Unknown initial value** and refine after the game changes. **Value range** helps with rounded or approximate values. Advanced mode also provides explicit number-format, alignment, multiplier, and inspection-source controls. Add known addresses, select displayed candidates to watch in a batch, apply watch labels/groups together, and sort addresses or values in either direction. Write feedback follows verification through 250 ms; expandable details distinguish verification from game restoration or failed reads.
+If the exact value is not known, start with **Unknown initial value** and refine after the game changes. **Value range** helps with rounded or approximate values. Advanced mode also provides explicit number-format, alignment, multiplier, and inspection-source controls. Add known addresses, select individual candidates to watch, apply watch labels/groups together, and sort addresses or values in either direction. Write feedback follows verification through 250 ms; expandable details distinguish verification from game restoration or failed reads.
 
 ## JavaScript games
 

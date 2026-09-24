@@ -23,7 +23,7 @@ The toolbar, sidebar, and pop-out share the inspected tab's scan, candidates, wa
 
 Expand **Add address** in Advanced Watches to enter a decimal or hexadecimal address, explicit numeric type, captured memory, and positive multiplier. Hack Engine validates the address and reads it before adding a watch. Adding never writes or freezes; an existing watch is selected without losing its labels or group.
 
-Enter selection mode to choose displayed candidates, then use **Watch selected**. Selection alone does not add watches. In Watches, select rows to apply a shared label or group; a blank field leaves existing metadata unchanged. Use individual editing to clear metadata. **Select visible** covers only displayed preview rows, not all scan matches. Hidden selections are removed by filtering; result-set, memory, or inspected-tab changes clear selections. Each open interface keeps its own batch selection.
+Select a candidate to add it to Watches and open its editor. In Watches, select rows to apply a shared label or group; a blank field leaves existing metadata unchanged. Use individual editing to clear metadata. **Select visible** covers only displayed preview rows, not all scan matches. Hidden selections are removed by filtering; result-set, memory, or inspected-tab changes clear selections. Each open interface keeps its own batch selection.
 
 A live session supports up to 256 watches. Batch feedback reports accepted and skipped entries. Bulk writes/freezes and scan history are deferred; individual writes/freezes and **Stop all freezes** remain available.
 

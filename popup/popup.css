@@ -425,7 +425,7 @@ main > .session-tools {
   color: var(--text);
   background: transparent;
 }
-main > .session-tools .session-target { color: var(--muted); font-size: 12px; }
+.header-copy .session-target { color: var(--muted); font-size: 12px; line-height: 1.4; margin: 0; }
 main > .session-tools button,
 main > .session-tools input,
 main > .session-tools select { background: var(--surface); border-color: var(--line); border-radius: 7px; }

@@ -16,6 +16,8 @@
   if (popupTools) popupTools.before(host);
   else (document.querySelector("header") || document.querySelector("main") || document.body).after(host);
   const el = (selector) => host.querySelector(selector);
+  const sessionTarget = el(".session-target");
+  document.querySelector(".header-copy")?.append(sessionTarget);
   const action = (name) => el(`[data-action="${name}"]`);
   const undoButtons = [action("undo")];
   const scanRows = document.querySelectorAll("#quick-tools > .scan-actions, #advanced-tools > .scan-actions");
@@ -96,7 +98,7 @@
     tab = tabId === null ? (await api.tabs.query({ active: true, currentWindow: true }))[0] : await api.tabs.get(tabId);
     if (!tab || !Number.isInteger(tab.id)) throw new Error("The inspected tab is no longer available.");
     tabId = tab.id;
-    el(".session-target").textContent = `Inspecting: ${tab.title || new URL(tab.url).hostname || "this game"}`;
+    sessionTarget.textContent = `Inspecting: ${tab.title || new URL(tab.url).hostname || "this game"}`;
     connect();
   })().catch((error) => notice(error.message));
 })();
