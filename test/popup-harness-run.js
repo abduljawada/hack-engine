@@ -69,7 +69,15 @@ function checkRecommendedSorting() {
   bothOrders("Scan instance metadata", avm2Order);
   setInstances("avm1");
   showResults(preview, "memory-1", "avm2");
-  bothOrders("Scan result runtime metadata", avm2Order);
+  bothOrders("Live source metadata supersedes old scan metadata", ["f64:20", "f64:40", "u8:10", "u32:30", "i32:50"]);
+  setInstances("unknown");
+  showResults(preview, "memory-1", "unknown");
+  popupHarnessState.emitPagePayload({ kind: "instanceUpdated", instance: {
+    id: "memory-1", memoryBytes: 4096, looksLikeRuffle: true, avmKind: "avm2",
+  } });
+  bothOrders("Delayed source metadata supersedes unknown scan metadata", avm2Order);
+  if (document.querySelector("#advanced-avm-type").textContent !== "AVM2") failures.push("Delayed AVM guidance updates");
+  setInstances("avm1");
   showResults([
     ...Array.from({ length: 21 }, (_, index) => ({ address: index, type: "i32", value: index })),
     { address: 100, type: "f64", value: 100 },
@@ -95,7 +103,9 @@ async function checkJavaScriptSources() {
   ui("quick-instance").value = "0:js-1";
   ui("quick-instance").dispatchEvent(new Event("change"));
   assert(ui("advanced-instance").value === "0:js-1", "Source selectors must agree");
-  assert(ui("advanced-type").closest("label").hidden, "JavaScript hides memory-only controls");
+  assert(!ui("advanced-type").closest("label").hidden, "JavaScript exposes targeted number formats");
+  assert(!ui("advanced-type").querySelector('[value="number"]').disabled, "JavaScript allows Number properties");
+  ui("advanced-type").value = "number";
   popupHarnessState.interceptCommand = ({ payload }, emit) => {
     if (payload?.kind === "listJavaScriptRoots") {
       emit({ kind: "javaScriptRoots", requestId: payload.requestId, roots: [{ path: ["game"], displayPath: "game" }] });
@@ -115,7 +125,7 @@ async function checkJavaScriptSources() {
   ui("advanced-scan").click();
   await delay();
   const scan = popupHarnessState.commands.filter(({ payload }) => payload.kind === "memoryScan").at(-1).payload;
-  assert(scan.instanceId === "js-1" && scan.multiplier === 1 && JSON.stringify(scan.rootPath) === '["game"]', "JavaScript scan uses selected object and no multiplier");
+  assert(scan.instanceId === "js-1" && scan.type === "number" && scan.multiplier === 1 && JSON.stringify(scan.rootPath) === '["game"]', "JavaScript scan uses selected object and no multiplier");
   assert(ui("quick-status").textContent.includes("incomplete"), "Partial discovery must be visible");
   assert(ui("broaden-search").hidden, "JavaScript does not offer byte formats");
   const row = document.querySelector(".quick-candidate");

@@ -122,3 +122,47 @@ test("typed array length, constructor and tag overrides never invoke getters dur
   assert.equal(backend.roots().some((item) => item.path[0] === "other" || item.path[0] === "big"), false);
   assert.ok(backend.describe().capabilities.includes("restore"));
 });
+test("targeted scans select actual typed storage and preserve number candidate handles", async () => {
+  const types = { i8: "Int8Array", u8: "Uint8Array", i16: "Int16Array", u16: "Uint16Array", i32: "Int32Array", u32: "Uint32Array", f32: "Float32Array", f64: "Float64Array" };
+  const { backend } = setup(`globalThis.game = { score: 7, array: [7], clamped: new Uint8ClampedArray([7]) };
+    ${Object.entries(types).map(([type, constructor]) => `game.${type} = new ${constructor}([7]);`).join("\n")}
+    game.f32.custom = 7;
+    game.f32['01'] = 7;
+    Object.defineProperty(game.f32, Symbol.toStringTag, { get() { throw Error('tag getter executed'); } });
+  `);
+  assert.deepEqual(Array.from(backend.describe().supportedTypes).sort(), ["number", ...Object.keys(types)].sort());
+  const all = await backend.discover({ rootPath: ["game"] });
+  assert.equal(all.entries.length, 12);
+  for (const [type] of Object.entries(types)) {
+    const result = await backend.discover({ rootPath: ["game"], type });
+    assert.equal(result.entries.length, type === "u8" ? 2 : 1, type);
+    for (const entry of result.entries) {
+      assert.equal(entry.storageType, type);
+      assert.equal(entry.type, "number");
+      assert.equal(entry.address, all.entries.find((item) => item.displayPath === entry.displayPath).address);
+      assert.equal(backend.write(entry.address, 8), 8);
+    }
+  }
+  const ordinary = await backend.discover({ rootPath: ["game"], type: "number" });
+  assert.deepEqual(Array.from(ordinary.entries, (entry) => entry.displayPath).sort(), ['game.array.length', 'game.array["0"]', 'game.score']);
+  assert.equal(backend.resolve(["game", "f32", "custom"]).storageType, "number");
+  assert.equal(backend.resolve(["game", "f32", "01"]).storageType, "number");
+  assert.equal((await backend.discover({ rootPath: ["game", "f32", "custom"], type: "f32" })).entries.length, 0);
+  assert.equal((await backend.discover({ rootPath: ["game", "f32", "0"], type: "f32" })).entries.length, 1);
+  assert.equal((await backend.discover({ rootPath: ["game"], type: "auto" })).entries.length, all.entries.length);
+  await assert.rejects(backend.discover({ type: "i64" }), /Unsupported/);
+});
+test("targeted storage keeps typed-array writes lossless and rejects stale replacements", async () => {
+  const { backend, run } = setup("globalThis.game = { floats: new Float32Array([1.5]), clamped: new Uint8ClampedArray([7]) }");
+  const float = (await backend.discover({ rootPath: ["game"], type: "f32" })).entries[0];
+  assert.throws(() => backend.write(float.address, 0.1), /verification/);
+  assert.equal(backend.read(float.address), 1.5);
+  const byte = (await backend.discover({ rootPath: ["game"], type: "u8" })).entries[0];
+  assert.throws(() => backend.write(byte.address, 256), /verification/);
+  assert.equal(backend.read(byte.address), 7);
+  run("game.floats = new Float64Array([1.5])");
+  assert.throws(() => backend.write(float.address, 2), /stale/);
+  assert.equal((await backend.discover({ rootPath: ["game"], type: "f32" })).entries.length, 0);
+  const replacement = (await backend.discover({ rootPath: ["game"], type: "f64" })).entries[0];
+  assert.notEqual(replacement.address, float.address);
+});

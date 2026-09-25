@@ -15,7 +15,9 @@ Hack Engine finds, watches, and edits accessible numeric values in WebAssembly a
 
 The toolbar popup closes when focus returns to the page. Use the pin to open the persistent sidebar. The sidebar's **Advanced** view adds explicit number format, alignment, and inspection-source controls plus filtering, sorting, and watches.
 
-Both views show candidates with recommended variable types first: Float64 for AVM1, or Int32, Uint32, then Float64 for AVM2. Candidates within each priority are ordered by address; when AVM is unknown, candidates are ordered by address. Advanced defaults to **Recommended types**, with ascending/descending Address and Value sorting and Type sorting available. Counts distinguish displayed preview rows from all scan matches. Simple always uses the recommended order.
+Both views show candidates with recommended variable types first: Float64 for AVM1, or Int32, Uint32, then Float64 for AVM2. WebAssembly prioritizes Int32, Uint32, Float32, then Float64. Candidates within each priority are ordered by address; when Ruffle AVM is unknown, candidates are ordered by address. Advanced defaults to **Recommended types**, with ascending/descending Address and Value sorting and Type sorting available. Counts distinguish displayed preview rows from all scan matches. Simple always uses the recommended order.
+
+AVM detection uses only players linked to the selected memory through Ruffle's metadata callback. Unknown types are checked once per second for up to 15 retries; detection stops early on success and updates the runtime hints automatically. A new movie's metadata event starts a fresh retry budget. Existing scan results are retained. Some Ruffle players share one memory: if that memory contains both AVM1 and AVM2, or ownership cannot be established, it stays **Unknown** and Automatic searches all numeric types.
 
 The toolbar, sidebar, and pop-out share the inspected tab's scan, candidates, watches, primary selection, and freeze state. Advanced controls provide the complete supported workflow; there is no separate inspector or DevTools entry.
 
@@ -73,3 +75,9 @@ Discovery skips ordinary getters and browser/DOM internals. JavaScript Proxy ins
 Limits are eight object levels, 20,000 objects, and 100,000 inspected properties/elements per scan. Partial results are labelled; narrowing the root helps. The page retains at most 200,000 property handles across scans and reclaims stale ones; reload if that ceiling is reached. WebAssembly scans retain their 256 MiB limit.
 
 Read-only values can be watched but cannot be edited. Typed-array writes must fit their storage exactly. Deleting a property, replacing its object, or changing it to an accessor invalidates the old handle when observed. Reloading invalidates every old handle. The extension cannot detect a property being deleted and recreated between observations.
+
+### Targeted number formats
+
+In Advanced, **Number format** controls the first scan. WebAssembly Automatic starts with Int32, Uint32, Float32 and Float64; decimal searches use Float32 and Float64. These are heuristic starting formats, not detected source-language types. Choose **All numeric types** (or **Search all number formats** after an exact/range scan) to include 8-bit and 16-bit integers. Individual formats remain selectable. Unknown Ruffle runtimes still search all formats.
+
+For JavaScript, Automatic and All numeric types search all reachable finite numbers. **Number properties** targets ordinary object and array properties. The typed-array choices target actual element storage, such as Float32Array or Int32Array; Uint8 also includes Uint8ClampedArray. A whole-valued ordinary JavaScript Number is still a Number property, not an Int32 element. Choose an object to narrow discovery further. Reset the scan to change formats.

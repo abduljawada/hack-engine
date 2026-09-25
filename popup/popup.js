@@ -10,7 +10,7 @@
     avm1: ["f64"],
     avm2: ["i32", "u32", "f64"],
   });
-  const TYPE_LABELS = Object.freeze({ i32: "Int32 (i32)", u32: "Uint32 (u32)", f64: "Float64 (f64)" });
+  const TYPE_LABELS = Object.freeze({ i32: "Int32 (i32)", u32: "Uint32 (u32)", f32: "Float32 (f32)", f64: "Float64 (f64)" });
   const NUMERIC_LIMITS = Object.freeze({
     i8: ["-128", "127"],
     u8: ["0", "255"],
@@ -519,20 +519,28 @@
     const usesSession = quickSession?.canRefine || quickSession?.status === "scanning";
     const record = usesSession ? sessionInstance() : advancedSelectedInstance();
     const javascript = record?.kind === "javascript";
-    elements.advancedType.closest("label").hidden = javascript;
+    elements.advancedType.closest("label").hidden = false;
+    for (const option of elements.advancedType.options) {
+      if (option.value === "number") option.hidden = option.disabled = !javascript;
+      if (!["smart", "auto", "number"].includes(option.value)) {
+        const label = option.value.startsWith("f") ? `Float${option.value.slice(1)}` : `${option.value.startsWith("u") ? "Uint" : "Int"}${option.value.slice(1)}`;
+        option.textContent = javascript ? `${label} typed arrays` : label;
+      }
+    }
+    if (!javascript && elements.advancedType.value === "number") elements.advancedType.value = "smart";
     elements.advancedAlignment.closest("label").hidden = javascript;
     ui("javascript-root-controls").hidden = !javascript;
     ui("javascript-root").disabled = !!usesSession;
     ui("javascript-load-roots").disabled = !!usesSession;
     if (javascript) {
       elements.advancedAvmType.textContent = "JavaScript";
-      elements.advancedRecommendedTypes.textContent = "Finite numbers";
-      elements.advancedRuntimeHint.textContent = "Scans reachable objects, arrays and numeric typed arrays. Private or server-controlled state may be inaccessible. Choose an object below to narrow discovery.";
+      elements.advancedRecommendedTypes.textContent = "Number properties or typed-array elements";
+      elements.advancedRuntimeHint.textContent = "Automatic searches all finite numbers. Choose Number properties for ordinary objects and arrays, or a typed-array format to target its elements. Choose an object below to narrow discovery. Private or server-controlled state may be inaccessible.";
       return;
     }
-    const avmKind = usesSession && quickSession?.results?.avmKind !== undefined
-      ? quickSession.results.avmKind
-      : record?.looksLikeRuffle ? record.avmKind : "unknown";
+    const avmKind = record?.looksLikeRuffle && record.avmKind !== undefined
+      ? record.avmKind
+      : usesSession ? quickSession?.results?.avmKind || "unknown" : "unknown";
     elements.advancedRecommendedTypes.textContent = AVM_RECOMMENDED_TYPES[avmKind]
       ?.map((type) => TYPE_LABELS[type]).join(", ") || "All numeric types";
     if (avmKind === "avm1") {
@@ -541,6 +549,10 @@
     } else if (avmKind === "avm2") {
       elements.advancedAvmType.textContent = "AVM2";
       elements.advancedRuntimeHint.textContent = "Start with Int32 or Uint32 for whole numbers, Float64 for decimals. Automatic narrows decimal searches to Float64.";
+    } else if (record && !record.looksLikeRuffle) {
+      elements.advancedAvmType.textContent = "WebAssembly";
+      elements.advancedRecommendedTypes.textContent = "Int32, Uint32, Float32, Float64";
+      elements.advancedRuntimeHint.textContent = "Automatic starts with 32-bit integers and floating-point formats; decimals use Float32 and Float64. These are starting guesses, not detected variable types. Use All numeric types for smaller integers, or select a format below.";
     } else {
       elements.advancedAvmType.textContent = "Unknown";
       elements.advancedRuntimeHint.textContent = "Automatic searches all numeric types in this WebAssembly memory.";
@@ -715,10 +727,10 @@
     const instance = instances.get(`${candidate.frameId}:${candidate.instanceId}`);
     const belongsToSession = candidate.frameId === quickSession?.frameId &&
       candidate.instanceId === String(quickSession?.instanceId);
-    const avmKind = belongsToSession && quickSession?.results?.avmKind !== undefined
-      ? quickSession.results.avmKind
-      : instance?.looksLikeRuffle ? instance.avmKind : "unknown";
-    const types = AVM_RECOMMENDED_TYPES[avmKind] || [];
+    const avmKind = instance?.looksLikeRuffle && instance.avmKind !== undefined
+      ? instance.avmKind
+      : belongsToSession ? quickSession?.results?.avmKind || "unknown" : "unknown";
+    const types = AVM_RECOMMENDED_TYPES[avmKind] || (instance && !instance.looksLikeRuffle && instance.kind !== "javascript" ? ["i32", "u32", "f32", "f64"] : []);
     const index = types.indexOf(candidate.type);
     return index < 0 ? types.length : index;
   }
@@ -993,7 +1005,7 @@
       setQuickStatus(`${payload.roots?.length || 0} accessible objects available. Select one or use automatic discovery.`);
       return;
     }
-    if (payload?.kind === "instanceCaptured") {
+    if (payload?.kind === "instanceCaptured" || payload?.kind === "instanceUpdated") {
       addInstances(message.frameId, message.url, [payload.instance]);
       return;
     }
@@ -1268,7 +1280,7 @@
       );
       return false;
     }
-    if (record.kind === "javascript") { multiplier = 1; type = "smart"; alignment = "aligned"; }
+    if (record.kind === "javascript") { multiplier = 1; alignment = "aligned"; }
     const needsValue = ["exact", "range", "increasedBy", "decreasedBy"].includes(condition);
     if (needsValue && rawValue.trim() === "") {
       setQuickStatus("Enter a value to scan for.", "error");

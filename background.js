@@ -332,7 +332,7 @@
   }
 
   function rememberInstances(entry, payload) {
-    if (payload?.kind === "instanceCaptured" && payload.instance?.id) {
+    if (["instanceCaptured", "instanceUpdated"].includes(payload?.kind) && payload.instance?.id) {
       entry.instances.set(String(payload.instance.id), payload.instance);
     } else if (payload?.kind === "instanceList" && Array.isArray(payload.instances)) {
       entry.instances.clear();

@@ -44,6 +44,21 @@ test("another game frame cannot replace the selected newer scan session", async 
   assert.equal(ui.sent.filter((message) => message.kind === "quickSession").at(-1).session.instanceId, "A.1");
 });
 
+test("AVM metadata updates reach controls without replacing the existing scan", async () => {
+  const bg = background({}); await tick();
+  const ui = port("hack-popup:77"); bg.connect(ui);
+  const bridge = port("ruffle-frame-bridge", { tab: { id: 77 }, frameId: 0 }); bg.connect(bridge);
+  bridge.onMessage.emit(state());
+  const before = ui.sent.filter((message) => message.kind === "quickSession").at(-1).session;
+  const instance = { id: "doc-A.1", memoryBytes: 65536, looksLikeRuffle: true, avmKind: "avm2" };
+  bridge.onMessage.emit({ kind: "pageMessage", payload: { kind: "instanceUpdated", instance } });
+  assert.deepEqual(ui.sent.at(-1).payload.instance, instance);
+  let summary;
+  bg.runtime.onMessage.emit({ kind: "getTabSummary", tabId: 77 }, {}, (value) => { summary = value; });
+  assert.equal(summary.ruffleCount, 1);
+  assert.deepEqual(ui.sent.filter((message) => message.kind === "quickSession").at(-1).session, before);
+});
+
 const workspaceState = (ui) => ui.sent.filter((message) => message.kind === "workspaceState").at(-1).workspace;
 const diagnosticKey = "0:doc-A.1:i32:4096";
 async function diagnosticSetup() {

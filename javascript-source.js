@@ -27,6 +27,14 @@
   const typedArrayTag = Object.getOwnPropertyDescriptor(typedArrayPrototype, Symbol.toStringTag).get;
   const typedArrayLength = Object.getOwnPropertyDescriptor(typedArrayPrototype, "length").get;
   const numericArrays = { Int8Array, Uint8Array, Uint8ClampedArray, Int16Array, Uint16Array, Int32Array, Uint32Array, Float32Array, Float64Array };
+  const storageTypes = { Int8Array: "i8", Uint8Array: "u8", Uint8ClampedArray: "u8", Int16Array: "i16", Uint16Array: "u16", Int32Array: "i32", Uint32Array: "u32", Float32Array: "f32", Float64Array: "f64" };
+  const supportedTypes = ["number", ...new Set(Object.values(storageTypes))];
+  const storageTypeFor = (owner, key) => {
+    if (ArrayBuffer.isView(owner) && /^(0|[1-9][0-9]*)$/.test(key) && Number(key) < typedArrayLength.call(owner)) {
+      return storageTypes[typedArrayTag.call(owner)] || "number";
+    }
+    return "number";
+  };
   const initial = new Map();
   for (const key of Object.getOwnPropertyNames(root)) {
     const d = descriptor(root, key);
@@ -64,7 +72,7 @@
     const metadata = (address) => {
       const record = handles.get(address);
       const d = validate(record);
-      return { address, type: "number", kind: "javascript", path: [...record.path], displayPath: displayPath(record.path), value: d.value, writable: Boolean(d.writable) };
+      return { address, type: "number", storageType: storageTypeFor(record.owner, record.key), kind: "javascript", path: [...record.path], displayPath: displayPath(record.path), value: d.value, writable: Boolean(d.writable) };
     };
     const register = (owner, key, chain, path) => {
       let byKey = owners.get(owner);
@@ -93,7 +101,9 @@
         chain.push({ key, object: d.value }); owner = d.value;
       }
     };
-    const discover = async ({ requestId, rootPath } = {}) => {
+    const discover = async ({ requestId, rootPath, type = "smart" } = {}) => {
+      if (!["smart", "auto", ...supportedTypes].includes(type)) throw new Error("Unsupported JavaScript scan type.");
+      const matchesType = (owner, key) => type === "smart" || type === "auto" || storageTypeFor(owner, key) === type;
       const coverage = { complete: true, objects: 0, properties: 0, numbers: 0, limits: { depth: 8, objects: 20000, properties: 100000, handles: MAX_HANDLES }, reasons: [] };
       const incomplete = (reason) => { coverage.complete = false; if (!coverage.reasons.includes(reason)) coverage.reasons.push(reason); };
       // Retire stale owners between scans; live handles (including watches) are never evicted.
@@ -116,7 +126,7 @@
           const key = path[i]; const d = descriptor(owner, key);
           if (!d || i === 0 && !eligibleRoot(key, d)) throw new Error("JavaScript root is unavailable.");
           if (i === path.length - 1 && typeof d.value === "number" && Number.isFinite(d.value)) {
-            try { entries.push(register(owner, key, chain, path)); }
+            try { if (matchesType(owner, key)) entries.push(register(owner, key, chain, path)); }
             catch (error) { incomplete(error.code === "HANDLE_LIMIT" ? "handle limit" : "object changed during scan"); }
             break;
           }
@@ -153,7 +163,7 @@
           if (!d) continue;
           const path = [...item.path, key];
           if (typeof d.value === "number" && Number.isFinite(d.value)) {
-            try { entries.push(register(item.object, key, item.chain, path)); } catch (error) { incomplete(error.code === "HANDLE_LIMIT" ? "handle limit" : "object changed during scan"); }
+            try { if (matchesType(item.object, key)) entries.push(register(item.object, key, item.chain, path)); } catch (error) { incomplete(error.code === "HANDLE_LIMIT" ? "handle limit" : "object changed during scan"); }
           } else if (traversable(d.value) && !visited.has(d.value)) {
             if (item.depth >= coverage.limits.depth - 1) incomplete("depth limit");
             else if (queue.length >= coverage.limits.objects) incomplete("object limit");
@@ -169,7 +179,7 @@
       return { entries, coverage };
     };
     return {
-      describe: () => ({ id, kind: "javascript", displayName: "JavaScript objects", memoryBytes: 0, documentId, operations: ["scan", "refine", "watch", "write", "freeze"], capabilities: ["scan", "watch", "write", "freeze", "undo", "restore"], supportedTypes: ["number"] }),
+      describe: () => ({ id, kind: "javascript", displayName: "JavaScript objects", memoryBytes: 0, documentId, operations: ["scan", "refine", "watch", "write", "freeze"], capabilities: ["scan", "watch", "write", "freeze", "undo", "restore"], supportedTypes: [...supportedTypes] }),
       roots, discover, resolve, metadata,
       read: (address) => validate(handles.get(address)).value,
       write(address, value) {

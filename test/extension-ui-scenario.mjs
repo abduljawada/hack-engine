@@ -72,6 +72,9 @@ export const extensionUiScenario = `(${async function () {
   const oldSource = jsOption.value;
   ui('#advanced-instance').value = oldSource;
   ui('#advanced-instance').dispatchEvent(new Event('change', { bubbles: true }));
+  // Number formats now remain selectable for JavaScript: the previous i32
+  // choice targets typed arrays, while this fixture uses an ordinary property.
+  ui('#advanced-type').value = 'number';
   ui('#javascript-load-roots').click();
   await wait(() => [...ui('#javascript-root').options].some((option) => option.value === JSON.stringify(['hackEnginePracticeJS'])), 'JavaScript object picker');
   ui('#javascript-root').value = JSON.stringify(['hackEnginePracticeJS']);
@@ -100,6 +103,7 @@ export const extensionUiScenario = `(${async function () {
   // Leave a live JavaScript scan for the Chromium worker-recovery check.
   ui('#advanced-instance').value = [...ui('#advanced-instance').options].find((option) => /JavaScript/.test(option.textContent)).value;
   ui('#advanced-instance').dispatchEvent(new Event('change', { bubbles: true }));
+  ui('#advanced-type').value = 'number';
   ui('#javascript-load-roots').click();
   await wait(() => [...ui('#javascript-root').options].some((option) => option.value === JSON.stringify(['hackEnginePracticeJS'])), 'Reloaded JavaScript root');
   ui('#javascript-root').value = JSON.stringify(['hackEnginePracticeJS']);

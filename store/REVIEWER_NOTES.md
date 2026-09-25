@@ -16,7 +16,7 @@ No account, payment, network service, or proprietary test content is required. A
 
 ## Source build
 
-Upload `hack-engine-source-v1.2.6.zip` as the matching source archive. Its root `SOURCE_BUILD.md` gives the operating-system and tool-version requirements, installation steps, exact build command, validation commands, and unpacked-tree comparison procedure. The source includes `package-lock.json` and every build script. It excludes `node_modules`, `dist`, and repository internals.
+Upload `hack-engine-source-v1.2.7.zip` as the matching source archive. Its root `SOURCE_BUILD.md` gives the operating-system and tool-version requirements, installation steps, exact build command, validation commands, and unpacked-tree comparison procedure. The source includes `package-lock.json` and every build script. It excludes `node_modules`, `dist`, and repository internals.
 
 The release JavaScript is not minified, bundled, transpiled, or obfuscated. Reproduce the candidate by extracting the source archive, installing the locked dependencies, and running `npm run build`. Compare the unpacked output with the candidate archives as described in `SOURCE_BUILD.md`; qualification evidence is recorded in `IMPLEMENTATION_1_0.md`.
 

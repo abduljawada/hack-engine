@@ -2,6 +2,17 @@
 
 All notable changes to Hack Engine are documented here.
 
+## [1.2.7] - 2026-09-25
+
+Not published to browser stores. Source-specific AVM detection and more focused number-format scanning.
+
+- Associate Ruffle AVM metadata with its captured memory instead of borrowing types from other players in the frame. Mixed AVM types sharing one memory remain Unknown.
+- Retry unknown AVM types once per second, up to 15 retries, and refresh runtime guidance and candidate ordering when detection succeeds without discarding scan results.
+- Reset detection for new movie metadata and handle replacement players, page lifecycle cleanup, and unsupported import shapes without disrupting games.
+- Add JavaScript Number properties and individual typed-array formats to Advanced scanning while preserving candidate identity, safe writes, and stale-target checks.
+- Start non-Ruffle WebAssembly Automatic scans with 32-bit integers and floating-point formats; use Float32 and Float64 for decimal values and retain All numeric types as the broader fallback.
+- Update documentation and add AVM ownership/retry, background update, targeted-format, and browser-control regressions.
+
 ## [1.2.6] - 2026-09-24
 
 Not published to browser stores. Simplify scanning, watches, and recovery controls.

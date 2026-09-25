@@ -1,6 +1,6 @@
 # Mozilla reviewer build instructions
 
-This source package produces the unpublished Hack Engine `1.2.6` Firefox candidate. The executable JavaScript is readable and is not minified, bundled, transpiled, or obfuscated. The build script copies an explicit runtime-file allowlist, writes the reviewed browser manifest, normalizes package timestamps, and creates the ZIP archive.
+This source package produces the unpublished Hack Engine `1.2.7` Firefox candidate. The executable JavaScript is readable and is not minified, bundled, transpiled, or obfuscated. The build script copies an explicit runtime-file allowlist, writes the reviewed browser manifest, normalizes package timestamps, and creates the ZIP archive.
 
 ## Reference build environment
 
@@ -46,7 +46,7 @@ npm run build
 The Firefox submission is created at:
 
 ```text
-dist/hack-engine-firefox-v1.2.6.zip
+dist/hack-engine-firefox-v1.2.7.zip
 ```
 
 The packages use one shared toolbar/sidebar/pop-out interface and contain no legacy inspector or DevTools registration. The same command also produces the Chrome package and `dist/SHA256SUMS.txt`. These extra outputs do not affect the Firefox package.
@@ -66,7 +66,7 @@ To compare the rebuilt add-on with the submitted package, extract each ZIP into 
 
 ```sh
 unzip -q submitted-firefox.zip -d submitted
-unzip -q dist/hack-engine-firefox-v1.2.6.zip -d rebuilt
+unzip -q dist/hack-engine-firefox-v1.2.7.zip -d rebuilt
 diff -ru submitted rebuilt
 ```
 

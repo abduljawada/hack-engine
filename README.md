@@ -4,7 +4,7 @@ Hack Engine helps you find, watch, and change accessible numeric values in WebAs
 
 Everything happens locally in the inspected tab. Hack Engine has no accounts, telemetry, advertising, or remote service.
 
-> Current release: **v1.2.6 release candidate — not published**. Core workflows are tested locally on Linux Firefox and Chromium; the remaining release gates are recorded in [IMPLEMENTATION_1_0.md](IMPLEMENTATION_1_0.md).
+> Current release: **v1.2.7 release candidate — not published**. Core workflows are tested locally on Linux Firefox and Chromium; the remaining release gates are recorded in [IMPLEMENTATION_1_0.md](IMPLEMENTATION_1_0.md).
 
 ## What you can do
 

@@ -12,6 +12,10 @@
   const SNAPSHOT_STORE_NAME = "chunks";
   const AUTO_TYPES = ["i8", "u8", "i16", "u16", "i32", "u32", "f32", "f64"];
   const RUFFLE_PLAYER_SELECTOR = "ruffle-player, ruffle-embed, ruffle-object";
+  const AVM_RETRY_DELAY_MS = 1000;
+  const AVM_MAX_RETRIES = 15;
+  let activeRuffleMetadataContext = null;
+  let avmDetectionPaused = false;
 
   if (window.__ruffleMemoryInspectorV1) {
     return;
@@ -148,7 +152,7 @@
 
   function describeInstance(record) {
     if (isJavaScript(record)) return { ...record.backend.describe(), url: location.href };
-    const avmKind = record.looksLikeRuffle ? detectRuffleAvmKind() : "unknown";
+    const avmKind = record.avmKind || "unknown";
     return {
       id: record.id,
       kind: "wasm", displayName: record.looksLikeRuffle ? "Ruffle memory" : "WebAssembly memory",
@@ -167,21 +171,110 @@
     return /ruffle/i.test(text);
   }
 
-  function detectRuffleAvmKind() {
+  function detectRuffleAvmKind(record) {
     const kinds = new Set();
-    for (const player of document.querySelectorAll(RUFFLE_PLAYER_SELECTOR)) {
+    // A Wasm runtime can serve multiple players. Only consult players observed
+    // receiving metadata from this memory, never unrelated players in the frame.
+    for (const player of record.avmPlayers) {
       try {
+        if (!player.isConnected) {
+          // Ruffle destroys its player on disconnection. A replacement may
+          // reuse this memory and must not inherit the removed player's type.
+          record.avmPlayers.delete(player);
+          continue;
+        }
         const api = typeof player.ruffle === "function" ? player.ruffle(1) : player;
         const metadata = api?.metadata ?? player.metadata;
         if (typeof metadata?.isActionScript3 === "boolean") {
           kinds.add(metadata.isActionScript3 ? "avm2" : "avm1");
-        }
+        } else return "unknown";
       } catch {
-        // Older or partially initialized Ruffle players may not expose metadata.
+        return "unknown";
       }
     }
     return kinds.size === 1 ? [...kinds][0] : "unknown";
   }
+
+  function refreshAvm(record, restart = false) {
+    if (!record.looksLikeRuffle || avmDetectionPaused) return record.avmKind || "unknown";
+    if (restart) record.avmRetries = 0;
+    const previous = record.avmKind;
+    record.avmKind = detectRuffleAvmKind(record);
+    clearTimeout(record.avmTimer);
+    record.avmTimer = null;
+    if (record.avmKind === "unknown" && record.avmRetries < AVM_MAX_RETRIES) {
+      record.avmTimer = setTimeout(() => {
+        record.avmRetries++;
+        refreshAvm(record);
+      }, AVM_RETRY_DELAY_MS);
+    }
+    if (previous !== record.avmKind) {
+      send({ kind: "instanceUpdated", instance: describeInstance(record) });
+    }
+    return record.avmKind;
+  }
+
+  // Ruffle's setMetadata import synchronously dispatches loadedmetadata on its
+  // player element. Watching that call links both old heap-index glue and newer
+  // externref glue without relying on private player fields or DOM ordering.
+  function instrumentRuffleImports(imports) {
+    const context = { players: new Set(), records: new Set() };
+    if (!imports || typeof imports !== "object") return { imports, context };
+    try {
+      const descriptors = Object.getOwnPropertyDescriptors(imports);
+      // Leave accessor-based imports untouched: cloning can change their `this`.
+      if (Object.values(descriptors).some((entry) => !("value" in entry))) return { imports, context };
+      let changed = false;
+      for (const descriptor of Object.values(descriptors)) {
+        const namespace = descriptor.value;
+        if (!namespace || typeof namespace !== "object") continue;
+        const members = Object.getOwnPropertyDescriptors(namespace);
+        if (Object.values(members).some((entry) => !("value" in entry))) continue;
+        let wrapped = false;
+        for (const [name, member] of Object.entries(members)) {
+          if (!/^__wbg_setMetadata(?:_|$)/i.test(name) || typeof member.value !== "function") continue;
+          const original = member.value;
+          member.value = function (...args) {
+            const previous = activeRuffleMetadataContext;
+            activeRuffleMetadataContext = context;
+            try { return Reflect.apply(original, this, args); }
+            finally { activeRuffleMetadataContext = previous; }
+          };
+          wrapped = true;
+        }
+        if (wrapped) {
+          descriptor.value = Object.create(Object.getPrototypeOf(namespace), members);
+          changed = true;
+        }
+      }
+      return { imports: changed ? Object.create(Object.getPrototypeOf(imports), descriptors) : imports, context };
+    } catch {
+      // Reflection on a proxy or unsupported import shape must not break Wasm.
+      return { imports, context };
+    }
+  }
+
+  document.addEventListener("loadedmetadata", (event) => {
+    const player = event.target;
+    if (!player?.matches?.(RUFFLE_PLAYER_SELECTOR) &&
+        !/^ruffle-(?:player|embed|object)-\d+$/.test(player?.localName || "")) return;
+    const context = activeRuffleMetadataContext;
+    if (context) {
+      context.players.add(player);
+      for (const record of context.records) {
+        record.avmPlayers.add(player);
+        if (!record.looksLikeRuffle) {
+          record.looksLikeRuffle = true;
+          send({ kind: "instanceUpdated", instance: describeInstance(record) });
+        }
+      }
+    }
+    // A subsequent movie load gets a fresh retry budget even when the same Wasm
+    // memory is reused. Unrelated media events do not restart detection.
+    for (const record of instances.values()) {
+      if (record.avmPlayers?.has(player)) refreshAvm(record, true);
+    }
+  }, true);
 
   function collectImportedMemories(imports) {
     const memories = [];
@@ -204,7 +297,7 @@
     return memories;
   }
 
-  function captureInstance(instance, imports, hint = "") {
+  function captureInstance(instance, imports, hint = "", context) {
     if (!(instance instanceof WebAssembly.Instance)) {
       return;
     }
@@ -221,6 +314,10 @@
         (record) => record.memory === memory,
       );
       if (duplicate) {
+        context?.records.add(duplicate);
+        for (const player of context?.players || []) duplicate.avmPlayers.add(player);
+        if (context?.players.size) duplicate.looksLikeRuffle = true;
+        refreshAvm(duplicate);
         continue;
       }
 
@@ -232,9 +329,15 @@
         memory,
         hint,
         exportNames: exportNames.slice(0, 40),
-        looksLikeRuffle: detectRuffle(hint, exportNames),
+        looksLikeRuffle: detectRuffle(hint, exportNames) || !!context?.players.size,
+        avmPlayers: new Set(context?.players),
+        avmKind: "unknown",
+        avmRetries: 0,
+        avmTimer: null,
       };
       instances.set(id, record);
+      context?.records.add(record);
+      refreshAvm(record);
       send({ kind: "instanceCaptured", instance: describeInstance(record) });
     }
   }
@@ -259,15 +362,17 @@
   const NativeInstance = WebAssembly.Instance;
   WebAssembly.Instance = new Proxy(NativeInstance, {
     construct(target, args, newTarget) {
-      const instance = Reflect.construct(target, args, newTarget);
-      try { captureInstance(instance, args[1]); } catch { /* Inspection must not break a game. */ }
+      const prepared = instrumentRuffleImports(args[1]);
+      const instance = Reflect.construct(target, [args[0], prepared.imports], newTarget);
+      try { captureInstance(instance, prepared.imports, "", prepared.context); } catch { /* Inspection must not break a game. */ }
       return instance;
     },
   });
   const originalInstantiate = WebAssembly.instantiate.bind(WebAssembly);
   WebAssembly.instantiate = async function instrumentedInstantiate(source, imports) {
-    const result = await originalInstantiate(source, imports);
-    try { captureInstance(extractInstance(result), imports, responseHint(source)); } catch { /* Preserve successful instantiation. */ }
+    const prepared = instrumentRuffleImports(imports);
+    const result = await originalInstantiate(source, prepared.imports);
+    try { captureInstance(extractInstance(result), prepared.imports, responseHint(source), prepared.context); } catch { /* Preserve successful instantiation. */ }
     return result;
   };
 
@@ -277,14 +382,15 @@
       source,
       imports,
     ) {
-      const result = await originalInstantiateStreaming(source, imports);
+      const prepared = instrumentRuffleImports(imports);
+      const result = await originalInstantiateStreaming(source, prepared.imports);
       let resolvedSource = source;
       try {
         resolvedSource = await Promise.resolve(source);
       } catch {
         // The successful instantiation is more important than a missing URL hint.
       }
-      try { captureInstance(extractInstance(result), imports, responseHint(resolvedSource)); } catch { /* Preserve successful instantiation. */ }
+      try { captureInstance(extractInstance(result), prepared.imports, responseHint(resolvedSource), prepared.context); } catch { /* Preserve successful instantiation. */ }
       return result;
     };
   }
@@ -1219,23 +1325,25 @@
   }
 
   function smartScanTypes(record, rawValue, rawMaxValue, multiplier, condition) {
-    const avmKind = record.looksLikeRuffle ? detectRuffleAvmKind() : "unknown";
+    const avmKind = record.looksLikeRuffle ? refreshAvm(record) : "unknown";
     if (avmKind === "avm1") {
       return ["f64"];
     }
-    if (avmKind !== "avm2") {
+    if (record.looksLikeRuffle && avmKind !== "avm2") {
       return AUTO_TYPES.slice();
     }
+    const wholeTypes = avmKind === "avm2" ? ["i32", "u32", "f64"] : ["i32", "u32", "f32", "f64"];
+    const decimalTypes = avmKind === "avm2" ? ["f64"] : ["f32", "f64"];
 
     if (!["exact", "range", "increasedBy", "decreasedBy"].includes(condition)) {
-      return ["i32", "u32", "f64"];
+      return wholeTypes;
     }
     const values = [rawValue, condition === "range" ? rawMaxValue : rawValue]
       .map((value) => Number(value) * multiplier)
       .filter(Number.isFinite);
     return values.some((value) => !Number.isInteger(value))
-      ? ["f64"]
-      : ["i32", "u32", "f64"];
+      ? decimalTypes
+      : wholeTypes;
   }
 
   function emptyCandidatesFor(record, type, spec, alignment, byteLength) {
@@ -1576,7 +1684,7 @@
       instanceId: record.id,
       type: group.mode || "auto",
       multiplier: group.multiplier,
-      avmKind: record.looksLikeRuffle ? detectRuffleAvmKind() : "unknown",
+      avmKind: record.looksLikeRuffle ? refreshAvm(record) : "unknown",
       searchedTypes: group.types,
       total,
       preview,
@@ -1790,13 +1898,13 @@
       return { ...entry, value, displayValue: value, multiplier: 1 };
     });
     send({ kind: "scanResults", requestId, instanceId: record.id, type, multiplier: 1,
-      searchedTypes: ["number"], total: group.entries.length, preview, coverage: group.coverage,
+      searchedTypes: type === "smart" || type === "auto" ? record.backend.describe().supportedTypes : [type], total: group.entries.length, preview, coverage: group.coverage,
       memoryBytes: 0, candidateStorage: "properties", allCandidates: false });
   }
 
   async function javaScriptScan(options, record) {
     const { requestId, type = "smart", condition = "exact", refine, rawValue, rawMaxValue } = options;
-    if (!["smart", "auto", "number"].includes(type)) throw new Error("Choose Automatic for JavaScript numbers.");
+    if (!["smart", "auto", ...record.backend.describe().supportedTypes].includes(type)) throw new Error("Unsupported JavaScript scan type.");
     if (!refine && !["exact", "range", "unknown"].includes(condition)) throw new Error("First scans support exact, range, or unknown initial values.");
     if (refine && condition === "unknown") throw new Error("Unknown initial value is only available for a first scan.");
     const key = scanKey(record.id, type);
@@ -1805,7 +1913,7 @@
     const matches = condition === "unknown" ? () => true
       : ["exact", "range"].includes(condition) ? scanValueMatcher("number", condition, rawValue, rawMaxValue, 1)
       : scanComparisonMatcher("number", condition, rawValue, 1);
-    const discovered = previous || await record.backend.discover({ requestId, rootPath: options.rootPath });
+    const discovered = previous || await record.backend.discover({ requestId, rootPath: options.rootPath, type });
     const entries = [];
     for (let index = 0; index < discovered.entries.length; index++) {
       const entry = discovered.entries[index];
@@ -2387,10 +2495,19 @@
   });
 
   window.addEventListener("pagehide", (event) => {
+    avmDetectionPaused = true;
+    for (const record of instances.values()) {
+      clearTimeout(record.avmTimer);
+      record.avmTimer = null;
+    }
     stopAllFreezes();
     if (event.persisted) return;
     for (const requestId of activeScans.values()) cancelledScans.add(requestId);
     Promise.allSettled([...ownedSnapshots].map(deleteSnapshot)).finally(() => releaseSnapshotLease?.());
+  });
+  window.addEventListener("pageshow", () => {
+    avmDetectionPaused = false;
+    for (const record of instances.values()) refreshAvm(record);
   });
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) stopAllFreezes();
