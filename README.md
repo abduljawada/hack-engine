@@ -84,6 +84,10 @@ Hack Engine is released under the [MIT License](LICENSE). Questions can also be 
 
 ## Development checks
 
+`npm run test:games` builds and installs the extension in disposable Firefox and Chromium profiles, visits the actual game websites, and writes an HTML report with screenshots and per-step results. Use `-- --game J1,W1` for Asteroids and Breakout, or `-- --headed` to watch. No local Flash files are needed for website testing. Use `-- --mode local --game J1,W1` for pinned local regressions. Incomplete gameplay coverage stays visible as blocked; `npm run release:verify` requires all eight games in both browsers to pass. See [real-game testing](test/GAME_TESTING.md) for commands, assets, CI, and coverage boundaries.
+
+`npm run test:regression` starts its own local server and runs the existing page and installed-extension fixture suites after a build.
+
 `npm run test:unit` checks background recovery and document invalidation. Serve this directory at `http://127.0.0.1:8765`, then run `npm run test:browser` for page-level regressions. After `npm run build`, `npm run test:firefox` and `npm run test:chrome` install the actual packages in disposable profiles and exercise a local test fixture and persistent controls. Browser discovery supports Linux, macOS, and Windows; set `FIREFOX_PATH` or `CHROME_PATH` to override it. Current qualification evidence is Linux-only.
 
 The Firefox UI test uses its documented `--remote-allow-system-access` automation flag only in the temporary test profile. Do not point these runners at a personal browser profile.

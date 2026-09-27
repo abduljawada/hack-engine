@@ -9,6 +9,8 @@ const distRoot = join(projectRoot, "dist");
 const version = JSON.parse(readFileSync(join(projectRoot, "manifest.json"), "utf8")).version;
 const archivePath = join(distRoot, `hack-engine-source-v${version}.zip`);
 const sourceEntries = [
+  ".github/workflows",
+  "STORE_AUTOMATION.md",
   "CHANGELOG.md",
   "COMPATIBILITY.md",
   "LICENSE",

@@ -1,0 +1,50 @@
+name: Verify store setup
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+      - name: Check store authentication without uploading
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+          CHROME_PUBLISH_ENABLED: ${{ vars.CHROME_PUBLISH_ENABLED }}
+          CHROME_PUBLISHER_ID: ${{ vars.CHROME_PUBLISHER_ID }}
+          CHROME_EXTENSION_ID: ${{ vars.CHROME_EXTENSION_ID }}
+          CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+          CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+        run: |
+          node --input-type=module <<'JS'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          import { runFirefox } from './scripts/store-firefox.mjs';
+          import { runChrome } from './scripts/store-chrome.mjs';
+          const { version } = JSON.parse(readFileSync('manifest.json', 'utf8'));
+          for (const [store, run] of [['firefox', runFirefox], ['chrome', runChrome]]) {
+            if (store === 'chrome' && process.env.CHROME_PUBLISH_ENABLED !== 'true') {
+              appendFileSync(process.env.GITHUB_STEP_SUMMARY, 'Chrome: disabled.\n\n');
+              continue;
+            }
+            try {
+              const result = await run({ version, mode: 'status' });
+              appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${store}: authenticated; version ${version}: ${result.state}. No upload performed.\n\n`);
+              if (result.state === 'needs_attention') process.exitCode = 1;
+            } catch (error) {
+              console.error(`${store}: ${error.message}`);
+              process.exitCode = 1;
+            }
+          }
+          JS

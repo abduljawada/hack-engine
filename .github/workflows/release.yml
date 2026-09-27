@@ -1,0 +1,216 @@
+name: Store release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing stable release tag (vX.Y.Z) on main
+        required: true
+        type: string
+      operation:
+        description: Status reads stores only; submit reruns checks before retrying
+        type: choice
+        options: [status, submit]
+        default: status
+      reconciled:
+        description: Retry only after dashboard inspection confirms no uploaded package or submitted version remains
+        type: boolean
+        default: false
+      store:
+        description: Store to check or retry
+        type: choice
+        options: [both, firefox, chrome]
+        default: both
+
+permissions:
+  contents: read
+
+# Serialize every version and retry, not just runs for the same tag.
+concurrency:
+  group: store-release
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  prepare:
+    # Prerelease tag pushes are ignored; malformed stable tags fail preflight.
+    if: github.event_name == 'workflow_dispatch' || (!contains(github.ref_name, '-') && !contains(github.ref_name, '+'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+          cache: npm
+      - name: Verify tag, main ancestry, versions and release notes
+        run: node scripts/release-preflight.mjs
+      - name: Install locked dependencies
+        if: inputs.operation != 'status'
+        run: npm ci --ignore-scripts
+      - name: Install pinned test browsers
+        if: inputs.operation != 'status'
+        env:
+          FIREFOX_VERSION: '155.0.1'
+          CHROME_VERSION: '152.0.7977.82'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/hack-browsers"
+          curl --fail --location --retry 2 "https://archive.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/linux-x86_64/en-US/firefox-${FIREFOX_VERSION}.tar.xz" -o "$RUNNER_TEMP/firefox.tar.xz"
+          tar -xJf "$RUNNER_TEMP/firefox.tar.xz" -C "$RUNNER_TEMP/hack-browsers"
+          curl --fail --location --retry 2 "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chrome-linux64.zip" -o "$RUNNER_TEMP/chrome.zip"
+          unzip -q "$RUNNER_TEMP/chrome.zip" -d "$RUNNER_TEMP/hack-browsers"
+          echo "FIREFOX_PATH=$RUNNER_TEMP/hack-browsers/firefox/firefox" >> "$GITHUB_ENV"
+          echo "CHROME_PATH=$RUNNER_TEMP/hack-browsers/chrome-linux64/chrome" >> "$GITHUB_ENV"
+      - name: Unit tests, build, package validation and Firefox lint
+        if: inputs.operation != 'status'
+        run: |
+          npm run test:unit
+          npm run build:source
+          npm run check
+          npm run lint:firefox
+      - name: Browser adapter and cross-site frame checks
+        if: inputs.operation != 'status'
+        run: GAME_BROWSER_INTEGRATION=1 GAME_BROWSER_NO_SANDBOX=1 node --test test/game-live-browser.test.mjs
+      - name: Browser regressions
+        if: inputs.operation != 'status'
+        run: npm run test:regression
+      - name: Pinned local games
+        if: inputs.operation != 'status'
+        run: npm run test:games -- --mode local --game J1,W1 --no-build --no-sandbox
+      - name: Strict website release qualification
+        if: inputs.operation != 'status'
+        run: npm run test:games -- --mode website --no-build --no-sandbox --strict
+      - name: Retain exact release packages and metadata
+        if: inputs.operation != 'status'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-inputs
+          include-hidden-files: false
+          path: |
+            dist/
+            artifacts/store-release/release.json
+            artifacts/store-release/amo-metadata.json
+          retention-days: 90
+          if-no-files-found: error
+      - name: Retain qualification evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-qualification
+          path: |
+            artifacts/game-tests/
+            artifacts/store-release/
+          retention-days: 90
+          if-no-files-found: warn
+
+  firefox:
+    permissions:
+      contents: read
+      deployments: write
+    needs: prepare
+    if: inputs.store != 'chrome'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+          cache: npm
+      - uses: actions/download-artifact@v4
+        if: inputs.operation != 'status'
+        with:
+          name: release-inputs
+          path: .
+      - name: Recheck release identity
+        env:
+          REQUIRE_RELEASE_RECORD: ${{ inputs.operation != 'status' && 'true' || 'false' }}
+        run: node scripts/release-preflight.mjs
+      - if: inputs.operation != 'status'
+        run: npm ci --ignore-scripts
+      - name: Verify downloaded packages
+        if: inputs.operation != 'status'
+        run: |
+          npm run check
+          (cd dist && sha256sum --check SOURCE_SHA256.txt)
+      - name: Submit or check Firefox
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+          OPERATION: ${{ inputs.operation || 'submit' }}
+          GITHUB_TOKEN: ${{ github.token }}
+          STORE_RETRY_RECONCILED: ${{ inputs.reconciled && 'true' || 'false' }}
+        run: node scripts/store-release.mjs firefox "$OPERATION"
+      - name: Retain Firefox result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firefox-submission
+          path: artifacts/store-release/
+          retention-days: 90
+          if-no-files-found: warn
+
+  chrome:
+    permissions:
+      contents: read
+      deployments: write
+    needs: prepare
+    if: vars.CHROME_PUBLISH_ENABLED == 'true' && inputs.store != 'firefox'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+      - uses: actions/download-artifact@v4
+        if: inputs.operation != 'status'
+        with:
+          name: release-inputs
+          path: .
+      - name: Recheck release identity
+        env:
+          REQUIRE_RELEASE_RECORD: ${{ inputs.operation != 'status' && 'true' || 'false' }}
+        run: node scripts/release-preflight.mjs
+      - name: Verify downloaded packages
+        if: inputs.operation != 'status'
+        run: |
+          node scripts/validate-release.mjs
+          (cd dist && sha256sum --check SOURCE_SHA256.txt)
+      - name: Submit or check Chrome
+        env:
+          CHROME_PUBLISH_ENABLED: ${{ vars.CHROME_PUBLISH_ENABLED }}
+          CHROME_PUBLISHER_ID: ${{ vars.CHROME_PUBLISHER_ID }}
+          CHROME_EXTENSION_ID: ${{ vars.CHROME_EXTENSION_ID }}
+          CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+          CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+          OPERATION: ${{ inputs.operation || 'submit' }}
+          GITHUB_TOKEN: ${{ github.token }}
+          STORE_RETRY_RECONCILED: ${{ inputs.reconciled && 'true' || 'false' }}
+        run: node scripts/store-release.mjs chrome "$OPERATION"
+      - name: Retain Chrome result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chrome-submission
+          path: artifacts/store-release/
+          retention-days: 90
+          if-no-files-found: warn

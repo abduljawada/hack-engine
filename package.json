@@ -12,10 +12,13 @@
     "test:browser": "node test/run-browser-harnesses.mjs",
     "test:firefox": "node test/run-firefox-extension-harness.mjs",
     "test:chrome": "node test/run-chrome-extension-harness.mjs",
-    "release:verify": "npm run build:source && npm run check && npm run lint:firefox",
-    "test:unit": "node --test --test-isolation=none test/*.test.mjs"
+    "release:verify": "npm run build:source && npm run check && npm run lint:firefox && npm run test:unit && npm run test:regression && npm run test:games -- --mode local --game J1,W1 --no-build && npm run test:games -- --mode website --no-build --strict",
+    "test:unit": "node --test --test-isolation=none test/*.test.mjs",
+    "test:games": "node test/run-games.mjs",
+    "test:regression": "node test/run-regressions.mjs"
   },
   "devDependencies": {
+    "tesseract.js": "7.0.0",
     "web-ext": "10.6.0"
   }
 }
