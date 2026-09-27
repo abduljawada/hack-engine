@@ -92,7 +92,43 @@ function checkRecommendedSorting() {
   return failures.length === 0;
 }
 
+async function checkPlaybackControls() {
+  const ui = (id) => document.getElementById(id);
+  const assert = (ok, message) => { if (!ok) throw new Error(message); };
+  popupHarnessState.emitMessage({ kind: "quickSession", session: null });
+  popupHarnessState.resetInstances();
+  assert(!ui("game-controls").hidden, "Playback controls are visible in both views");
+  assert(ui("pause-while-scanning").checked, "Saved scan pause preference is restored");
+  assert(!ui("pause-game").disabled && ui("pause-game").textContent === "Pause game", "Supported games expose pause");
+  ui("pause-game").click();
+  await delay();
+  const command = popupHarnessState.commands.filter(({ payload }) => payload.kind === "setGamePaused").at(-1);
+  assert(command.frameId === 0 && command.payload.instanceId === "memory-1" && command.payload.paused === true, "Pause is routed to the selected game frame");
+  assert(ui("pause-game").textContent === "Resume game" && ui("pause-game").getAttribute("aria-pressed") === "true", "Backend pause state updates the control");
+  ui("pause-game").click();
+  await delay();
+  assert(ui("pause-game").textContent === "Pause game", "Resume restores the pause control");
+  ui("quick-value").value = "8";
+  ui("quick-scan").click();
+  assert(ui("pause-game").disabled && ui("pause-while-scanning").disabled, "Playback controls are locked during a scan");
+  await delay();
+  assert(popupHarnessState.commands.filter(({ payload }) => payload.kind === "memoryScan").at(-1).payload.pauseWhileScanning === true, "Scan includes the supported pause preference");
+  ui("broaden-search").click();
+  await delay();
+  assert(popupHarnessState.commands.filter(({ payload }) => payload.kind === "memoryScan").at(-1).payload.pauseWhileScanning === true, "Broaden scan preserves the pause preference");
+  ui("pause-while-scanning").checked = false;
+  ui("pause-while-scanning").dispatchEvent(new Event("change"));
+  await delay();
+  assert(popupHarnessState.preferences.pauseWhileScanning === false, "Scan pause preference is persisted");
+  browser.storage.onChanged.emit({ pauseWhileScanning: { newValue: true } }, "local");
+  assert(ui("pause-while-scanning").checked, "Scan pause preference synchronizes across open controls");
+  ui("pause-while-scanning").checked = true;
+  ui("pause-while-scanning").dispatchEvent(new Event("change"));
+  await delay();
+}
+
 async function checkJavaScriptSources() {
+  await checkPlaybackControls();
   const ui = (id) => document.getElementById(id);
   const assert = (ok, message) => { if (!ok) throw new Error(message); };
   popupHarnessState.emitMessage({ kind: "quickSession", session: null });
@@ -102,6 +138,8 @@ async function checkJavaScriptSources() {
   ] });
   ui("quick-instance").value = "0:js-1";
   ui("quick-instance").dispatchEvent(new Event("change"));
+  assert(ui("pause-game").disabled && ui("pause-while-scanning").disabled && ui("pause-while-scanning").checked, "Unsupported sources disable pause without clearing the saved preference");
+  assert(ui("pause-status").textContent === "Pause is available for supported Ruffle games.", "Unsupported pause explains its scope");
   assert(ui("advanced-instance").value === "0:js-1", "Source selectors must agree");
   assert(!ui("advanced-type").closest("label").hidden, "JavaScript exposes targeted number formats");
   assert(!ui("advanced-type").querySelector('[value="number"]').disabled, "JavaScript allows Number properties");
@@ -126,6 +164,7 @@ async function checkJavaScriptSources() {
   await delay();
   const scan = popupHarnessState.commands.filter(({ payload }) => payload.kind === "memoryScan").at(-1).payload;
   assert(scan.instanceId === "js-1" && scan.type === "number" && scan.multiplier === 1 && JSON.stringify(scan.rootPath) === '["game"]', "JavaScript scan uses selected object and no multiplier");
+  assert(scan.pauseWhileScanning === false, "Unsupported scans never request pausing");
   assert(ui("quick-status").textContent.includes("incomplete"), "Partial discovery must be visible");
   assert(ui("broaden-search").hidden, "JavaScript does not offer byte formats");
   const row = document.querySelector(".quick-candidate");

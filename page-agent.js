@@ -45,6 +45,7 @@
   const scans = new Map();
   const freezes = new Map();
   const cancelledScans = new Set();
+  const pausedPlayers = new Map();
   const activeWriteDiagnostics = new Map();
   let nextInstanceId = 1;
   let nextSnapshotId = 1;
@@ -163,7 +164,108 @@
       exportNames: record.exportNames,
       looksLikeRuffle: record.looksLikeRuffle,
       avmKind,
+      ...pauseState(record),
     };
+  }
+
+  // Use only players proven to belong to this memory. Never suspend page timers:
+  // those also drive scan progress, cancellation, and extension messaging.
+  function pauseTargets(record) {
+    const targets = [];
+    for (const player of record?.avmPlayers || []) {
+      if (!player.isConnected) continue;
+      try {
+        const api = typeof player.ruffle === "function" ? player.ruffle(1) : player;
+        if (typeof api?.suspend === "function" && typeof api.resume === "function" && typeof api.suspended === "boolean") {
+          targets.push({ player, paused: () => api.suspended, pause: () => api.suspend(), resume: () => api.resume() });
+        } else if (typeof api?.pause === "function" && typeof api.play === "function" && typeof api.isPlaying === "boolean") {
+          targets.push({ player, paused: () => !api.isPlaying, pause: () => api.pause(), resume: () => api.play() });
+        } else return [];
+      } catch { return []; }
+    }
+    return targets;
+  }
+
+  function pauseState(record) {
+    const targets = pauseTargets(record);
+    return {
+      pauseSupported: targets.length > 0,
+      gamePaused: targets.length > 0 && targets.every((target) => target.paused()),
+      manuallyPaused: targets.some(({ player }) => pausedPlayers.get(player)?.owners.has(`manual:${record.id}`)),
+    };
+  }
+
+  function notifyPauseState() {
+    for (const record of instances.values()) {
+      if (record.avmPlayers?.size) send({ kind: "instanceUpdated", instance: describeInstance(record) });
+    }
+  }
+
+  function releasePause(owner) {
+    let failure;
+    for (const [player, entry] of pausedPlayers) {
+      if (!entry.owners.delete(owner) || entry.owners.size) continue;
+      try {
+        if (entry.resumeAfter && player.isConnected) entry.target.resume();
+        pausedPlayers.delete(player);
+      } catch (error) {
+        // Retain ownership so a later Resume or disconnect can retry recovery.
+        entry.owners.add(owner);
+        failure = error;
+      }
+    }
+    notifyPauseState();
+    if (failure) throw new Error("Unable to resume the game. Use the game's play control or retry Resume game.");
+  }
+
+  function acquirePause(record, owner) {
+    const targets = pauseTargets(record);
+    if (!targets.length) throw new Error("Pause is available for supported Ruffle games only.");
+    try {
+      for (const target of targets) {
+        let entry = pausedPlayers.get(target.player);
+        if (!entry) {
+          entry = { target, owners: new Set(), resumeAfter: !target.paused() };
+          pausedPlayers.set(target.player, entry);
+        }
+        entry.owners.add(owner);
+        target.pause();
+        if (!target.paused()) throw new Error("The game did not pause.");
+      }
+    } catch (error) {
+      releasePause(owner);
+      throw error;
+    }
+    notifyPauseState();
+  }
+
+  function setGamePaused({ instanceId, paused }) {
+    const record = instances.get(String(instanceId));
+    if (!record) throw new Error("This game is no longer available.");
+    if (activeScans.size) throw new Error("Wait for the scan to finish before changing game pause.");
+    const owner = `manual:${record.id}`;
+    if (paused) acquirePause(record, owner);
+    else {
+      releasePause(owner);
+      // A failed automatic resume retains its lease for an explicit retry.
+      const orphaned = new Set(pauseTargets(record).flatMap(({ player }) =>
+        [...(pausedPlayers.get(player)?.owners || [])].filter((token) => token.startsWith("scan:"))));
+      for (const token of orphaned) releasePause(token);
+      // Explicit Resume also resumes a player paused from its own controls.
+      for (const target of pauseTargets(record)) {
+        if (!pausedPlayers.get(target.player)?.owners.size && target.paused()) target.resume();
+      }
+      notifyPauseState();
+    }
+  }
+
+  function releaseAllPauses() {
+    for (const requestId of activeScans.values()) cancelledScans.add(requestId);
+    const owners = new Set([...pausedPlayers.values()].flatMap((entry) => [...entry.owners]));
+    for (const owner of owners) {
+      try { releasePause(owner); }
+      catch (error) { send({ kind: "error", message: error.message }); }
+    }
   }
 
   function detectRuffle(hint, exportNames) {
@@ -1953,7 +2055,9 @@
     const priorSnapshots = new Set(ownedSnapshots);
     currentSession = { updatedAt: Date.now(), requestId: options.requestId, instanceId: id, request: { ...options }, status: "scanning", canRefine: !!options.refine, results: null };
     activeScans.set(id, String(options.requestId));
+    const pauseOwner = `scan:${options.requestId}`;
     try {
+      if (options.pauseWhileScanning) acquirePause(record, pauseOwner);
       if (isJavaScript(record)) await javaScriptScan(options, record);
       else await performMemoryScan(options);
     } catch (error) {
@@ -1966,7 +2070,7 @@
     } finally {
       activeScans.delete(id);
       cancelledScans.delete(String(options.requestId));
-      emitSession();
+      try { releasePause(pauseOwner); } finally { emitSession(); }
     }
   }
 
@@ -2431,7 +2535,13 @@
           case "getSessionState":
             emitSession();
             break;
+          case "setGamePaused":
+            setGamePaused(command);
+            break;
           case "bridgeDisconnected":
+            releaseAllPauses();
+            stopAllFreezes(command);
+            break;
           case "stopAllFreezes":
             stopAllFreezes(command);
             break;
@@ -2496,6 +2606,7 @@
 
   window.addEventListener("pagehide", (event) => {
     avmDetectionPaused = true;
+    releaseAllPauses();
     for (const record of instances.values()) {
       clearTimeout(record.avmTimer);
       record.avmTimer = null;

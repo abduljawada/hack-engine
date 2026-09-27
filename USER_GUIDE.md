@@ -28,6 +28,14 @@ Select a candidate to add it to Watches and open its editor. Select an individua
 
 A live session supports up to 256 watches. Each watch can be edited or frozen individually; **Stop all freezes** stops every active freeze in the inspected tab.
 
+## Pausing the game
+
+Use **Pause game** to suspend a supported Ruffle game, then **Resume game** to continue. The controls are available in both Simple and Advanced views. If a Ruffle memory is shared by multiple associated players, pausing that source pauses all of those players.
+
+Enable **Pause while scanning** to pause during first scans, refinements, and searches across all number formats. The preference is saved. A game that was running resumes when the scan completes, fails, or is cancelled; a game already paused stays paused. Manual pause remains active when you close the popup, so reopen the controls to resume. Disconnecting the page bridge or leaving the page releases pauses owned by Hack Engine.
+
+Pause requires a Ruffle player linked to the selected memory with a supported playback API. The controls are disabled for other WebAssembly and JavaScript sources, or when player ownership is unknown. Scanning those sources still works, but does not pause them. Games with independent workers or server activity are outside this pause control.
+
 ## Numeric formats
 
 If the Simple scan does not find the value, try **All numeric types** in Advanced. Common Ruffle representations include `Float64` for AVM1 numbers and `Int32`, `Uint32`, or `Float64` for AVM2 values. **Any byte** alignment is slower but can find unaligned values.

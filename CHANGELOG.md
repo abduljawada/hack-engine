@@ -2,6 +2,14 @@
 
 All notable changes to Hack Engine are documented here.
 
+## [1.3.0] - 2026-09-27
+
+Not published to browser stores. Game pause controls and automatic pause during scanning.
+
+- Add Pause game / Resume game controls for supported Ruffle players associated with the selected memory.
+- Add a saved Pause while scanning preference in Simple and Advanced views, preserving manual pauses and restoring playback after completion, cancellation, or failure.
+- Release owned pauses on page departure or bridge disconnect and show when a source cannot be paused.
+
 ## [1.2.7] - 2026-09-25
 
 Not published to browser stores. Source-specific AVM detection and more focused number-format scanning.

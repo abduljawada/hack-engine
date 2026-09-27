@@ -14,6 +14,7 @@ const popupHarnessState = {
   liveMultiplier: 1,
   reloadedTabs: [],
   commands: [],
+  preferences: { pauseWhileScanning: true },
   closed: false,
 };
 
@@ -27,7 +28,7 @@ function createEvent() {
   const listeners = new Set();
   return {
     addListener(listener) { listeners.add(listener); },
-    emit(value) { for (const listener of listeners) listener(value); },
+    emit(...values) { for (const listener of listeners) listener(...values); },
   };
 }
 
@@ -38,6 +39,9 @@ function createPopupPort() {
     id: "memory-1",
     memoryBytes: 4.5 * 1024 * 1024,
     looksLikeRuffle: true,
+    pauseSupported: true,
+    gamePaused: false,
+    manuallyPaused: false,
     avmKind: "avm2",
     hint: "ruffle_web.wasm",
   };
@@ -71,6 +75,9 @@ function createPopupPort() {
           requestId: payload.requestId,
           instances: [instance],
         }));
+      } else if (payload.kind === "setGamePaused") {
+        instance.gamePaused = instance.manuallyPaused = payload.paused;
+        queueMicrotask(() => emitPayload({ kind: "instanceUpdated", instance: { ...instance } }));
       } else if (payload.kind === "memoryScan") {
         popupHarnessState.liveMultiplier = Number(payload.multiplier) || 1;
         const resultType = ["smart", "auto"].includes(payload.type) ? "i32" : payload.type;
@@ -136,6 +143,13 @@ function createPopupPort() {
 }
 
 globalThis.browser = {
+  storage: {
+    onChanged: createEvent(),
+    local: {
+      async get() { return { ...popupHarnessState.preferences }; },
+      async set(values) { Object.assign(popupHarnessState.preferences, values); },
+    },
+  },
   runtime: {
     getURL(path) {
       return new URL(`../${path}`, location.href).href;

@@ -60,6 +60,8 @@
   let renderedResult = null;
   let rootsRequest = null;
   let sourceChosen = false;
+  let pauseWhileScanning = false;
+  let pausePreferenceChanged = false;
   const ui = (id) => document.getElementById(id);
 
   const elements = {
@@ -68,6 +70,10 @@
     statusTitle: document.querySelector("#status-title"),
     connectionState: document.querySelector(".header-status"),
     viewSwitcher: document.querySelector("#view-switcher"),
+    gameControls: document.querySelector("#game-controls"),
+    pauseGame: document.querySelector("#pause-game"),
+    pauseWhileScanning: document.querySelector("#pause-while-scanning"),
+    pauseStatus: document.querySelector("#pause-status"),
     viewButtons: [...document.querySelectorAll("#view-switcher [data-view]")],
     quickTools: document.querySelector("#quick-tools"),
     condition: document.querySelector("#quick-condition"),
@@ -375,6 +381,29 @@
     return instances.get(key) || selectedInstance();
   }
 
+  function playbackInstance() {
+    return quickSession?.canRefine || quickSession?.status === "scanning"
+      ? sessionInstance()
+      : advancedSelectedInstance();
+  }
+
+  function updatePlaybackControls() {
+    const record = playbackInstance();
+    const supported = Boolean(record?.pauseSupported);
+    const scanning = quickSession?.status === "scanning";
+    const paused = Boolean(record?.gamePaused);
+    elements.pauseGame.disabled = !port || !supported || scanning;
+    elements.pauseGame.textContent = paused ? "Resume game" : "Pause game";
+    elements.pauseGame.setAttribute("aria-pressed", String(paused));
+    elements.pauseWhileScanning.checked = pauseWhileScanning;
+    elements.pauseWhileScanning.disabled = !port || !supported || scanning;
+    elements.pauseStatus.textContent = !supported
+      ? "Pause is available for supported Ruffle games."
+      : paused
+        ? scanning && !record.manuallyPaused ? "Game paused for this scan." : "Game paused. Resume when you’re ready."
+        : "Game running.";
+  }
+
   function send(payload, frameId = selectedInstance()?.frameId) {
     if (!port) {
       setQuickStatus("The extension connection is not ready.", "error");
@@ -411,6 +440,7 @@
   function updateViewVisibility() {
     const persistentSurface = isSidebarPanel || isPopoutWindow;
     elements.viewSwitcher.hidden = !persistentSurface || !memoryDetected;
+    elements.gameControls.hidden = !memoryDetected;
     elements.quickTools.hidden = !memoryDetected || activeView !== "simple";
     elements.advancedTools.hidden = !memoryDetected || activeView !== "advanced";
     document.body.classList.toggle("advanced-active", activeView === "advanced");
@@ -603,6 +633,7 @@
     updateRuntimeGuidance();
     updateConditionControls();
     updateScanWatchdog();
+    updatePlaybackControls();
   }
 
   function candidateValueText(candidate) {
@@ -1195,6 +1226,13 @@
   }
 
   async function initialize() {
+    try {
+      const saved = await extensionApi.storage.local.get("pauseWhileScanning");
+      if (!pausePreferenceChanged) pauseWhileScanning = saved.pauseWhileScanning === true;
+      updatePlaybackControls();
+    } catch {
+      // Playback controls still work when preference storage is unavailable.
+    }
     const tab = hasBoundTab
       ? await extensionApi.tabs.get(boundTabId)
       : (await extensionApi.tabs.query({ active: true, currentWindow: true }))[0];
@@ -1214,6 +1252,7 @@
     ui("javascript-root").replaceChildren(new Option("Automatic discovery", ""));
     rootsRequest = null;
     updateRuntimeGuidance();
+    updatePlaybackControls();
   }
   elements.advancedInstance.addEventListener("change", sourceChanged);
   ui("quick-instance").addEventListener("change", () => {
@@ -1236,6 +1275,32 @@
   }
   elements.advancedFilter.addEventListener("input", renderCandidateLists);
   elements.advancedSort.addEventListener("change", renderCandidateLists);
+
+  elements.pauseGame.addEventListener("click", () => {
+    const record = playbackInstance();
+    if (!record?.pauseSupported || quickSession?.status === "scanning") return;
+    send({
+      kind: "setGamePaused",
+      requestId: nextRequestId("pause"),
+      instanceId: record.id,
+      paused: !record.gamePaused,
+    }, record.frameId);
+  });
+  elements.pauseWhileScanning.addEventListener("change", async () => {
+    pausePreferenceChanged = true;
+    pauseWhileScanning = elements.pauseWhileScanning.checked;
+    try {
+      await extensionApi.storage.local.set({ pauseWhileScanning });
+    } catch {
+      setQuickStatus("Pause preference applies here, but could not be saved for next time.", "error");
+    }
+  });
+  extensionApi.storage?.onChanged?.addListener((changes, areaName) => {
+    if (areaName !== "local" || !changes.pauseWhileScanning) return;
+    pausePreferenceChanged = true;
+    pauseWhileScanning = changes.pauseWhileScanning.newValue === true;
+    updatePlaybackControls();
+  });
 
   elements.pin.addEventListener("click", async () => {
     try {
@@ -1308,6 +1373,7 @@
       alignment: refine ? previous?.alignment || "aligned" : alignment,
       type: refine ? previous?.type || "smart" : type,
       refine,
+      pauseWhileScanning: Boolean(record.pauseSupported && pauseWhileScanning),
       ...(record.kind === "javascript" ? { rootPath: refine ? previous?.rootPath : advanced && ui("javascript-root").value ? JSON.parse(ui("javascript-root").value) : undefined } : {}),
     };
     quickSession = {
@@ -1393,7 +1459,7 @@
       return;
     }
     const requestId = nextRequestId("broaden");
-    const request = { ...previousRequest, type: "auto", refine: false };
+    const request = { ...previousRequest, type: "auto", refine: false, pauseWhileScanning: Boolean(record.pauseSupported && pauseWhileScanning) };
     quickSession = {
       requestId,
       frameId: record.frameId,

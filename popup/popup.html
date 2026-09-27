@@ -34,6 +34,17 @@
         <button type="button" data-view="advanced" aria-pressed="false">Advanced</button>
       </nav>
 
+      <section id="game-controls" class="game-controls" aria-label="Game playback" hidden>
+        <div class="game-controls-row">
+          <button id="pause-game" class="compact-action" type="button" aria-pressed="false" aria-describedby="pause-status" disabled>Pause game</button>
+          <label class="pause-scan-option">
+            <input id="pause-while-scanning" type="checkbox" aria-describedby="pause-status" disabled />
+            <span>Pause while scanning</span>
+          </label>
+        </div>
+        <p id="pause-status" class="pause-status" role="status">Pause is available for supported Ruffle games.</p>
+      </section>
+
       <section id="quick-tools" class="quick-tools" hidden>
         <div class="quick-heading">
           <div>
@@ -256,7 +267,7 @@
         </button>
       </div>
 
-      <footer>v1.2.7</footer>
+      <footer>v1.3.0</footer>
     </main>
     <script src="popup.js"></script>
   <script src="../workspace-controls.js"></script>
