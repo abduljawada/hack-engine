@@ -86,7 +86,7 @@ jobs:
       - name: Pinned local games
         if: inputs.operation != 'status'
         run: npm run test:games -- --mode local --game J1,W1 --no-build --no-sandbox
-      - name: Strict website release qualification
+      - name: Eight-configuration website release qualification
         if: inputs.operation != 'status'
         run: npm run test:games -- --mode website --no-build --no-sandbox --strict
       - name: Retain exact release packages and metadata

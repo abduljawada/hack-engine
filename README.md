@@ -84,7 +84,7 @@ Hack Engine is released under the [MIT License](LICENSE). Questions can also be 
 
 ## Development checks
 
-`npm run test:games` builds and installs the extension in disposable Firefox and Chromium profiles, visits the actual game websites, and writes an HTML report with screenshots and per-step results. Use `-- --game J1,W1` for Asteroids and Breakout, or `-- --headed` to watch. No local Flash files are needed for website testing. Use `-- --mode local --game J1,W1` for pinned local regressions. Incomplete gameplay coverage stays visible as blocked; `npm run release:verify` requires all eight games in both browsers to pass. See [real-game testing](test/GAME_TESTING.md) for commands, assets, CI, and coverage boundaries.
+`npm run test:games` builds and installs the extension in disposable Firefox and Chromium profiles, visits the actual game websites, and writes an HTML report with screenshots and per-step results. Use `-- --game J1,W1` for Asteroids and Breakout, or `-- --headed` to watch. No local Flash files are needed for website testing. Use `-- --mode local --game J1,W1` for pinned local regressions. Incomplete gameplay coverage stays visible as blocked; `npm run release:verify` requires Asteroids (JavaScript), Breakout (WebAssembly), Xeno Tactic 2 (AVM1), and Bloons Tower Defense 3 (AVM2) in both browser adapters to pass: eight required live configurations. These four games are also the default automated suite. See [real-game testing](test/GAME_TESTING.md) for commands, assets, CI, and coverage boundaries.
 
 `npm run test:regression` starts its own local server and runs the existing page and installed-extension fixture suites after a build.
 

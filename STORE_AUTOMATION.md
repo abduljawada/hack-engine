@@ -53,8 +53,13 @@ version/tag containing these automation files, not an older candidate tag.
 The workflow checks tag identity, ancestry on `origin/main`, matching versions,
 permanent add-on identity, and release notes. It builds both packages and the
 Mozilla source archive, validates checksums and Firefox lint, runs unit tests,
-browser regressions, browser/frame integration, local games, and strict website
-qualification. Any failure blocks both store jobs. Third-party website outages
+browser regressions, browser/frame integration, four local J1/W1 regressions, and strict website
+qualification for exactly eight default configurations: Asteroids (JavaScript), Breakout
+(WebAssembly), Xeno Tactic 2 (AVM1), and Bloons Tower Defense 3 (AVM2), each in
+Firefox and the Chromium-family adapter. Both GitHub workflows use pinned Google
+Chrome for Testing for that adapter; local discovery can use Chromium, or an
+explicit CHROME_PATH override. The additional local regressions and unit/browser
+checks do not expand the required live matrix. Any failure blocks both store jobs. Third-party website outages
 can therefore block release and need investigation; they are not bypassed.
 
 Submission jobs consume the exact validated build artifacts and recheck commit

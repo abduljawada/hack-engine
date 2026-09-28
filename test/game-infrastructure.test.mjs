@@ -24,7 +24,8 @@ function completeReport() {
 }
 test("game catalog preserves all eight titles and 16 browser combinations", () => {
   assert.equal(GAME_CATALOG.length, 8); assert.equal(new Set(GAME_CATALOG.map((item) => item.id)).size, 8); assert.equal(BROWSERS.length, 2);
-  assert.equal(createReport().cases.length, 16);
+  assert.equal(createReport().cases.length, 8);
+  assert.equal(createReport({gameIds: GAME_CATALOG.map(game => game.id)}).cases.length, 16);
 });
 test("SWF classification independently checks uncompressed and compressed AVM flags", () => {
   for (const avm of ["AVM1", "AVM2"]) for (const compressed of [false, true]) assert.equal(classifySwf(swf(avm, compressed)), avm);
@@ -67,16 +68,16 @@ test("strict gate requires full matrix, successful required steps, and explicit 
   const incomplete = completeReport(); delete incomplete.cases[0].complete; assert.equal(evaluateGate(incomplete, { strict: true }).passed, false);
   const missingStep = completeReport(); missingStep.cases[0].steps.pop(); assert.equal(evaluateGate(missingStep, { strict: true }).passed, false);
 });
-test("PR gate permits unavailable Flash assets but fails missing MIT assets or any actual failure", () => {
+test("selected gate rejects unavailable required Flash games and any actual failure", () => {
   const report = completeReport(); for (const item of report.cases.filter((item) => item.gameId.startsWith("F"))) item.status = "BLOCKED";
-  assert.equal(evaluateGate(report).passed, true); assert.equal(evaluateGate(report, { strict: true }).passed, false);
+  assert.equal(evaluateGate(report).passed, false); assert.equal(evaluateGate(report, { strict: true }).passed, false);
   report.cases[0].status = "BLOCKED"; assert.equal(evaluateGate(report).passed, false); report.cases[0].status = "PASS";
   report.cases.at(-1).status = "FAIL"; assert.equal(evaluateGate(report).passed, false);
 });
 test("reports preserve failures, blockers, evidence and escape HTML/XML", async (context) => {
   const root = await temporary(context); const report = createReport(); report.cases[0].reason = '<script>alert("x")</script>'; report.cases[0].status = "FAIL";
   const files = await writeReports(report, root); const html = await fs.readFile(files.html, "utf8"); const xml = await fs.readFile(files.junit, "utf8");
-  assert.ok(html.includes("&lt;script&gt;")); assert.ok(!html.includes('<script>alert')); assert.ok(xml.includes('failures="2"')); assert.ok(xml.includes('skipped="15"')); assert.deepEqual(JSON.parse(await fs.readFile(files.json, "utf8")), report);
+  assert.ok(html.includes("&lt;script&gt;")); assert.ok(!html.includes('<script>alert')); assert.ok(xml.includes('failures="2"')); assert.ok(xml.includes('skipped="7"')); assert.deepEqual(JSON.parse(await fs.readFile(files.json, "utf8")), report);
 });
 test("static file resolution rejects traversal and symlink escapes", async (context) => {
   const root = await temporary(context); const served = path.join(root, "served"); await fs.mkdir(served); await fs.writeFile(path.join(root, "secret"), "secret"); await fs.symlink(path.join(root, "secret"), path.join(served, "leak"));

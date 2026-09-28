@@ -33,3 +33,26 @@ test('disabled Chrome CLI needs neither store credentials nor network access', (
     assert.equal(result.status, 0, result.stderr); assert.equal(JSON.parse(result.stdout).state, 'disabled');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('runner, CI, package release command and store gate share the eight live configurations', async () => {
+  const { parseOptions } = await import('./run-games.mjs');
+  const { RELEASE_GAME_IDS, BROWSERS } = await import('./games/catalog.mjs');
+  const { createReport } = await import('./games/report.mjs');
+  assert.deepEqual([...RELEASE_GAME_IDS], ['J1', 'W1', 'F2', 'F4']);
+  assert.deepEqual(BROWSERS, ['firefox', 'chrome']);
+  const ci = yaml.load(readFileSync('.github/workflows/tests.yml', 'utf8'));
+  const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+  const commands = [pkg.scripts['release:verify'], ...ci.jobs.test.steps.map(s => s.run || ''), ...workflow.jobs.prepare.steps.map(s => s.run || '')];
+  const websiteCommands = commands.flatMap(command => command.split('&&')).filter(command => command.includes('--mode website'));
+  assert.equal(websiteCommands.length, 3);
+  for (const command of websiteCommands) {
+    const args = command.trim().split(/\s+/).slice(command.trim().split(/\s+/).indexOf('--') + 1);
+    const options = parseOptions(args);
+    assert.equal(options.strict, true);
+    assert.deepEqual(options.gameIds, [...RELEASE_GAME_IDS]);
+    assert.deepEqual(options.browsers, BROWSERS);
+    assert.equal(createReport(options).cases.length, 8);
+  }
+  assert.equal(ci.on.workflow_dispatch, null);
+  assert.ok(ci.jobs.test.steps.some(s => s.run?.includes('GAME_BROWSER_NO_SANDBOX=1')));
+});

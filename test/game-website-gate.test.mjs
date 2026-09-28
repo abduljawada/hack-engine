@@ -7,7 +7,7 @@ import { ADDITIONAL_TARGETS, GAME_CATALOG, REQUIRED_SCENARIOS, TARGET_SCENARIOS 
 import { createReport, evaluateGate, writeReports } from './games/report.mjs';
 
 function websiteReport() {
-  const report = createReport({ metadata: { mode: 'website' } });
+  const report = createReport({ gameIds: GAME_CATALOG.map(game => game.id), metadata: { mode: 'website' } });
   for (const entry of report.cases) {
     const game = GAME_CATALOG.find(game => game.id === entry.gameId);
     Object.assign(entry, { status: 'PASS', complete: true, observedRuntime: entry.gameId === 'F6' ? 'javascript' : game.runtime });
@@ -121,12 +121,12 @@ test('an optional Flash blocker never hides failed cleanup or overwrites its ori
   assert.deepEqual(entry,original);
 });
 test('strict JUnit records missing combinations as a failed qualification test',async context=>{
-  const report=websiteReport();report.metadata.strict=true;report.cases.pop();
+  const report=websiteReport();report.metadata.strict=true;report.cases=report.cases.filter(item=>!(item.gameId==='F4'&&item.browser==='chrome'));
   const xml=await junitFor(context,report);
   assert.equal(report.gates.strict.passed,false);
   assert.match(xml,/<testsuite[^>]*failures="1"/);
   assert.match(xml,/<testcase classname="qualification" name="Strict release qualification"[^>]*><failure/);
-  assert.match(xml,/F6\/chrome: NOT RUN/);
+  assert.match(xml,/F4\/chrome: NOT RUN/);
 });
 test('strict JUnit rejects missing same-run Flash hashes while ordinary gameplay stays separate',async context=>{
   const report=websiteReport();report.metadata.strict=true;
@@ -149,4 +149,35 @@ test('ordinary JUnit fails required missing assets and skips optional asset bloc
   assert.match(xml,/<testcase classname="firefox" name="J1 HTML5-Asteroids"[^>]*><failure/);
   assert.match(xml,/<testcase classname="firefox" name="F1 Chibi Knight"[^>]*><skipped/);
   assert.match(xml,/<testsuite[^>]*failures="2" skipped="1"/);
+});
+
+ test('release qualification needs exactly the four runtime representatives, without retired titles', () => {
+  const report = websiteReport();
+  report.cases = report.cases.filter(item => ['J1','W1','F2','F4'].includes(item.gameId));
+  assert.equal(report.cases.length, 8);
+  assert.equal(evaluateGate(report, {strict:true}).passed, true);
+  for (const entry of report.cases) {
+    const missing = structuredClone(report);
+    missing.cases = missing.cases.filter(item => !(item.gameId === entry.gameId && item.browser === entry.browser));
+    assert.equal(evaluateGate(missing, {strict:true}).passed, false);
+    for (const status of ['BLOCKED','FAIL','NOT RUN','UNSUPPORTED']) {
+      const failed = structuredClone(report);
+      failed.cases.find(item=>item.gameId===entry.gameId && item.browser===entry.browser).status=status;
+      assert.equal(evaluateGate(failed, {strict:true}).passed, false);
+    }
+  }
+});
+test('release representatives cannot silently switch runtime families or AVM versions', () => {
+  for (const id of ['J1','W1','F2','F4']) {
+    const report=websiteReport(), entry=report.cases.find(item=>item.gameId===id);
+    entry.observedRuntime='javascript';
+    if(id==='J1') entry.observedRuntime='wasm';
+    assert.equal(evaluateGate(report,{strict:true}).passed,false);
+  }
+  const report=websiteReport(), entry=report.cases.find(item=>item.gameId==='F2');
+  for(const step of entry.steps) {
+    if(step.name==='runtime-detection') step.details.runtimeDetails.avm='AVM2';
+    if(step.name==='flash-load') {step.details.runtime.avm='AVM2';step.details.primarySwf.independentlyParsedAvm='AVM2';}
+  }
+  assert.match(evaluateGate(report,{strict:true}).reasons.join('\n'), /runtime must be AVM1/);
 });

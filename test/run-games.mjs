@@ -4,7 +4,7 @@ import { resolve, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { platform, release } from 'node:os';
-import { GAME_CATALOG } from './games/catalog.mjs';
+import { GAME_CATALOG, RELEASE_GAME_IDS } from './games/catalog.mjs';
 import { prepareGames, hashDirectory } from './games/assets.mjs';
 import { startGameServer } from './games/server.mjs';
 import { createReport, evaluateGate, writeReports } from './games/report.mjs';
@@ -16,7 +16,7 @@ import { runFlashSmoke } from './games/flash-smoke.mjs';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 export function parseOptions(args) {
-  const options = { browsers: ['firefox', 'chrome'], gameIds: GAME_CATALOG.map(g => g.id),
+  const options = { browsers: ['firefox', 'chrome'], gameIds: [...RELEASE_GAME_IDS],
     assetDir: resolve(root, '.cache/game-assets'), outputDir: resolve(root, 'artifacts/game-tests'),
     mode: 'website', download: true, build: true, headed: false, strict: false, noSandbox: false, prepareOnly: false };
   for (let i = 0; i < args.length; i++) {
@@ -41,7 +41,7 @@ export function parseOptions(args) {
   options.browsers = [...new Set(options.browsers)]; options.gameIds = [...new Set(options.gameIds)];
   if (options.browsers.some(b => !['firefox', 'chrome'].includes(b))) throw Error('Browser must be firefox or chrome.');
   if (options.gameIds.some(id => !GAME_CATALOG.some(g => g.id === id))) throw Error('Unknown game ID. Use J1,W1,F1,F2,F3,F4,F5,F6.');
-  if (options.strict && (options.browsers.length !== 2 || options.gameIds.length !== 8 || options.prepareOnly)) throw Error('Strict qualification requires all eight games in both browsers.');
+  if (options.strict && (options.browsers.length !== 2 || RELEASE_GAME_IDS.some(id => !options.gameIds.includes(id)) || options.prepareOnly)) throw Error('Strict qualification requires J1,W1,F2,F4 in both browsers; preparation-only runs cannot qualify.');
   return options;
 }
 

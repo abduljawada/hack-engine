@@ -1,6 +1,6 @@
 # Optional local real-game assets
 
-**This document applies only to `--mode local`.** The default website suite loads games from their actual websites and needs none of these files.
+**This document applies only to `--mode local`.** The default website suite loads J1 (Asteroids), W1 (Breakout), F2 (Xeno Tactic 2) and F4 (Bloons Tower Defense 3) from their actual websites and needs none of these files. These four games form the release suite in both browsers; the original eight-game catalog remains explicitly selectable.
 
 Local game files and Ruffle live in `.cache/game-assets/`, or the directory selected by
 `--assets`. They never enter the extension packages or source archive. Tests
@@ -68,6 +68,4 @@ those cases as passing.
 
 Reports retain game hashes, source metadata, Ruffle version/hashes, and independently
 observed AVM type. Flash readiness means the assets passed validation, not that
-all required gameplay checks passed. The release verification command separately requires local J1/W1 regressions and all eight actual websites in both browsers with successful mandatory scenarios. The pull-request gate
-requires the two open-source games and fails any observed test failure, while
-explicit Flash blockers remain visible as incomplete coverage.
+all required gameplay checks passed. The release verification command separately requires local J1/W1 regressions and the four release websites (J1, W1, F2 and F4) in both browsers: eight required combinations with successful mandatory scenarios. Pull requests and main pushes enforce the same strict website qualification. Missing or blocked required Flash coverage fails the gate; manual verification cannot replace an automated pass. Existing runtime, hash and scenario requirements remain unchanged. The other catalog titles are optional exploratory coverage when explicitly selected.

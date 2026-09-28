@@ -5,11 +5,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      strict:
-        description: Require all eight games in both browsers for release qualification
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -59,11 +54,8 @@ jobs:
           key: games-${{ runner.os }}-${{ hashFiles('test/games/catalog.mjs', 'test/games/assets.mjs') }}
       - name: Pinned local game regressions in both browsers
         run: npm run test:games -- --mode local --game J1,W1 --no-build --no-sandbox
-      - name: Live game websites in both browsers
-        if: ${{ !cancelled() && !inputs.strict }}
-        run: npm run test:games -- --mode website --no-build --no-sandbox
-      - name: Strict release qualification
-        if: ${{ !cancelled() && inputs.strict }}
+      - name: Four-runtime release qualification in both browsers
+        if: ${{ !cancelled() }}
         run: npm run test:games -- --mode website --no-build --no-sandbox --strict
       - name: Upload game reports and evidence
         if: always()

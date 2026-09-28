@@ -4,13 +4,24 @@ Prepared 2026-09-27; automated qualification now targets Hack Engine v1.3.0. Thi
 
 ## Automated execution
 
-Run `npm run test:games` for the available corpus, or `npm run test:games -- --strict` for the complete release gate. Each invocation preserves its own HTML/JSON/JUnit report and screenshots under `artifacts/game-tests/`; the top-level index links the latest run. See [testing instructions](test/GAME_TESTING.md) and [asset provenance/setup](test/games/ASSETS.md).
+Run `npm run test:games` for the four release games, or `npm run test:games -- --strict` for their complete release gate. Both default and strict selections are J1, W1, F2 and F4 in Firefox and Chromium: **eight required combinations**. GitHub pull requests and main pushes enforce strict qualification. The original eight-game catalog is preserved below and remains explicitly selectable with `--game`. Each invocation preserves its own HTML/JSON/JUnit report and screenshots under `artifacts/game-tests/`; the top-level index links the latest run. See [testing instructions](test/GAME_TESTING.md) and [asset provenance/setup](test/games/ASSETS.md).
 
-Website runs need no local game files: each site supplies its game and player. The runner observes the runtime loaded in each run, rather than assuming every historically Flash title is still Flash. All 16 combinations remain present. Player loading, runtime detection, and manual pause smoke checks alone never qualify full gameplay. Missing interactions, counter observations, or target workflows remain BLOCKED with evidence.
+Website runs need no local game files: each site supplies its game and player. The runner observes the runtime loaded in each run, rather than assuming every historically Flash title is still Flash. The four release games cover JavaScript, non-Ruffle WebAssembly, AVM1 and AVM2. The other four catalog games are optional exploratory coverage. Player loading, runtime detection, and manual pause smoke checks alone never qualify full gameplay. Missing interactions, counter observations, or target workflows remain BLOCKED with evidence.
 
 Use `npm run test:games -- --mode local --game J1,W1` for pinned Asteroids/Breakout regression and controlled frame scenarios. Local Flash fixtures can be supplied separately; missing originals block only that optional mode. Website results and local fixture results must remain distinguishable.
 
-## Core list
+## Release selection
+
+| ID | Game | Runtime | Browsers |
+| --- | --- | --- | --- |
+| J1 | HTML5-Asteroids | JavaScript | Firefox and Chromium |
+| W1 | Breakout.Rust.Web | Non-Ruffle WebAssembly | Firefox and Chromium |
+| F2 | Xeno Tactic 2 | AVM1 / Ruffle | Firefox and Chromium |
+| F4 | Bloons Tower Defense 3 | AVM2 / Ruffle | Firefox and Chromium |
+
+Every selected game must pass its existing mandatory target, gameplay, lifecycle and provenance checks. Manual verification does not count as an automated pass. Blocked, failed, unsupported or unrun required cases prevent release qualification. No release or tag is created by these checks.
+
+## Preserved original eight-game catalog
 
 | ID | Game and source | Runtime | Proposed targets | Main purpose |
 | --- | --- | --- | --- | --- |
@@ -62,7 +73,7 @@ Strict live Ruffle qualification additionally needs each browser phase's primary
 
 Completion of this list provides game coverage only. Native-panel acceptance, platform/minimum-browser coverage, performance measurements and signed-store install/update remain separate release gates.
 
-## Observed qualification, 2026-09-27
+## Historical observed qualification, 2026-09-27
 
 The full headed website run is preserved at `artifacts/game-tests/2026-09-27T10-49-01.322Z-380679/`: **4 PASS, 10 BLOCKED, 2 FAIL**. Later diagnostic runs retain separate reports; they do not rewrite these original outcomes.
 
@@ -71,10 +82,10 @@ The full headed website run is preserved at `artifacts/game-tests/2026-09-27T10-
 | HTML5-Asteroids | Full website gameplay and extension workflows passed in both browsers. Pinned local Chromium gameplay and frame/isolation checks also passed. |
 | Breakout.Rust.Web | Full website gameplay and extension workflows passed in both browsers. |
 | Chibi Knight | Actual start, movement and attack input exercised; reliable health/experience observation and target workflows remain unqualified. |
-| Xeno Tactic 2 | Actual mission and turret purchase exercised; small cash text fails the numeric OCR confidence requirement. Lives/shield interpretation remains unqualified. |
+| Xeno Tactic 2 | The user subsequently verified the game manually in Firefox. Automated mission and turret purchase changed gold 200 → 170 and Float64 refinement found one candidate; the controls accepted a write to 1000, but gameplay spending that edited balance remains unproven automatically. Small-font OCR and lives/shield qualification remain gaps. Manual verification is not an automated pass. |
 | Cube Colossus | Actual battle reached and shooting exercised. Heat and upgrade currency are not yet qualified; damage-chain text cannot replace either target. |
 | Bloons Tower Defense 3 | Firefox demonstrated discovery, refinement, edit, guarded undo, undo, freeze and stop for both cash and lives. Its pause-under-input check failed: clicking the paused player dismissed its Play overlay and gameplay resumed. Chromium's installed cash workflow passed, but lives refinement remained ambiguous (two candidates); its fresh baseline also hit the startup deadline. Remaining pause/lifecycle assertions are unrun; neither full case qualifies. |
 | Diggy | The observed portal did not expose a playable game after genuine Play inputs; baseline blocked in both browsers. |
 | Canabalt | Current HTML5 edition played and increasing distance observed in both browsers (including Firefox 106 m → 128 m). A reliably editable distance target remains unqualified. |
 
-Firefox live Ruffle response-body hashes remain unavailable, independently preventing strict provenance qualification. The suite is implemented and runnable, but **the requested complete 16-combination acceptance is not achieved**.
+Firefox live Ruffle response-body hashes remain unavailable, independently preventing strict provenance qualification. The historical 16-combination acceptance was not achieved. The release gate now requires eight combinations across J1, W1, F2 and F4; changing that selection does not qualify the outstanding Xeno/Bloons scenarios or waive provenance checks. **The new eight-combination gate has not yet passed.**

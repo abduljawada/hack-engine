@@ -1,15 +1,15 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { ADDITIONAL_TARGETS, BROWSERS, GAME_CATALOG, REQUIRED_SCENARIOS, TARGET_SCENARIOS } from "./catalog.mjs";
+import { ADDITIONAL_TARGETS, BROWSERS, GAME_CATALOG, RELEASE_GAME_IDS, REQUIRED_SCENARIOS, TARGET_SCENARIOS } from "./catalog.mjs";
 const escape = (value) => String(value ?? "").replace(/[<>&"']/g, (character) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;" })[character]);
-export function createReport({ gameIds = GAME_CATALOG.map((game) => game.id), browsers = BROWSERS, metadata = {} } = {}) {
+export function createReport({ gameIds = RELEASE_GAME_IDS, browsers = BROWSERS, metadata = {} } = {}) {
   return { createdAt: new Date().toISOString(), metadata: { ...metadata, gameIds, browsers }, cases: gameIds.flatMap((gameId) => browsers.map((browser) => ({ gameId, gameName: GAME_CATALOG.find((game) => game.id === gameId)?.name, browser, status: "NOT RUN", steps: [], evidence: [] }))) };
 }
 export function evaluateGate(report, { strict = false } = {}) {
   const reasons = [];
   const counts = {};
   const seen = new Set();
-  const expectedGames = strict ? GAME_CATALOG.map((game) => game.id) : (report.metadata?.gameIds || GAME_CATALOG.map((game) => game.id));
+  const expectedGames = strict ? RELEASE_GAME_IDS : (report.metadata?.gameIds || GAME_CATALOG.map((game) => game.id));
   const expectedBrowsers = strict ? BROWSERS : (report.metadata?.browsers || BROWSERS);
   for (const testCase of report.cases || []) {
     counts[testCase.status] = (counts[testCase.status] || 0) + 1;
@@ -35,6 +35,7 @@ export function evaluateGate(report, { strict = false } = {}) {
       if (testCase.browser === "chrome" && ["J1", "W1"].includes(game?.id)) required.push("worker-recovery");
       const runtime = website ? testCase.observedRuntime : game?.runtime;
       if (website && !["javascript", "wasm", "ruffle"].includes(runtime)) reasons.push(`${key}: missing or unsupported observed runtime`);
+      if (website && strict && RELEASE_GAME_IDS.includes(game?.id) && runtime !== game.runtime) reasons.push(`${key}: observed runtime does not match required ${game.runtime}`);
       if (runtime === "ruffle") required.push("pause-resume", "pause-scanning", "pause-cancel", "flash-load", "flash-source-runtime", "flash-manual-pause");
       const requireStep = (name, phase) => {
         if (!testCase.steps?.some((step) => step.name === name && step.phase === phase && step.status === "PASS")) reasons.push(`${key}: missing mandatory ${phase} step ${name}`);
@@ -53,6 +54,7 @@ export function evaluateGate(report, { strict = false } = {}) {
           const details = testCase.steps?.find(step => step.name === "flash-load" && step.phase === phase && step.status === "PASS")?.details;
           const publicAvm = testCase.steps?.find(step => step.name === "runtime-detection" && step.phase === phase && step.status === "PASS")?.details?.runtimeDetails?.avm;
           const primary = details?.primarySwf;
+          if (game.expectedAvm && publicAvm !== game.expectedAvm) reasons.push(`${key}: ${phase} runtime must be ${game.expectedAvm}`);
           const validHash = value => typeof value === "string" && /^[a-f0-9]{64}$/i.test(value);
           if (!primary || !/^https?:\/\//.test(primary.url || "") || !validHash(primary.sha256) || !(primary.status >= 200 && primary.status < 400)) reasons.push(`${key}: ${phase} primary game SWF hash unavailable`);
           if (!["AVM1", "AVM2"].includes(publicAvm) || primary?.independentlyParsedAvm !== publicAvm || details?.runtime?.avm !== publicAvm) reasons.push(`${key}: ${phase} independent primary SWF classification does not match public runtime metadata`);
@@ -80,7 +82,7 @@ export async function writeReports(report, outputDir) {
     if (relative.startsWith("..") || relative.includes(":") || relative.startsWith("/")) return `<code>${escape(filename)}</code>`;
     return `<a href="${escape(relative.split(path.sep).map(encodeURIComponent).join("/"))}">${escape(typeof item === "object" ? item.label || filename : filename)}</a>`;
   }).join(" ");
-  const html = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Hack Engine real-game tests</title><style>body{font:16px system-ui;max-width:1100px;margin:40px auto;padding:0 20px;background:#fafafa;color:#222}table{border-collapse:collapse;width:100%}td,th{padding:9px;text-align:left;border-bottom:1px solid #ddd}pre{white-space:pre-wrap;overflow-wrap:anywhere}.PASS{color:#146b29}.FAIL{color:#a90000}.BLOCKED,.NOT{color:#835000}section{margin:30px 0}code{overflow-wrap:anywhere}</style><h1>Hack Engine real-game tests</h1><p><strong>Selected-suite check: ${report.gates.ordinary.passed ? "PASS" : "FAIL"} · Full release qualification: ${report.gates.strict.passed ? "PASS" : "INCOMPLETE / FAILED"}</strong></p><p>${escape(report.createdAt)} · ${display(statusCounts)}</p><p>Qualification requires all 16 game/browser combinations and mandatory scenarios. Unavailable websites, unqualified gameplay, and unreliable observations remain visible as blocked coverage. Local assets are required only in local regression mode. Native sidebar opening, store installation, and other operating systems are separate checks.</p><details><summary>Qualification gaps</summary><pre>${display(report.gates.strict.reasons)}</pre></details><details><summary>Run versions and metadata</summary><pre>${display(report.metadata)}</pre></details><table><tr><th>Game</th><th>Browser</th><th>Status</th><th>Category</th><th>Reason</th></tr>${cases.map((item) => `<tr><td>${escape(item.gameId)} ${escape(item.gameName)}</td><td>${escape(item.browser)}</td><td class="${escape(item.status)}">${escape(item.status)}</td><td>${escape(item.category)}</td><td>${escape(item.reason)}</td></tr>`).join("")}</table>${cases.map((item) => `<section><h2>${escape(item.gameId)} · ${escape(item.browser)} · ${escape(item.status)}</h2><p>${escape(item.reason)}</p>${evidenceHtml(item.evidence || [])}<details><summary>Steps, versions, hashes, provenance and logs</summary><pre>${display(item)}</pre></details></section>`).join("")}</html>`;
+  const html = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Hack Engine real-game tests</title><style>body{font:16px system-ui;max-width:1100px;margin:40px auto;padding:0 20px;background:#fafafa;color:#222}table{border-collapse:collapse;width:100%}td,th{padding:9px;text-align:left;border-bottom:1px solid #ddd}pre{white-space:pre-wrap;overflow-wrap:anywhere}.PASS{color:#146b29}.FAIL{color:#a90000}.BLOCKED,.NOT{color:#835000}section{margin:30px 0}code{overflow-wrap:anywhere}</style><h1>Hack Engine real-game tests</h1><p><strong>Selected-suite check: ${report.gates.ordinary.passed ? "PASS" : "FAIL"} · Full release qualification: ${report.gates.strict.passed ? "PASS" : "INCOMPLETE / FAILED"}</strong></p><p>${escape(report.createdAt)} · ${display(statusCounts)}</p><p>Qualification requires all 8 release game/browser combinations (Asteroids, Breakout, Xeno Tactic 2, and Bloons Tower Defense 3 in Firefox and Chromium) and mandatory scenarios. Unavailable websites, unqualified gameplay, and unreliable observations remain visible as blocked coverage. Local assets are required only in local regression mode. Native sidebar opening, store installation, and other operating systems are separate checks.</p><details><summary>Qualification gaps</summary><pre>${display(report.gates.strict.reasons)}</pre></details><details><summary>Run versions and metadata</summary><pre>${display(report.metadata)}</pre></details><table><tr><th>Game</th><th>Browser</th><th>Status</th><th>Category</th><th>Reason</th></tr>${cases.map((item) => `<tr><td>${escape(item.gameId)} ${escape(item.gameName)}</td><td>${escape(item.browser)}</td><td class="${escape(item.status)}">${escape(item.status)}</td><td>${escape(item.category)}</td><td>${escape(item.reason)}</td></tr>`).join("")}</table>${cases.map((item) => `<section><h2>${escape(item.gameId)} · ${escape(item.browser)} · ${escape(item.status)}</h2><p>${escape(item.reason)}</p>${evidenceHtml(item.evidence || [])}<details><summary>Steps, versions, hashes, provenance and logs</summary><pre>${display(item)}</pre></details></section>`).join("")}</html>`;
   let failures = 0; let skipped = 0;
   const strict = report.metadata?.strict === true;
   const selectedGate = strict ? report.gates.strict : report.gates.ordinary;
