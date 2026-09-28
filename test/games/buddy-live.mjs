@@ -52,14 +52,18 @@ export async function runBuddyLive({session,gamePage,site,controls,baseline,arti
     return cash();
   },v=>v>before,{timeout:30000,interval:100,description:'Buddy interaction increases rendered cash',category:'baseline'});
   const name=async()=>{
-    const r=await raw('shop-item',{left:185,top:91,width:163,height:19});
-    if(r.confidence<85||!/[A-Za-z]/.test(r.text))throw new GameTestError(`Unreliable Buddy item name: ${JSON.stringify(r)}`);
+    const r=await poll(()=>raw('shop-item',{left:185,top:91,width:163,height:19}),
+      r=>r.confidence>=85&&/^[A-Za-z][A-Za-z ]+$/.test(r.text.trim()),
+      {timeout:5000,interval:100,description:'Buddy shop shows a clear locked item name',category:'extension',status:'FAIL'});
     return r.text.trim();
   };
   const price=async()=>{
-    const r=await raw('shop-price',{left:294,top:298,width:68,height:19});
+    // Item selection becomes visible on a later game frame. A blank Cost box
+    // is a readiness state, never a numeric observation or a zero-price item.
+    const r=await poll(()=>raw('shop-price',{left:294,top:298,width:68,height:19}),
+      r=>r.confidence>=85&&/^\$\s*\d+(?:\.\d{2})?$/.test(r.text.trim()),
+      {timeout:5000,interval:100,description:'Selected Buddy item has a clear rendered price',category:'extension',status:'FAIL'});
     const m=r.text.trim().match(/^\$\s*(\d+)(?:\.(\d{2}))?$/);
-    if(r.confidence<85||!m)throw new GameTestError(`Unreliable Buddy item price: ${JSON.stringify(r)}`);
     return Number(m[1])*100+Number(m[2]||0);
   };
   const buy=async({frozen=false}={})=>{
@@ -150,7 +154,8 @@ export async function runBuddyLive({session,gamePage,site,controls,baseline,arti
     let purchase;
     await step('write',async()=>{
       const unedited=await cash();await ui.write(1000);await paused(false);await delay(500);
-      await click(146,20);await click(180,120);await click(245,100);
+      await click(146,20);await click(180,120);
+      await name();await click(245,100);
       const cost=await price();if(unedited>=cost)throw new GameTestError('The edited-funds purchase was already affordable before editing.');
       purchase=await buy();return{written:1000,uneditedCents:unedited,...purchase};
     });
