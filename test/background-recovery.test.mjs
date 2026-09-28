@@ -181,3 +181,36 @@ test("mixed JavaScript and Wasm watches survive recovery and lose stale document
   bridge.onMessage.emit(state("doc-B.1"));
   assert.equal(workspaceState(reopened).watches.length, 0);
 });
+
+test("late agent snapshots cannot replace an active scan request", async () => {
+  const { ui, peer, bridge } = await diagnosticSetup();
+  ui.onMessage.emit({ kind: "routeCommand", frameId: 0, payload: {
+    kind: "memoryScan", requestId: "scan:new", instanceId: watch.instanceId, type: "i32", refine: false,
+  } });
+  const current = () => ui.sent.filter(message => message.kind === "quickSession").at(-1).session;
+  assert.equal(current().requestId, "scan:new");
+  for (const session of [state().payload.session, null]) {
+    bridge.onMessage.emit({ kind: "pageMessage", payload: { ...state().payload, session } });
+    assert.equal(current()?.requestId, "scan:new", "old completion/reset snapshot must not erase the in-flight request");
+    assert.equal(current().status, "scanning");
+  }
+  peer.onMessage.emit({ kind: "routeCommand", frameId: 0, payload: {
+    kind: "memoryScan", requestId: "scan:concurrent", instanceId: watch.instanceId, type: "i32",
+  } });
+  assert.equal(peer.sent.at(-1).payload.kind, "error", "late state must not unlock a concurrent scan");
+  bridge.onMessage.emit({ kind: "pageMessage", payload: { kind: "scanProgress", requestId: "scan:new", inspected: 100, total: 1000 } });
+  assert.equal(current().progress.inspected, 100);
+  const completed = state(); completed.payload.session.requestId = "scan:new";
+  bridge.onMessage.emit(completed);
+  assert.equal(current().status, "complete", "matching authoritative completion is accepted");
+});
+
+test("a new document invalidates an active scan instead of preserving its stale request", async () => {
+  const { ui, bridge } = await diagnosticSetup();
+  ui.onMessage.emit({ kind: "routeCommand", frameId: 0, payload: {
+    kind: "memoryScan", requestId: "scan:old-document", instanceId: watch.instanceId, type: "i32",
+  } });
+  const replacement = state("doc-B.1"); replacement.payload.session = null;
+  bridge.onMessage.emit(replacement);
+  assert.equal(ui.sent.filter(message => message.kind === "quickSession").at(-1).session, null);
+});

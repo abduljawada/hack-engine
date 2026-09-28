@@ -320,7 +320,13 @@
     else if (workspace.lastWrite?.frameId === entry.frameId) workspace.lastWrite = null;
     if (!workspace.watches.has(workspace.selectedKey)) workspace.selectedKey = null;
     const existing = quickSessions.get(entry.tabId);
-    if (!existing || existing.frameId === entry.frameId || (state.session?.updatedAt || 0) > (existing.updatedAt || 0)) {
+    // A command is remembered before the page receives it. A snapshot already
+    // in transit from an earlier reset/resume must not unlock that new scan.
+    // Matching request state can complete it; a replaced document invalidates it.
+    const activeSourceReplaced = existing?.frameId === entry.frameId && !ids.has(existing.instanceId);
+    const preserveActiveRequest = existing?.status === "scanning" && !activeSourceReplaced &&
+      (existing.frameId !== entry.frameId || state.session?.requestId !== existing.requestId);
+    if (!preserveActiveRequest && (!existing || existing.frameId === entry.frameId || (state.session?.updatedAt || 0) > (existing.updatedAt || 0))) {
       if (state.session) quickSessions.set(entry.tabId, { ...state.session, frameId: entry.frameId });
       else if (existing?.frameId === entry.frameId) quickSessions.delete(entry.tabId);
       broadcast(entry.tabId, { kind: "quickSession", session: quickSessionSnapshot(entry.tabId) });
