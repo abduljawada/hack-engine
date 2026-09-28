@@ -42,7 +42,7 @@ jobs:
       - run: npm run test:unit
       - run: npm run build:source && npm run check && npm run lint:firefox
       - name: Browser adapter and cross-site frame checks
-        run: GAME_BROWSER_INTEGRATION=1 GAME_BROWSER_NO_SANDBOX=1 node --test test/game-live-browser.test.mjs
+        run: GAME_BROWSER_INTEGRATION=1 GAME_BROWSER_NO_SANDBOX=1 node --test test/game-live-browser.test.mjs test/game-response-capture.test.mjs
       - name: Existing browser regressions
         run: npm run test:regression
       - name: Restore verified game downloads

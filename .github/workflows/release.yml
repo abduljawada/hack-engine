@@ -79,7 +79,7 @@ jobs:
           npm run lint:firefox
       - name: Browser adapter and cross-site frame checks
         if: inputs.operation != 'status'
-        run: GAME_BROWSER_INTEGRATION=1 GAME_BROWSER_NO_SANDBOX=1 node --test test/game-live-browser.test.mjs
+        run: GAME_BROWSER_INTEGRATION=1 GAME_BROWSER_NO_SANDBOX=1 node --test test/game-live-browser.test.mjs test/game-response-capture.test.mjs
       - name: Browser regressions
         if: inputs.operation != 'status'
         run: npm run test:regression
