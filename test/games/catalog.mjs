@@ -14,7 +14,20 @@ export const ADDITIONAL_TARGETS = { F1: ["experience"], F2: ["lives"], F3: ["cur
 export const TARGET_SCENARIOS = ["discovery", "refine", "undo-scan", "watch", "write", "undo", "guarded-undo", "freeze", "stop"];
 export const REQUIRED_SCENARIOS = ["baseline", "discovery", "refine", "watch", "write", "undo", "freeze", "stop", "reload", "reopen", "tab-binding"];
 
-export const RUFFLE_BUILD = { version: "0.6.0", source: "https://registry.npmjs.org/@ruffle-rs/ruffle/-/ruffle-0.6.0.tgz", integrity: "sha512-P2X1zDENBoiLt2ZjPcsUzaDxoR7fVF2e1U/bi7hbIAQEjkykxljSoG8AgbywHvlVVzL9Y5tIZMRqDwIm31jgPA==" };
+export const RUFFLE_BUILD = { version: "0.6.0", source: "https://registry.npmjs.org/@ruffle-rs/ruffle/-/ruffle-0.6.0.tgz", integrity: "sha512-P2X1zDENBoiLt2ZjPcsUzaDxoR7fVF2e1U/bi7hbIAQEjkykxljSoG8AgbywHvlVVzL9Y5tIZMRqDwIm31jgPA==", expectedHashes: {
+  "LICENSE_APACHE": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+  "LICENSE_MIT": "4de9338a7879c68e911742a7d691f0797ff1ef8d8a6fb978b0c711e258fe959c",
+  "core.ruffle.c80159b526e567babaf5.js": "624b0b23bc4460d73e789e608fd1274546a5a411f71f7e873414aca94bc5bc4f",
+  "core.ruffle.f000070ea72f8ae4fe3a.js": "08ce4ff032b61d2014ba52bdc6f5d8f6adb0aacdc1e6e3fd5e68281c958bd90d",
+  "ruffle.js": "a686a305345b06542dddedada71869104916a61e393f174687571528ac4225f5",
+  "package.json": "acd3bbc02b675d971d5b0218572cdb57727079f8b4bd1a7e5eb9ec433e53aa49",
+  "core.ruffle.c80159b526e567babaf5.js.map": "61a9d62a7cb726c18ddf19528da37ef6952e508e37ae859b9a4bcc02ffd1dea6",
+  "core.ruffle.f000070ea72f8ae4fe3a.js.map": "92d87318e15784a740448b32edb7fbca6c2824c8b8eecaf927283a01f811a699",
+  "ruffle.js.map": "031fe55d7f17dde1f9628110c6c78d2ad487e2dec1d3fdb42ec0a5d74cdf3d86",
+  "README.md": "cdbeefd04e27a2fe80f735210fa4c054e376802eb43a16d9b6eeae78500f2bde",
+  "72a20ef1c0b8ceb37720.wasm": "adabc1696a2f1f95715ede6be0ac00a73364895c8e599039e60fef3b2f52efa4",
+  "826bb0938097485a2c9d.wasm": "e4ba64aa1dc9f7f2368602dd0fc2c51046f3e35baba8116d6cf3ae930a63aa02"
+} };
 
 // Release coverage: JavaScript, WebAssembly, AVM1, and AVM2.
 export const RELEASE_GAME_IDS = Object.freeze(["J1", "W1", "F2", "F4"]);

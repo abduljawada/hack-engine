@@ -125,7 +125,7 @@ test('strict JUnit records missing combinations as a failed qualification test',
   const xml=await junitFor(context,report);
   assert.equal(report.gates.strict.passed,false);
   assert.match(xml,/<testsuite[^>]*failures="1"/);
-  assert.match(xml,/<testcase classname="qualification" name="Strict release qualification"[^>]*><failure/);
+  assert.match(xml,/<testcase classname="qualification" name="Strict website compatibility"[^>]*><failure/);
   assert.match(xml,/F4\/chrome: NOT RUN/);
 });
 test('strict JUnit rejects missing same-run Flash hashes while ordinary gameplay stays separate',async context=>{
@@ -180,4 +180,17 @@ test('release representatives cannot silently switch runtime families or AVM ver
     if(step.name==='flash-load') {step.details.runtime.avm='AVM2';step.details.primarySwf.independentlyParsedAvm='AVM2';}
   }
   assert.match(evaluateGate(report,{strict:true}).reasons.join('\n'), /runtime must be AVM1/);
+});
+
+test('passing live compatibility is explicitly not a controlled core release result', async context => {
+  const report = websiteReport(); report.metadata.strict = true;
+  const directory = await mkdtemp(join(tmpdir(),'compatibility-not-core-'));
+  context.after(() => rm(directory,{recursive:true,force:true}));
+  const files = await writeReports(report,directory);
+  assert.equal(report.gates.strict.passed,true);
+  assert.equal(report.gates.coreRelease.passed,false);
+  const html = await readFile(files.html,'utf8');
+  assert.match(html,/Live website compatibility/);
+  assert.doesNotMatch(html,/Full core release qualification: PASS/);
+  assert.match(await readFile(files.junit,'utf8'),/Strict website compatibility/);
 });

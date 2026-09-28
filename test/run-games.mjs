@@ -4,7 +4,7 @@ import { resolve, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { platform, release } from 'node:os';
-import { GAME_CATALOG, RELEASE_GAME_IDS } from './games/catalog.mjs';
+import { GAME_CATALOG, RELEASE_GAME_IDS, RUFFLE_BUILD } from './games/catalog.mjs';
 import { prepareGames, hashDirectory } from './games/assets.mjs';
 import { startGameServer } from './games/server.mjs';
 import { createReport, evaluateGate, writeReports } from './games/report.mjs';
@@ -13,12 +13,14 @@ import { OBSERVER_SCRIPT } from './games/observations.mjs';
 import { runGame } from './games/scenarios.mjs';
 import { runLayoutChecks } from './games/layouts.mjs';
 import { runFlashSmoke } from './games/flash-smoke.mjs';
+import { runXenoLive } from './games/xeno-live.mjs';
+import { runBloonsLive } from './games/bloons-live.mjs';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 export function parseOptions(args) {
   const options = { browsers: ['firefox', 'chrome'], gameIds: [...RELEASE_GAME_IDS],
     assetDir: resolve(root, '.cache/game-assets'), outputDir: resolve(root, 'artifacts/game-tests'),
-    mode: 'website', download: true, build: true, headed: false, strict: false, noSandbox: false, prepareOnly: false };
+    mode: 'local', download: true, build: true, headed: false, strict: false, noSandbox: false, prepareOnly: false };
   for (let i = 0; i < args.length; i++) {
     const [flag, inline] = args[i].split(/=(.*)/s);
     const value = () => { const result = inline ?? args[++i]; if (!result || result.startsWith('--')) throw Error(`Missing value for ${flag}`); return result; };
@@ -51,6 +53,25 @@ export function classifyCaseFailure(error, {phase, interrupted = false}) {
     category:error.category || (phase === 'baseline' ? 'baseline' : 'extension'),reason:error.message};
 }
 
+export async function localRuntimeEvidence({session, asset, gameUrl, runtime}) {
+  await session.flushResources();
+  const swfUrl = new URL('game.swf', gameUrl).href;
+  const primarySwf = session.resources.find(resource => resource.url === swfUrl && resource.sha256);
+  const runtimeWasm = session.resources.filter(resource => {
+    const url = new URL(resource.url);
+    return url.origin === new URL(gameUrl).origin && url.pathname.startsWith('/ruffle/') && url.pathname.endsWith('.wasm');
+  }).map(resource => ({...resource, assetPath:decodeURIComponent(new URL(resource.url).pathname.slice('/ruffle/'.length))}));
+  if (!primarySwf || primarySwf.sha256 !== asset.hashes['game.swf'] || primarySwf.sha256 !== asset.game.downloadArtifact?.sha256 ||
+      primarySwf.independentlyParsedAvm !== asset.game.expectedAvm || runtime.reportedAvm !== asset.game.expectedAvm ||
+      !(primarySwf.status >= 200 && primarySwf.status < 300)) {
+    throw Object.assign(Error('Loaded local SWF hash/public runtime does not match the pinned game.'),{status:'BLOCKED',category:'automation'});
+  }
+  if (!runtimeWasm.length || runtimeWasm.some(resource => !resource.sha256 || resource.sha256 !== asset.ruffle.hashes[resource.assetPath] || resource.sha256 !== RUFFLE_BUILD.expectedHashes[resource.assetPath] || !(resource.status >= 200 && resource.status < 300))) {
+    throw Object.assign(Error('Loaded local Ruffle Wasm bytes do not match the pinned runtime.'),{status:'BLOCKED',category:'automation'});
+  }
+  return {runtime:'ruffle', publicAvm:runtime.reportedAvm, primarySwf, runtimeWasm, ruffleVersion:asset.ruffle.provenance.version};
+}
+
 function build() {
   return new Promise((accept, reject) => {
     const child = spawn(process.execPath, ['scripts/build-release.mjs'], { cwd: root, stdio: 'inherit' });
@@ -73,7 +94,7 @@ export async function main(args = process.argv.slice(2)) {
   const extensionVersion = JSON.parse(await readFile(join(root, 'manifest.json'), 'utf8')).version;
   const testDependencies = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).devDependencies;
   const report = createReport({gameIds:options.gameIds,browsers:options.browsers,metadata:{extensionVersion,os:`${platform()} ${release()}`,node:process.version,
-    mode:options.mode,headed:options.headed,strict:options.strict,testDependencies,packageHashes:{},loadedFileHashes:{}}});
+    mode:options.mode,suite:options.mode==='local'?'controlled-core':'website-compatibility',headed:options.headed,strict:options.strict,testDependencies,packageHashes:{},loadedFileHashes:{}}});
   if (!options.prepareOnly) for (const browser of options.browsers) {
     report.metadata.packageHashes[browser] = hash(await readFile(join(root, 'dist', `hack-engine-${browser}-v${extensionVersion}.zip`)));
     report.metadata.loadedFileHashes[browser] = await hashDirectory(join(root,'dist',browser));
@@ -87,7 +108,7 @@ export async function main(args = process.argv.slice(2)) {
   if (options.prepareOnly) {
     for (const asset of assets) console.log(`${asset.ready ? 'READY' : 'BLOCKED'} ${asset.game.id}: ${asset.reason || asset.directory}`);
     await writeFile(join(options.outputDir, 'assets.json'), JSON.stringify(assets, null, 2));
-    return assets.some(a => !a.ready && ['J1', 'W1'].includes(a.game.id)) ? 1 : 0;
+    return assets.some(a => !a.ready && a.game.required) ? 1 : 0;
   }
   await writeReports(report,options.outputDir);
   const server = options.mode === 'local' ? await startGameServer({ games: assets, repoRoot: root }) : null;
@@ -123,6 +144,7 @@ export async function main(args = process.argv.slice(2)) {
               ensureActive();
               try {
                 caseSession = await launchBrowser({ browser, extensionDirectory: phase === 'extension' ? join(root, 'dist', browser) : undefined,
+                  viewport: options.mode === 'local' && asset.game.runtime === 'ruffle' ? {width:640,height:480} : undefined,
                   headed: options.headed, noSandbox: options.noSandbox, artifactDir:join(artifactDir,phase) });
               } catch (error) { error.category = 'automation'; error.status = 'BLOCKED'; throw error; }
               // A timed-out case cannot resume into a later case's browser.
@@ -147,10 +169,18 @@ export async function main(args = process.argv.slice(2)) {
                 entry.finalUrl = await session.evaluate(currentPage, 'location.href');
               }
               controls = phase === 'extension' ? await session.openControls(currentPage) : undefined;
-              if(options.mode === 'local' && asset.game.runtime==='ruffle') await runFlashSmoke({session,game:asset.game,asset,gamePage:currentPage,controls,
-                baseline:phase==='baseline',artifactDir:join(artifactDir,phase),step});
+              if(options.mode === 'local' && asset.game.runtime==='ruffle') {
+                const runtime = await runFlashSmoke({session,game:asset.game,asset,gamePage:currentPage,controls,
+                  baseline:phase==='baseline',artifactDir:join(artifactDir,phase),step});
+                entry.observedRuntime = 'ruffle';
+                await step('local-runtime-provenance', () => localRuntimeEvidence({session, asset, gameUrl:server.urlFor(asset.game.id), runtime}));
+                site = {playPage:currentPage, runtime:'ruffle', runtimeDetails:{avm:runtime.reportedAvm},
+                  metadata:{url:server.urlFor(asset.game.id),playUrl:server.urlFor(asset.game.id),runtime:'ruffle'}};
+              }
               try {
                 if (live) await live.runLiveGame({ session, game:asset.game, gamePage:currentPage, site, controls, baseline:phase==='baseline', artifactDir:join(artifactDir,phase), step });
+                else if (asset.game.id === 'F2') await runXenoLive({session,gamePage:currentPage,site,controls,baseline:phase==='baseline',artifactDir:join(artifactDir,phase),step});
+                else if (asset.game.id === 'F4') await runBloonsLive({session,gamePage:currentPage,site,controls,baseline:phase==='baseline',artifactDir:join(artifactDir,phase),step});
                 else await runGame({ session, game: asset.game, asset, gamePage: currentPage, controls,
                   baseline: phase === 'baseline', artifactDir:join(artifactDir,phase), step });
               } catch(error) {
@@ -233,6 +263,7 @@ export async function main(args = process.argv.slice(2)) {
     await writeFile(join(outputRoot, 'index.html'), `<!doctype html><meta charset="utf-8"><title>Hack Engine test runs</title><h1>Latest real-game test run</h1><p><a href="${runId}/index.html">Open report: ${runId}</a></p><p>Earlier run directories retain their original reports and failure evidence.</p>`);
   }
   const gate = evaluateGate(report, { strict: options.strict });
+  console.log(options.mode === 'local' ? 'Controlled core qualification' : 'Live website compatibility (not core release qualification)');
   console.log(`Reports: ${options.outputDir}`);
   console.log(JSON.stringify(gate, null, 2));
   return gate.passed && !interrupted ? 0 : 1;

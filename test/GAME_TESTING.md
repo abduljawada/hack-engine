@@ -1,97 +1,59 @@
 # Real-game automation
 
-`npm run test:games` visits the actual websites for the four release games: HTML5-Asteroids (J1, JavaScript), Breakout.Rust.Web (W1, WebAssembly), Xeno Tactic 2 (F2, AVM1), and Bloons Tower Defense 3 (F4, AVM2) in disposable Firefox and Chromium profiles. It builds the extension packages, establishes a baseline without the extension, then repeats with the installed package and its controls. The website supplies the game and player. **No local SWF, game directory, or locally installed Ruffle is needed for website tests.**
+The default `npm run test:games` runs original pinned copies of Asteroids (J1, JavaScript), Breakout (W1, WebAssembly), Xeno Tactic 2 (F2, AVM1), and Bloons Tower Defense 3 (F4, AVM2) in disposable Firefox and Chrome-family profiles: eight required configurations. Games are served on loopback. The test starts with a clean baseline without the extension, then repeats with the packaged extension and its public controls.
 
-The runner follows the website's real frames and reports the runtime it finds. A title historically released in Flash may now serve a different runtime: Canabalt's Newgrounds page, for example, serves an HTML5 port. This remains a Canabalt website test; it is not evidence about the original Flash edition. Loading a player or opening the controls alone never qualifies a gameplay scenario.
+`npm run test:compatibility` separately exercises the actual public websites. A blocked website remains BLOCKED and fails that compatibility run. It cannot be relabeled as a local pass. Conversely, external website access challenges do not replace the controlled release gate. The two reports describe different evidence.
 
 ## Commands
 
 ```sh
 npm ci --ignore-scripts
 npm run test:games
-
-# Focus on a browser or game IDs; watch the actual game page.
-npm run test:games -- --browser firefox --game F4 --headed
-
-# Explore a game retained in the original eight-game catalog.
-npm run test:games -- --game F1
-
-# Pinned local regressions are a separate, optional mode.
-npm run test:games -- --mode local --game J1,W1
-npm run test:games -- --mode local --prepare-only
-npm run test:games -- --mode local --assets /absolute/game-assets --no-download
-
-# Separate report location or reuse an already built extension.
-npm run test:games -- --output /absolute/test-results --no-build
-
-# Existing page and installed-package fixture regressions.
-npm run build
-npm run test:regression
-
-# Existing checks, local J1/W1 regressions, and strict website qualification.
 npm run release:verify
+
+# Focused controlled diagnosis; does not qualify the full matrix.
+npm run test:games -- --game F4 --browser firefox
+npm run test:games -- --mode local --assets /absolute/game-assets --no-download
+npm run test:games -- --mode local --prepare-only
+
+# Public websites, retaining external access and compatibility failures.
+npm run test:compatibility
+npm run test:games -- --mode website --game F2 --browser firefox --headed
+
+# Existing page and installed-package regression checks.
+npm run test:regression
 ```
 
-The default release selection is J1,W1,F2,F4 in both browsers: eight combinations. The original eight-game catalog remains available through explicit `--game` selection. Website mode is the default; `--mode website` selects it explicitly. `--prepare-only`, `--assets`, and `--no-download` relate to local assets; preparation requires `--mode local`. `FIREFOX_PATH` and `CHROME_PATH` select browser executables. Linux is the initial automated platform. `--no-sandbox` is an explicit Chromium option for isolated CI environments that cannot create a browser sandbox. Profiles belong to the run, never the user's personal browser.
+`--strict` requires all four selected games in both browsers and every mandatory target/scenario. Filters that omit a selected game or browser are rejected. `--no-build` reuses a fixed packaged build, and `--output` chooses a separate report directory. Do not rebuild shared `dist/` during a run: reported package hashes must describe the exact files loaded throughout it.
 
-## What a pass proves
+`FIREFOX_PATH` and `CHROME_PATH` override executables. CI pins Firefox 155.0.1, Google Chrome for Testing 152.0.7977.82, and Node 24.14.0. Local discovery can use Chromium. `--no-sandbox` is explicit for isolated CI environments. Profiles never reuse the user's personal browser. All automated test-browser launches are muted; rendering, timing, and gameplay remain active.
 
-Each game requires website loading and runtime detection in both fresh browser phases, plus visible natural counter changes without the extension. With the extension installed, required targets must be discovered anew, refined after genuine gameplay, watched, edited, undone, frozen during a natural update, and released with Stop. Guarded undo must preserve a game-owned change. A stable number alone cannot prove freeze: an independent visible event must show an attempted update. All proposed targets count: Bloons cash qualification alone cannot qualify lives.
+## What core qualification proves
 
-Asteroids adds range and unknown-value workflows. Chromium adds representative background-worker recovery. Ruffle instances require pause/resume, scan-owned pause release, preservation of a pre-existing pause, and cancellation. The runtime actually observed controls these requirements; a current HTML5 website does not inherit historical Flash pause requirements.
+Both clean baseline and installed-extension phases must load the real game. Required targets are discovered anew, refined after genuine gameplay, watched, edited, undone, frozen during a real update, and released with Stop. Guarded undo preserves a game-owned change. A stable number alone does not prove freeze; independent visible gameplay must establish an attempted update. Bloons cash alone cannot qualify its lives target, and Xeno gold alone cannot qualify its Shield/lives target.
 
-Observation uses text passed to game rendering or screenshot OCR. Unreliable readings are explicit automation blockers. Keyboard and pointer events drive gameplay. Extension actions use the packaged controls; no recorded memory address, private game state, or test-only scan/write API may substitute for discovery. Site load and browser automation problems are reported separately from extension assertions and inaccessible targets.
+Asteroids adds range/unknown scans and controlled same-origin, nested, cross-origin, and tab-isolation regressions. The Chrome adapter additionally exercises background-worker recovery. Ruffle cases require manual pause/resume, active scan-owned pause, preservation of an existing pause, and cancellation with playback recovery. All eight configurations must finish; a retry does not erase an original failure.
 
-Controls open as packaged extension pages bound to the game tab. This verifies installed scripts, permissions, messaging, controls and lifecycle behavior. Native toolbar/sidebar opening, signed-store installation, minimum browser versions, and Windows/macOS qualification remain separate checks.
+Observers inspect rendered text, canvas drawing arguments, screenshot pixels, or documented public player metadata. They never obtain counters from private game state or substitute recorded memory addresses. Inputs drive gameplay, and extension actions use the packaged controls. Asteroids waits for completed rendered frames without outstanding player shots before exact edit/undo checks, so an earlier bullet cannot race the intended assertion. Exact values and deadlines remain enforced.
 
-## Optional local regressions
+## Original assets and provenance
 
-`--mode local` serves verified copies on loopback origins for repeatable regression testing. Asteroids and Breakout revisions and hashes remain pinned. Local Asteroids adds controlled same-origin, nested-frame, cross-origin, and multiple-tab isolation cases; these complement the actual website's frame arrangement. A local pass does not replace website qualification.
+See [ASSETS.md](games/ASSETS.md). Existing MIT games use pinned upstream revisions and hashes. The original publicly served Flash downloads have fixed SWF hashes and independent AVM classification; local testing authorization is recorded, with no redistribution rights asserted. Ruffle uses the verified official 0.6.0 archive, exact archive integrity, and extracted-file hashes. Assets stay outside extension packages/source archives and are not uploaded as test artifacts.
 
-Local Flash mode needs game assets, pinned Ruffle, and verified gameplay recipes described in [asset setup](games/ASSETS.md). Missing local SWFs block only those local cases. They never prevent a website run. Downloaded assets remain outside extension packages and source control.
+Each Ruffle phase must identify the expected AVM through public metadata and independently parse the actual loaded SWF bytes. Loaded SWF and Wasm hashes must match the local catalog pins. Firefox 143+ BiDi response collection and Chrome response capture read the actual browser requests; neither refetches a URL or borrows another browser's hash. Missing capture, drift, wrong AVM, or mismatched bytes fails qualification.
 
-## Reports and gates
+## Reports and CI
 
-Every invocation preserves its own HTML, JSON and JUnit report under `artifacts/game-tests/`. Reports include mode, website and final URLs, detected runtimes, observed resource metadata, browser/package versions and hashes, baseline/extension step results, screenshots and logs. Locally hosted assets additionally carry pinned file hashes. Live resource metadata is evidence about the resources observed in that run, not a claim that the remote site is pinned. Original failures remain in the report even if a diagnostic retry succeeds.
+Each run preserves HTML, JSON, JUnit, screenshots, browser logs, package versions/hashes, asset provenance, and step results. PASS means all required scenarios completed; FAIL means an assertion failed; BLOCKED means loading/observation or a complete recipe was unavailable; UNSUPPORTED TARGET means editing a required target could not be demonstrated.
 
-- **PASS:** every mandatory scenario and target completed with observed results.
-- **FAIL:** a tested assertion or extension operation failed.
-- **BLOCKED:** loading, interaction, reliable observation, or a full gameplay recipe was unavailable.
-- **UNSUPPORTED TARGET:** a required target could not be discovered or demonstrated to affect gameplay.
+Local reports expose the core release gate. Website reports label their strict matrix as compatibility and cannot assert a core release pass. Unit/package checks and browser integration remain independent prerequisites. The core CI workflow runs the full eight-case controlled suite. The separate advisory compatibility workflow runs the same eight live-site cases, keeps failures visible, and retains evidence even when sites deny access. Neither workflow tags or publishes a store version.
 
-Ordinary checks fail on actual failures, unsupported targets, or unavailable required release games. The required release set is J1, W1, F2 and F4; blocked Xeno or Bloons cases cannot satisfy it. The retained F1, F3, F5 and F6 catalog entries are optional exploratory coverage when explicitly selected. `--strict` rejects filters that omit any release game or browser and requires all eight release game/browser combinations and their mandatory scenarios. Neither blocked/unrun cases, manual verification nor runtime smoke checks can satisfy it. HTML displays ordinary check status and full qualification independently; JUnit includes every case and the qualification result.
+Native sidebar entry points, signed-store installation, minimum browser versions, and other operating systems remain separate release checks.
 
-Strict website qualification also requires independent Flash evidence from **each browser and each phase**: the primary game's observed SWF SHA-256 and independently parsed AVM classification must match public Ruffle metadata, and the loaded Ruffle Wasm resources need SHA-256 hashes. Auxiliary advertising SWFs cannot provide that proof. Missing Firefox response bodies remain an explicit strict-gate gap; a Chromium hash cannot qualify Firefox. Ordinary gameplay results remain separate from this provenance gate.
+## Repair evidence and remaining limits
 
-Complete hashing of ordinary live JavaScript assets is not implemented. Recorded resource URLs, captured binary hashes, and optional local pins must not be described as proof that every website asset is pinned or hashed.
+The September 28 investigation reproduced an Asteroids race: an already-fired bullet changed the score between a successful write and the next rendered frame. Three repaired Chrome cases and one Firefox case passed, followed by all four local Asteroids/Breakout cases. The full gate still requires fresh evidence for all selected games.
 
-GitHub Actions runs unit checks, packaging/lint, existing browser regressions, local J1/W1 regressions, and strict website qualification for the four release games in both browsers on every pull request and main push. Node, browser versions, and test dependencies are pinned. Reports upload even after failures. External site outages can fail required website checks; local fallback results never silently turn those failures green.
+A real Ruffle interaction also resumed a paused Bloons game when its Play overlay received a click, while the extension controls still reported paused. The owned-pause input guard now prevents activation while allowing held-key/button releases; real Firefox and Chrome probes verify explicit Resume remains functional. Full Bloons runs exposed a separate reset/scan race under investigation. Xeno's stylized gold font and Shield observation remain qualification work, not waived assertions.
 
-There is no release publishing or tag creation in this workflow. Tests do not deliberately submit modified scores to remote leaderboards.
-
-## Historical automated results and remaining qualification limits
-
-The live Asteroids and Breakout workflows have passed in Firefox and Chromium. Bloons has a full cash/lives recipe. Firefox demonstrated both targets through edit, guarded undo, undo, freeze and stop, then failed the pause-under-input check: a player click dismissed Ruffle's Play overlay and gameplay resumed while the controls still displayed paused. The screenshots show 296 → 292 lives. This does not establish that idle pause fails, and later pause/lifecycle assertions remain unrun. Chromium's installed cash workflow passed, but its lives refinement stopped at two candidates, and its fresh baseline hit the startup deadline. Do not treat these partial runs as qualification.
-
-The user subsequently verified Xeno Tactic 2 manually in Firefox. That is useful compatibility evidence, but it does not replace an automated pass. Its automated probe discovered a unique Float64 candidate after a real purchase changed gold from 200 to 170 and accepted a write to 1000; spending the edited balance has not yet been demonstrated automatically. The new release selection does not waive that gap or the existing scenario/provenance requirements.
-
-In the earlier eight-game runs, Chibi Knight, Xeno Tactic 2, Cube Colossus and Canabalt had genuine website launch/gameplay input routes and retained visual evidence. Their requested numeric targets are not fully qualified: counter visibility, small-font OCR, graphical meters and exposed JavaScript roots can block later steps. These cases must remain blocked until reliable observation and the complete target workflows are demonstrated. Diggy's configured portal currently fails to expose a playable canvas/runtime after its Play input in the observed runs.
-
-Firefox currently supplies response metadata without response-body hashes; this also prevents strict live Ruffle qualification even if gameplay assertions pass. Chromium records browser-loaded SWF/Ruffle response hashes and independently parses loaded SWFs. No result silently borrows a local copy or another browser's hash.
-
-## Browser identity and current store PR
-
-The adapter key `chrome` covers Chromium-family browsers. Both GitHub workflows
-explicitly download **Google Chrome for Testing 152.0.7977.82**, not an unbranded
-Chromium build. Local discovery can use Chromium; `CHROME_PATH` overrides it.
-The eight required live cases are four games × Firefox/Chrome-for-Testing in CI.
-Four additional local Asteroids/Breakout regressions and the unit/browser checks
-are separate and remain enabled.
-
-The earlier store-setup CI run (36318294603) failed Bloons in Firefox during
-pause/resume, with rendered values changing 298 → 294 while paused. Bloons/Firefox
-remains required, and no pause assertions or runtime code were changed by the
-matrix reconciliation. That failure is unresolved until a new run demonstrates
-otherwise. The later primary-workspace final run was interrupted; its local
-Asteroids Chromium second-write timeout and partial live successes do not certify
-the isolated store branch.
+Historical failed/partial runs remain failed evidence. This setup does not itself certify or publish the current candidate. Local network certificate errors and public-site Security Verification challenges are reported without bypassing them.

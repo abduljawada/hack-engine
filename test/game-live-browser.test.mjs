@@ -82,6 +82,17 @@ for (const browser of ['firefox', 'chrome']) {
       assert.equal(png.readUInt32BE(16), size.width, frame.url);
       assert.equal(png.readUInt32BE(20), size.height, frame.url);
       assert.deepEqual(firstPixel(png), [12, 34, 56], `Frame screenshot contains its rendered pixels: ${frame.url}`);
+      const rootSize = await session.evaluate(page, '({width:innerWidth,height:innerHeight})');
+      await session.setPixelRatio(frame, 2);
+      assert.deepEqual(await session.evaluate(page, '({width:innerWidth,height:innerHeight})'), rootSize, 'High-DPI capture preserves root viewport');
+      assert.deepEqual(await session.evaluate(frame, '({width:innerWidth,height:innerHeight})'), size, 'High-DPI capture preserves frame geometry');
+      await session.screenshot(frame, path);
+      const highDpi = await readFile(path);
+      assert.equal(highDpi.readUInt32BE(16), size.width * 2, frame.url);
+      assert.equal(highDpi.readUInt32BE(20), size.height * 2, frame.url);
+      assert.deepEqual(firstPixel(highDpi), [12, 34, 56], 'High-DPI screenshot contains the same frame pixels');
+      await session.setPixelRatio(frame, 1);
+
     }
     const controls = await session.openControls(frames.find(frame => frame.url.endsWith('/nested')));
     assert.ok(Number.isInteger(controls.gameTabId));
@@ -93,10 +104,8 @@ for (const browser of ['firefox', 'chrome']) {
     await session.flushResources();
     const wasm = session.resources.find(resource => resource.url.endsWith('/runtime.wasm'));
     assert.ok(wasm);
-    if (browser === 'chrome') {
-      assert.equal(session.resources.find(resource => resource.url.endsWith('/game.swf')).independentlyParsedAvm, 'AVM2');
-      assert.equal(wasm.sha256, createHash('sha256').update(Buffer.from([0, 97, 115, 109, 1, 0, 0, 0])).digest('hex'));
-    } else assert.match(wasm.hashUnavailable, /BiDi/);
+    assert.equal(session.resources.find(resource => resource.url.endsWith('/game.swf')).independentlyParsedAvm, 'AVM2');
+    assert.equal(wasm.sha256, createHash('sha256').update(Buffer.from([0, 97, 115, 109, 1, 0, 0, 0])).digest('hex'));
     await session.closePage(controls);
     await session.closePage(page);
   });

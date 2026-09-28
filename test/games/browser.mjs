@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { classifySwf } from "./assets.mjs";
+import { createFirefoxResponseCollector } from "./response-capture.mjs";
 import { browserPath } from "../browser-path.mjs";
 import { connectTransport, stopBrowserProcess, waitForDebugger } from "./transport.mjs";
 
@@ -34,6 +35,7 @@ export async function launchBrowser({ browser, extensionDirectory, headed = fals
   const pendingTargets = new Set();
   const sessionPages = new Map();
   let initializeTarget;
+  let captureFirefoxResponse;
   const recordResource = (item) => {
     resources.push({ time: new Date().toISOString(), ...item });
     if (resources.length > 20000) resources.splice(0, 1000);
@@ -72,6 +74,7 @@ export async function launchBrowser({ browser, extensionDirectory, headed = fals
         `user_pref("extensions.webextensions.uuids", ${JSON.stringify(JSON.stringify({ [extensionId]: firefoxUuid }))});`,
         'user_pref("browser.shell.checkDefaultBrowser", false);',
         'user_pref("browser.tabs.warnOnClose", false);',
+        'user_pref("media.volume_scale", "0.0");',
       ].join("\n"));
     }
     const args = firefox ? [
@@ -79,7 +82,7 @@ export async function launchBrowser({ browser, extensionDirectory, headed = fals
       "--profile", profile, "--remote-debugging-port=0", "about:blank",
     ] : [
       ...(!headed ? ["--headless=new"] : []), "--disable-background-networking", "--disable-component-update",
-      "--disable-default-apps", "--enable-unsafe-extension-debugging", "--no-first-run",
+      "--disable-default-apps", "--mute-audio", "--enable-unsafe-extension-debugging", "--no-first-run",
       "--disable-background-timer-throttling", "--disable-renderer-backgrounding",
       ...(noSandbox ? ["--no-sandbox"] : []), "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank",
     ];
@@ -131,11 +134,13 @@ export async function launchBrowser({ browser, extensionDirectory, headed = fals
           }
         } else if (event.method === "network.responseCompleted") {
           const { response, context, request } = event.params;
-          recordResource({ context, requestId: request.request, url: response.url,
-            status: response.status, mimeType: response.mimeType,
-            ...(/\.(?:swf|wasm)(?:[?#]|$)|ruffle[^?#]*\.js(?:[?#]|$)/i.test(response.url)
-              ? { hashUnavailable: "Firefox BiDi adapter records response metadata; response body capture is unavailable" } : {}),
-          });
+          const resource = recordResource({ context, requestId: request.request, url: response.url,
+            status: response.status, mimeType: response.mimeType });
+          if (captureFirefoxResponse) {
+            const task = captureFirefoxResponse({ request, response }, resource)
+              .finally(() => pendingResources.delete(task));
+            pendingResources.add(task);
+          }
         } else if (event.method === "network.fetchError") {
           recordResource({ context: event.params.context, url: event.params.request.url, error: event.params.errorText });
         }
@@ -154,6 +159,7 @@ export async function launchBrowser({ browser, extensionDirectory, headed = fals
     if (firefox) {
       const session = await wire.call("session.new", { capabilities: { alwaysMatch: { browserName: "firefox" } } });
       version = `Firefox ${session.capabilities.browserVersion}`;
+      captureFirefoxResponse = await createFirefoxResponseCollector(wire);
       await wire.call("session.subscribe", { events: ["log.entryAdded", "network.responseCompleted", "network.fetchError"] });
       if (extensionDirectory) {
         await wire.call("webExtension.install", { extensionData: { type: "path", path: resolve(extensionDirectory) } });
@@ -364,6 +370,12 @@ export async function launchBrowser({ browser, extensionDirectory, headed = fals
           await delay(100);
           await call(page, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
         }
+      },
+      async setPixelRatio(page, ratio) {
+        if (!Number.isFinite(ratio) || ratio < 1 || ratio > 4) throw new Error('Screenshot pixel ratio must be between 1 and 4');
+        const dimensions = await evaluate(page.topPage || page, '({width:innerWidth,height:innerHeight})');
+        if (firefox) await wire.call('browsingContext.setViewport', {context: page.topPage?.context || page.context, devicePixelRatio: ratio});
+        else await call(page.topPage || page, 'Emulation.setDeviceMetricsOverride', {...dimensions, deviceScaleFactor: ratio, mobile: false});
       },
       async screenshot(page, path) {
         let result;

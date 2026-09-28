@@ -1,6 +1,6 @@
-# Optional local real-game assets
+# Pinned real-game assets
 
-**This document applies only to `--mode local`.** The default website suite loads J1 (Asteroids), W1 (Breakout), F2 (Xeno Tactic 2) and F4 (Bloons Tower Defense 3) from their actual websites and needs none of these files. These four games form the release suite in both browsers; the original eight-game catalog remains explicitly selectable.
+**This document describes the controlled core release suite (`--mode local`, the default).** J1, W1, F2 and F4 run in both browsers. The separate `--mode website` compatibility suite needs no local game copies and never counts a cached replay as a live-site pass.
 
 Local game files and Ruffle live in `.cache/game-assets/`, or the directory selected by
 `--assets`. They never enter the extension packages or source archive. Tests
@@ -22,14 +22,16 @@ copies: the inspected Kongregate page did not expose the SWF and Canabalt's curr
 Newgrounds embed is the HTML5 port, which website mode tests as HTML5 rather than claiming original Flash coverage.
 
 Ruffle is pinned to the official npm release **0.6.0** with an exact SHA-512
-archive integrity value. Its MIT/Apache-2.0 licenses accompany the local runtime.
+archive integrity value. Its MIT/Apache-2.0 licenses accompany the local runtime; every extracted file is checked against catalog hashes derived from that verified archive.
 When a Flash game is available and the runtime is absent, the downloader installs
 this build locally. A failed download or integrity check is recorded as BLOCKED.
 
 ## User-supplied copies
 
 Each game directory is named by its matrix ID: `F1`–`F6`, `J1`, or `W1`. Flash
-folders contain `game.swf`, `scenario.json`, and `metadata.json`. Obtain original
+folders contain `game.swf` and `metadata.json`. Selected F2/F4 use the maintained
+public-input gameplay scenarios in the repository; other exploratory titles need
+a separately hashed `scenario.json`. Obtain original
 editions that you are authorized to test locally. Metadata describes provenance
 and pins every file except `metadata.json` itself:
 
@@ -68,4 +70,4 @@ those cases as passing.
 
 Reports retain game hashes, source metadata, Ruffle version/hashes, and independently
 observed AVM type. Flash readiness means the assets passed validation, not that
-all required gameplay checks passed. The release verification command separately requires local J1/W1 regressions and the four release websites (J1, W1, F2 and F4) in both browsers: eight required combinations with successful mandatory scenarios. Pull requests and main pushes enforce the same strict website qualification. Missing or blocked required Flash coverage fails the gate; manual verification cannot replace an automated pass. Existing runtime, hash and scenario requirements remain unchanged. The other catalog titles are optional exploratory coverage when explicitly selected.
+all required gameplay checks passed. The release verification command requires all four controlled games in both browsers with the full mandatory scenarios, runtime classification, and loaded-byte provenance. Pull requests and main pushes enforce that same strict core gate. Missing assets, blocked required coverage, or manual-only verification cannot pass it. The separate live-site workflow retains website failures without claiming they are core failures or core successes. Original SWFs and runtime binaries remain cache files, excluded from source/release artifacts.

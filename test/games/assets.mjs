@@ -152,13 +152,13 @@ export async function prepareGames({ assetDir, download = true, gameIds = GAME_C
     const record = { game, ready: false, directory, entry: game.entry || "__flash__.html", hashes: {}, provenance: null };
     try {
       const exists = await fs.access(directory).then(() => true, () => false);
-      if (!exists && download && (game.required || game.downloadArtifact)) {
+      if (!exists && download && (game.repository || game.downloadArtifact)) {
         await fs.mkdir(path.dirname(directory), { recursive: true });
-        if (game.required) await downloadGame(game, directory); else await downloadFlash(game, directory);
+        if (game.repository) await downloadGame(game, directory); else await downloadFlash(game, directory);
       }
       else if (!exists) throw new Error(`Missing ${game.id} assets at ${directory}`);
-      Object.assign(record, await verifyAssetDirectory(directory, game.expectedHashes));
-      if (game.required) {
+      Object.assign(record, await verifyAssetDirectory(directory, game.downloadArtifact ? {"game.swf": game.downloadArtifact.sha256} : game.expectedHashes));
+      if (game.repository) {
         if (record.provenance.revision !== game.revision) throw new Error(`Revision mismatch for ${game.id}`);
         if (!record.hashes[game.entry]) throw new Error(`Missing entry: ${game.entry}`);
       } else {
@@ -166,7 +166,8 @@ export async function prepareGames({ assetDir, download = true, gameIds = GAME_C
         if (record.avm !== game.expectedAvm) throw new Error(`SWF runtime mismatch: expected ${game.expectedAvm}, found ${record.avm}`);
         const ruffleDirectory = path.resolve(assetDir, "ruffle");
         if (download && !await fs.access(ruffleDirectory).then(() => true, () => false)) await downloadRuffle(ruffleDirectory);
-        record.ruffle = { directory: ruffleDirectory, ...await verifyAssetDirectory(ruffleDirectory) };
+        record.ruffle = { directory: ruffleDirectory, ...await verifyAssetDirectory(ruffleDirectory, RUFFLE_BUILD.expectedHashes) };
+        if (record.ruffle.provenance.version !== RUFFLE_BUILD.version || record.ruffle.provenance.integrity !== RUFFLE_BUILD.integrity) throw new Error("Pinned Ruffle version or archive integrity mismatch");
         if (!record.ruffle.provenance.version || !record.ruffle.hashes["ruffle.js"] || !Object.keys(record.ruffle.hashes).some((name) => name.endsWith(".wasm"))) throw new Error("Ruffle metadata must pin version, ruffle.js, and Wasm assets");
         record.recipePath = record.hashes["scenario.json"] ? path.join(directory, "scenario.json") : null;
       }

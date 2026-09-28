@@ -1,9 +1,9 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { ADDITIONAL_TARGETS, BROWSERS, GAME_CATALOG, RELEASE_GAME_IDS, REQUIRED_SCENARIOS, TARGET_SCENARIOS } from "./catalog.mjs";
+import { ADDITIONAL_TARGETS, BROWSERS, GAME_CATALOG, RELEASE_GAME_IDS, REQUIRED_SCENARIOS, RUFFLE_BUILD, TARGET_SCENARIOS } from "./catalog.mjs";
 const escape = (value) => String(value ?? "").replace(/[<>&"']/g, (character) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;" })[character]);
 export function createReport({ gameIds = RELEASE_GAME_IDS, browsers = BROWSERS, metadata = {} } = {}) {
-  return { createdAt: new Date().toISOString(), metadata: { ...metadata, gameIds, browsers }, cases: gameIds.flatMap((gameId) => browsers.map((browser) => ({ gameId, gameName: GAME_CATALOG.find((game) => game.id === gameId)?.name, browser, status: "NOT RUN", steps: [], evidence: [] }))) };
+  return { createdAt: new Date().toISOString(), metadata: { mode: "local", ...metadata, gameIds, browsers }, cases: gameIds.flatMap((gameId) => browsers.map((browser) => ({ gameId, gameName: GAME_CATALOG.find((game) => game.id === gameId)?.name, browser, status: "NOT RUN", steps: [], evidence: [] }))) };
 }
 export function evaluateGate(report, { strict = false } = {}) {
   const reasons = [];
@@ -45,6 +45,29 @@ export function evaluateGate(report, { strict = false } = {}) {
         requireStep(`${target}:baseline`, "baseline");
         for (const name of TARGET_SCENARIOS) requireStep(`${target}:${name}`, "extension");
       }
+      if (!website && strict && runtime === "ruffle") for (const phase of ["baseline", "extension"]) {
+        requireStep("flash-load", phase);
+        requireStep("local-runtime-provenance", phase);
+        const details = testCase.steps?.find(step => step.name === "local-runtime-provenance" && step.phase === phase && step.status === "PASS")?.details;
+        const loaded = testCase.steps?.find(step => step.name === "flash-load" && step.phase === phase && step.status === "PASS")?.details;
+        const validHash = value => typeof value === "string" && /^[a-f0-9]{64}$/i.test(value);
+        const primary = details?.primarySwf;
+        const loopback = value => { try { const url = new URL(value); return url.protocol === "http:" && url.hostname === "127.0.0.1"; } catch { return false; } };
+        if (details?.runtime !== "ruffle" || details?.publicAvm !== game.expectedAvm || loaded?.reportedAvm !== game.expectedAvm ||
+            loaded?.independentlyParsedAvm !== game.expectedAvm || primary?.independentlyParsedAvm !== game.expectedAvm) {
+          reasons.push(`${key}: ${phase} pinned SWF classification must match public ${game.expectedAvm} runtime`);
+        }
+        if (!loopback(primary?.url) || !validHash(primary?.sha256) || primary?.sha256 !== testCase.hashes?.["game.swf"] ||
+            primary?.sha256 !== game.downloadArtifact?.sha256 || !(primary?.status >= 200 && primary.status < 300)) {
+          reasons.push(`${key}: ${phase} loaded local SWF hash does not match pinned game`);
+        }
+        if (details?.ruffleVersion !== RUFFLE_BUILD.version || testCase.ruffle?.provenance?.version !== RUFFLE_BUILD.version) reasons.push(`${key}: ${phase} Ruffle version does not match release pin`);
+        const wasm = details?.runtimeWasm;
+        if (!Array.isArray(wasm) || !wasm.length || wasm.some(resource => !loopback(resource.url) || !validHash(resource.sha256) ||
+            resource.sha256 !== testCase.ruffle?.hashes?.[resource.assetPath] || resource.sha256 !== RUFFLE_BUILD.expectedHashes[resource.assetPath] || !(resource.status >= 200 && resource.status < 300))) {
+          reasons.push(`${key}: ${phase} loaded local Ruffle Wasm hash does not match pinned runtime`);
+        }
+      }
       if (website) for (const phase of ["baseline", "extension"]) {
         requireStep("website-load", phase);
         requireStep("runtime-detection", phase);
@@ -72,6 +95,10 @@ export async function writeReports(report, outputDir) {
   await fs.mkdir(outputDir, { recursive: true });
   const cases = report.cases || [];
   report.gates = { ordinary: evaluateGate(report), strict: evaluateGate(report, {strict:true}) };
+  const controlled = report.metadata?.mode === "local";
+  report.gates.coreRelease = controlled ? report.gates.strict : {passed:false,reasons:["Website compatibility cannot qualify the controlled core release suite."],counts:report.gates.strict.counts};
+  const suiteLabel = controlled ? "Controlled core real-game qualification" : "Live website compatibility";
+  const fullLabel = controlled ? "Full core release qualification" : "Full website compatibility";
   const statusCounts = cases.reduce((counts, item) => ({ ...counts, [item.status]: (counts[item.status] || 0) + 1 }), {});
   const display = (value) => escape(typeof value === "object" ? JSON.stringify(value, null, 2) : value);
   const evidenceHtml = (items) => items.map((item) => {
@@ -82,7 +109,7 @@ export async function writeReports(report, outputDir) {
     if (relative.startsWith("..") || relative.includes(":") || relative.startsWith("/")) return `<code>${escape(filename)}</code>`;
     return `<a href="${escape(relative.split(path.sep).map(encodeURIComponent).join("/"))}">${escape(typeof item === "object" ? item.label || filename : filename)}</a>`;
   }).join(" ");
-  const html = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Hack Engine real-game tests</title><style>body{font:16px system-ui;max-width:1100px;margin:40px auto;padding:0 20px;background:#fafafa;color:#222}table{border-collapse:collapse;width:100%}td,th{padding:9px;text-align:left;border-bottom:1px solid #ddd}pre{white-space:pre-wrap;overflow-wrap:anywhere}.PASS{color:#146b29}.FAIL{color:#a90000}.BLOCKED,.NOT{color:#835000}section{margin:30px 0}code{overflow-wrap:anywhere}</style><h1>Hack Engine real-game tests</h1><p><strong>Selected-suite check: ${report.gates.ordinary.passed ? "PASS" : "FAIL"} · Full release qualification: ${report.gates.strict.passed ? "PASS" : "INCOMPLETE / FAILED"}</strong></p><p>${escape(report.createdAt)} · ${display(statusCounts)}</p><p>Qualification requires all 8 release game/browser combinations (Asteroids, Breakout, Xeno Tactic 2, and Bloons Tower Defense 3 in Firefox and Chromium) and mandatory scenarios. Unavailable websites, unqualified gameplay, and unreliable observations remain visible as blocked coverage. Local assets are required only in local regression mode. Native sidebar opening, store installation, and other operating systems are separate checks.</p><details><summary>Qualification gaps</summary><pre>${display(report.gates.strict.reasons)}</pre></details><details><summary>Run versions and metadata</summary><pre>${display(report.metadata)}</pre></details><table><tr><th>Game</th><th>Browser</th><th>Status</th><th>Category</th><th>Reason</th></tr>${cases.map((item) => `<tr><td>${escape(item.gameId)} ${escape(item.gameName)}</td><td>${escape(item.browser)}</td><td class="${escape(item.status)}">${escape(item.status)}</td><td>${escape(item.category)}</td><td>${escape(item.reason)}</td></tr>`).join("")}</table>${cases.map((item) => `<section><h2>${escape(item.gameId)} · ${escape(item.browser)} · ${escape(item.status)}</h2><p>${escape(item.reason)}</p>${evidenceHtml(item.evidence || [])}<details><summary>Steps, versions, hashes, provenance and logs</summary><pre>${display(item)}</pre></details></section>`).join("")}</html>`;
+  const html = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Hack Engine ${suiteLabel}</title><style>body{font:16px system-ui;max-width:1100px;margin:40px auto;padding:0 20px;background:#fafafa;color:#222}table{border-collapse:collapse;width:100%}td,th{padding:9px;text-align:left;border-bottom:1px solid #ddd}pre{white-space:pre-wrap;overflow-wrap:anywhere}.PASS{color:#146b29}.FAIL{color:#a90000}.BLOCKED,.NOT{color:#835000}section{margin:30px 0}code{overflow-wrap:anywhere}</style><h1>Hack Engine ${suiteLabel}</h1><p><strong>Selected-suite check: ${report.gates.ordinary.passed ? "PASS" : "FAIL"} · ${fullLabel}: ${report.gates.strict.passed ? "PASS" : "INCOMPLETE / FAILED"}</strong></p><p>${escape(report.createdAt)} · ${display(statusCounts)}</p><p>Qualification requires all 8 release game/browser combinations (Asteroids, Breakout, Xeno Tactic 2, and Bloons Tower Defense 3 in Firefox and Chromium) and mandatory scenarios. ${controlled ? "This suite uses pinned original game files and the pinned Ruffle runtime in a controlled local host. It does not qualify changing public websites." : "This report checks changing public websites and cannot qualify the controlled core release suite."} Unqualified gameplay and unreliable observations remain visible as blocked coverage. Native sidebar opening, store installation, and other operating systems are separate checks.</p><details><summary>Qualification gaps</summary><pre>${display(report.gates.strict.reasons)}</pre></details><details><summary>Run versions and metadata</summary><pre>${display(report.metadata)}</pre></details><table><tr><th>Game</th><th>Browser</th><th>Status</th><th>Category</th><th>Reason</th></tr>${cases.map((item) => `<tr><td>${escape(item.gameId)} ${escape(item.gameName)}</td><td>${escape(item.browser)}</td><td class="${escape(item.status)}">${escape(item.status)}</td><td>${escape(item.category)}</td><td>${escape(item.reason)}</td></tr>`).join("")}</table>${cases.map((item) => `<section><h2>${escape(item.gameId)} · ${escape(item.browser)} · ${escape(item.status)}</h2><p>${escape(item.reason)}</p>${evidenceHtml(item.evidence || [])}<details><summary>Steps, versions, hashes, provenance and logs</summary><pre>${display(item)}</pre></details></section>`).join("")}</html>`;
   let failures = 0; let skipped = 0;
   const strict = report.metadata?.strict === true;
   const selectedGate = strict ? report.gates.strict : report.gates.ordinary;
@@ -105,7 +132,7 @@ export async function writeReports(report, outputDir) {
   // Per-game records cannot represent an omitted combination, duplicate entry,
   // or strict provenance failure by themselves. Publish the selected gate as
   // its own test so JUnit consumers see the same outcome as the command exit.
-  const gateName = strict ? "Strict release qualification" : "Selected-suite qualification";
+  const gateName = strict ? (controlled ? "Strict core release qualification" : "Strict website compatibility") : "Selected-suite qualification";
   let gateBody = "";
   if (!selectedGate.passed) {
     failures++;

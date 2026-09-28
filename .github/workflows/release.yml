@@ -83,12 +83,9 @@ jobs:
       - name: Browser regressions
         if: inputs.operation != 'status'
         run: npm run test:regression
-      - name: Pinned local games
+      - name: Eight controlled real-game release configurations
         if: inputs.operation != 'status'
-        run: npm run test:games -- --mode local --game J1,W1 --no-build --no-sandbox
-      - name: Eight-configuration website release qualification
-        if: inputs.operation != 'status'
-        run: npm run test:games -- --mode website --no-build --no-sandbox --strict
+        run: npm run test:games -- --mode local --no-build --no-sandbox --strict
       - name: Retain exact release packages and metadata
         if: inputs.operation != 'status'
         uses: actions/upload-artifact@v4

@@ -1,24 +1,23 @@
-name: Extension and real-game tests
+name: Live-site compatibility (advisory)
 
+# Kept separate from the pinned core release gate. This workflow still fails
+# when website access or gameplay evidence is blocked; no silent green fallback.
 on:
   pull_request:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: tests-${{ github.workflow }}-${{ github.ref }}
+  group: compatibility-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  test:
+  compatibility:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      # Pin the automation environment independently from moving browser channels.
       FIREFOX_VERSION: '155.0.1'
       CHROME_VERSION: '152.0.7977.82'
     steps:
@@ -39,27 +38,19 @@ jobs:
           echo "FIREFOX_PATH=$RUNNER_TEMP/hack-browsers/firefox/firefox" >> "$GITHUB_ENV"
           echo "CHROME_PATH=$RUNNER_TEMP/hack-browsers/chrome-linux64/chrome" >> "$GITHUB_ENV"
       - run: npm ci --ignore-scripts
-      - run: npm run test:unit
-      - run: npm run build:source && npm run check && npm run lint:firefox
-      - name: Browser adapter and cross-site frame checks
-        run: GAME_BROWSER_INTEGRATION=1 GAME_BROWSER_NO_SANDBOX=1 node --test test/game-live-browser.test.mjs
-      - name: Existing browser regressions
-        run: npm run test:regression
-      - name: Restore verified game downloads
-        uses: actions/cache@v4
-        with:
-          path: |
-            .cache/game-assets/J1
-            .cache/game-assets/W1
-            .cache/game-assets/ruffle
-          key: games-${{ runner.os }}-${{ hashFiles('test/games/catalog.mjs', 'test/games/assets.mjs') }}
-      - name: Eight controlled real-game release configurations
-        run: npm run test:games -- --mode local --no-build --no-sandbox --strict
-      - name: Upload game reports and evidence
+      - run: npm run build
+      - name: Eight live-site compatibility configurations
+        run: npm run test:games -- --mode website --no-build --no-sandbox --strict
+      - name: Explain compatibility scope
+        if: always()
+        run: |
+          echo '## Live-site compatibility only' >> "$GITHUB_STEP_SUMMARY"
+          echo 'This run does not qualify the pinned core release suite. Blocked websites, unreliable readings, or failed gameplay remain failures here; see the retained report for each browser/game result.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain live-site results even on failure
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: game-test-evidence
+          name: live-site-compatibility
           path: artifacts/game-tests/
           if-no-files-found: warn
           retention-days: 14

@@ -53,14 +53,27 @@ version/tag containing these automation files, not an older candidate tag.
 The workflow checks tag identity, ancestry on `origin/main`, matching versions,
 permanent add-on identity, and release notes. It builds both packages and the
 Mozilla source archive, validates checksums and Firefox lint, runs unit tests,
-browser regressions, browser/frame integration, four local J1/W1 regressions, and strict website
-qualification for exactly eight default configurations: Asteroids (JavaScript), Breakout
+browser regressions, browser/frame integration, and strict controlled-game
+qualification for exactly eight configurations: Asteroids (JavaScript), Breakout
 (WebAssembly), Xeno Tactic 2 (AVM1), and Bloons Tower Defense 3 (AVM2), each in
-Firefox and the Chromium-family adapter. Both GitHub workflows use pinned Google
-Chrome for Testing for that adapter; local discovery can use Chromium, or an
-explicit CHROME_PATH override. The additional local regressions and unit/browser
-checks do not expand the required live matrix. Any failure blocks both store jobs. Third-party website outages
-can therefore block release and need investigation; they are not bypassed.
+Firefox and Google Chrome for Testing. Original game copies and Ruffle are pinned
+and validated before use; they are served only on loopback and excluded from
+release packages and source archives. Missing assets, uncertain observations,
+unproven target workflows, and genuine failures block both submission jobs.
+
+The separate **Live-site compatibility (advisory)** workflow exercises the same
+four public websites. It retains a failing result for blocked or failed cases;
+it does not qualify a release or substitute a cached game for a blocked website.
+The core gate checks extension capabilities against controlled original games,
+while compatibility checks current website integration. A core pass is not a claim
+that every public site is currently accessible. This separation was explicitly
+approved to prevent third-party access challenges from substituting for extension
+regression results. Neither workflow bypasses challenges or certificate checks.
+
+Only the required **Extension and real-game tests / test** core check should be
+configured as the game qualification branch-protection requirement; compatibility
+is separately reviewed and remains visible. Chrome store publishing stays disabled
+regardless of which browser runs the tests.
 
 Submission jobs consume the exact validated build artifacts and recheck commit
 identity and archive checksums. Mozilla's official `web-ext` then packages the

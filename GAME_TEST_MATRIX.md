@@ -88,4 +88,9 @@ The full headed website run is preserved at `artifacts/game-tests/2026-09-27T10-
 | Diggy | The observed portal did not expose a playable game after genuine Play inputs; baseline blocked in both browsers. |
 | Canabalt | Current HTML5 edition played and increasing distance observed in both browsers (including Firefox 106 m → 128 m). A reliably editable distance target remains unqualified. |
 
-Firefox live Ruffle response-body hashes remain unavailable, independently preventing strict provenance qualification. The historical 16-combination acceptance was not achieved. The release gate now requires eight combinations across J1, W1, F2 and F4; changing that selection does not qualify the outstanding Xeno/Bloons scenarios or waive provenance checks. **The new eight-combination gate has not yet passed.**
+Firefox now captures actual loaded response bytes through BiDi; strict qualification still requires matching per-phase hashes and independent AVM evidence. The historical 16-combination acceptance was not achieved. The release gate now requires eight combinations across J1, W1, F2 and F4; changing that selection does not qualify the outstanding Xeno/Bloons scenarios or waive provenance checks. **The new eight-combination gate has not yet passed.**
+
+
+## Controlled core and live compatibility
+
+The approved release gate now uses original pinned J1/W1/F2/F4 copies, each in Firefox and Chrome (eight configurations), with identical target and pause assertions. Live-site compatibility is a separate advisory workflow and reports blocked public sites as blocked, never as passes. See [test/GAME_TESTING.md](test/GAME_TESTING.md) for the precise evidence boundary and current repair status. No AVM1 replacement has been qualified yet.

@@ -56,6 +56,7 @@ if (!requestedHarness) {
 const profileDirectory = mkdtempSync(join(tmpdir(), "ruffle-memory-harness-"));
 const chrome = spawn(chromePath, [
   "--headless=new",
+  "--mute-audio",
   "--disable-background-networking",
   "--disable-component-update",
   "--disable-default-apps",

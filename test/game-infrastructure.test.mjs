@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { deflateSync, gzipSync } from "node:zlib";
 import { classifySwf, extractArchive, hashDirectory, prepareGames, sha256, verifyAssetDirectory } from "./games/assets.mjs";
-import { ADDITIONAL_TARGETS, BROWSERS, GAME_CATALOG, REQUIRED_SCENARIOS, TARGET_SCENARIOS } from "./games/catalog.mjs";
+import { ADDITIONAL_TARGETS, BROWSERS, GAME_CATALOG, REQUIRED_SCENARIOS, RUFFLE_BUILD, TARGET_SCENARIOS } from "./games/catalog.mjs";
 import { createReport, evaluateGate, writeReports } from "./games/report.mjs";
 import { resolveStaticPath, startGameServer } from "./games/server.mjs";
 async function temporary(context) { const root = await fs.mkdtemp(path.join(os.tmpdir(), "hack-game-test-")); context.after(() => fs.rm(root, { recursive: true, force: true })); return root; }
@@ -19,6 +19,20 @@ function completeReport() {
   const report = createReport();
   for (const item of report.cases) {
     Object.assign(item, { status: "PASS", complete: true, steps: [...REQUIRED_SCENARIOS, "undo-scan", "guarded-undo", ...(item.gameId === "J1" ? ["frame-same", "frame-nested", "frame-cross", "same-origin-isolation", "range-scan", "unknown-scan"] : []), ...(item.browser === "chrome" && ["J1", "W1"].includes(item.gameId) ? ["worker-recovery"] : []), ...(item.gameId.startsWith("F") ? ["pause-resume", "pause-scanning", "pause-cancel", "flash-load", "flash-source-runtime", "flash-manual-pause"] : []), ...(ADDITIONAL_TARGETS[item.gameId] || []).flatMap(target => ["baseline", ...TARGET_SCENARIOS].map(name => `${target}:${name}`))].map((name) => ({ name, phase: name.endsWith("baseline") ? "baseline" : "extension", status: "PASS" })) });
+    const game = GAME_CATALOG.find(game => game.id === item.gameId);
+    if (game.runtime === "ruffle") {
+      const wasmPath = Object.keys(RUFFLE_BUILD.expectedHashes).find(name => name.endsWith(".wasm"));
+      const wasmHash = RUFFLE_BUILD.expectedHashes[wasmPath];
+      item.hashes = {"game.swf":game.downloadArtifact.sha256};
+      item.ruffle = {hashes:{[wasmPath]:wasmHash},provenance:{version:RUFFLE_BUILD.version}};
+      item.steps = item.steps.filter(step => step.name !== "flash-load");
+      for (const phase of ["baseline","extension"]) {
+        item.steps.push({name:"flash-load",phase,status:"PASS",details:{reportedAvm:game.expectedAvm,independentlyParsedAvm:game.expectedAvm}});
+        item.steps.push({name:"local-runtime-provenance",phase,status:"PASS",details:{runtime:"ruffle",publicAvm:game.expectedAvm,ruffleVersion:RUFFLE_BUILD.version,
+          primarySwf:{url:`http://127.0.0.1:123/games/${game.id}/game.swf`,sha256:game.downloadArtifact.sha256,status:200,independentlyParsedAvm:game.expectedAvm},
+          runtimeWasm:[{url:`http://127.0.0.1:123/ruffle/${wasmPath}`,assetPath:wasmPath,sha256:wasmHash,status:200}]}});
+      }
+    }
   }
   return report;
 }
@@ -46,14 +60,24 @@ test("missing assets are explicit blockers and do not omit any game", async (con
   assert.equal(records.length, 8); assert.ok(records.every((item) => !item.ready && item.reason.includes("Missing")));
   await assert.rejects(prepareGames({ assetDir: root, gameIds: ["unknown"] }), /Unknown game/);
 });
-test("Flash assets require matching AVM, hashed recipes, and pinned Ruffle", async (context) => {
-  const root = await temporary(context); const game = path.join(root, "F1"); const ruffle = path.join(root, "ruffle");
-  await fs.mkdir(game); await fs.mkdir(ruffle); await fs.writeFile(path.join(game, "game.swf"), swf("AVM2")); await pin(game);
-  assert.match((await prepareGames({ assetDir: root, gameIds: ["F1"] }))[0].reason, /runtime mismatch/);
-  await fs.writeFile(path.join(game, "game.swf"), swf("AVM1")); await fs.writeFile(path.join(game, "scenario.json"), "{}"); await pin(game);
-  assert.equal((await prepareGames({ assetDir: root, gameIds: ["F1"] }))[0].ready, false);
-  await fs.writeFile(path.join(ruffle, "ruffle.js"), "// runtime"); await fs.writeFile(path.join(ruffle, "runtime.wasm"), "wasm"); await pin(ruffle, { version: "test-pinned" });
-  const ready = (await prepareGames({ assetDir: root, gameIds: ["F1"] }))[0]; assert.equal(ready.ready, true); assert.equal(ready.avm, "AVM1"); assert.equal(ready.recipePath, path.join(game, "scenario.json"));
+test("catalog Flash assets reject a substituted SWF even when local metadata agrees", async (context) => {
+  const root = await temporary(context);
+  for (const id of ["F1", "F2", "F4"]) {
+    const game = path.join(root,id); await fs.mkdir(game);
+    await fs.writeFile(path.join(game,"game.swf"),swf(id === "F4" ? "AVM2" : "AVM1")); await pin(game);
+    const result = (await prepareGames({assetDir:root,gameIds:[id],download:false}))[0];
+    assert.equal(result.ready,false);
+    assert.match(result.reason,/Pinned upstream hash mismatch/);
+  }
+});
+test("required Flash downloads use their pinned public artifact rather than the MIT repository route", async (context) => {
+  const root = await temporary(context), urls = [], original = globalThis.fetch;
+  globalThis.fetch = async url => { urls.push(url); return {ok:false,status:503}; };
+  try {
+    const records = await prepareGames({assetDir:root,gameIds:["F2","F4"]});
+    assert.ok(records.every(item=>!item.ready && /HTTP 503/.test(item.reason)));
+    assert.deepEqual(urls,GAME_CATALOG.filter(game=>["F2","F4"].includes(game.id)).map(game=>game.downloadArtifact.url));
+  } finally {globalThis.fetch=original;}
 });
 test("archive extraction rejects traversal and symlink members", async (context) => {
   const root = await temporary(context);
@@ -100,4 +124,31 @@ test("failed downloads preserve blockers, reject upstream hash changes, and leav
   globalThis.fetch = async () => { throw new DOMException("Download timed out", "TimeoutError"); };
   const timeout = (await prepareGames({ assetDir: root, gameIds: ["J1"] }))[0];
   assert.equal(timeout.ready, false); assert.match(timeout.reason, /timed out/); assert.deepEqual(await fs.readdir(root), []);
+});
+
+test('strict controlled core rejects absent or mismatched same-run Flash evidence in either phase', () => {
+  for (const phase of ['baseline','extension']) for (const defect of ['primary','wasm','avm','version','missing']) {
+    const report = completeReport();
+    const entry = report.cases.find(item => item.gameId === 'F2' && item.browser === 'firefox');
+    const step = entry.steps.find(step => step.name === 'local-runtime-provenance' && step.phase === phase);
+    if (defect === 'primary') step.details.primarySwf.sha256 = 'f'.repeat(64);
+    if (defect === 'wasm') step.details.runtimeWasm[0].sha256 = 'f'.repeat(64);
+    if (defect === 'avm') step.details.publicAvm = 'AVM2';
+    if (defect === 'version') step.details.ruffleVersion = 'unpinned';
+    if (defect === 'missing') entry.steps = entry.steps.filter(item => item !== step);
+    assert.equal(evaluateGate(report, {strict:true}).passed, false, `${phase}/${defect}`);
+  }
+});
+
+test('controlled Flash host preserves original 640x480 geometry and does not serve remote game code', async context => {
+  const root = await temporary(context);
+  const game = GAME_CATALOG.find(game => game.id === 'F4');
+  const server = await startGameServer({games:[{ready:true,game,directory:root,entry:'__flash__.html',ruffle:{directory:root}}],repoRoot:root});
+  context.after(() => server.close());
+  const page = await (await fetch(server.urlFor('F4'))).text();
+  assert.match(page, /width:640px;height:480px/);
+  assert.match(page, /overflow:hidden/);
+  assert.match(page, /url:"game.swf"/);
+  assert.match(page, /allowNetworking:"none"/);
+  assert.doesNotMatch(page, /<script src="https?:/);
 });
