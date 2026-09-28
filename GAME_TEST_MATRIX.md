@@ -42,7 +42,7 @@ Targets above are test proposals, not confirmed memory locations. J1 and W1 have
 
 ## Execution order and acceptance
 
-1. Visit each configured game website in a disposable browser. Record requested/final URLs, frame arrangement, rendered loading state, resource metadata and runtime. Keep pinned MIT builds from COMPATIBILITY.md for the separate local regression layer.
+1. For core qualification, load each pinned original game on loopback. For the separate compatibility run, visit each configured game website in a disposable browser. Record requested/final URLs, frame arrangement, rendered loading state, resource metadata and runtime. The controlled core uses verified MIT revisions and original Flash/Ruffle pins; compatibility never substitutes these copies for a blocked website.
 2. Establish baseline gameplay with Hack Engine absent. Record loading failures separately from extension failures. Confirm public Ruffle metadata when present; a website serving HTML5 is tested as HTML5. Local mode additionally verifies SWF and Ruffle hashes. Do not deliberately submit modified scores.
 3. Enable the exact release package and repeat baseline gameplay. Discover a target through the UI, change it naturally, refine, and watch it. Verify an edit affects gameplay rather than only a cached display.
 4. Exercise Undo scan, guarded Undo write, freeze, and Stop all freezes where applicable. If a counter is only a display copy or not discoverable, record that limitation; do not report successful editing.
@@ -94,3 +94,5 @@ Firefox now captures actual loaded response bytes through BiDi; strict qualifica
 ## Controlled core and live compatibility
 
 The approved release gate now uses original pinned J1/W1/F2/F4 copies, each in Firefox and Chrome (eight configurations), with identical target and pause assertions. Live-site compatibility is a separate advisory workflow and reports blocked public sites as blocked, never as passes. See [test/GAME_TESTING.md](test/GAME_TESTING.md) for the precise evidence boundary and current repair status. No AVM1 replacement has been qualified yet.
+
+September 28 core CI [36417955861](https://github.com/abduljawada/hack-engine/actions/runs/36417955861) subsequently passed J1, W1, and F4 in both browsers, including complete Bloons cash/lives and pause/lifecycle workflows. Both Xeno cases remained blocked, so the eight-case gate failed. These controlled results do not replace the historical website outcomes above. Interactive Buddy (F7) is an optional AVM1 candidate only; no release slot has changed.

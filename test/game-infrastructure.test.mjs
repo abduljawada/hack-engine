@@ -36,10 +36,10 @@ function completeReport() {
   }
   return report;
 }
-test("game catalog preserves all eight titles and 16 browser combinations", () => {
-  assert.equal(GAME_CATALOG.length, 8); assert.equal(new Set(GAME_CATALOG.map((item) => item.id)).size, 8); assert.equal(BROWSERS.length, 2);
+test("game catalog preserves original titles plus the optional AVM1 candidate", () => {
+  assert.equal(GAME_CATALOG.length, 9); assert.equal(new Set(GAME_CATALOG.map((item) => item.id)).size, 9); assert.equal(BROWSERS.length, 2);
   assert.equal(createReport().cases.length, 8);
-  assert.equal(createReport({gameIds: GAME_CATALOG.map(game => game.id)}).cases.length, 16);
+  assert.equal(createReport({gameIds: GAME_CATALOG.map(game => game.id)}).cases.length, 18);
 });
 test("SWF classification independently checks uncompressed and compressed AVM flags", () => {
   for (const avm of ["AVM1", "AVM2"]) for (const compressed of [false, true]) assert.equal(classifySwf(swf(avm, compressed)), avm);
@@ -57,7 +57,7 @@ test("asset integrity rejects missing provenance, hash drift, unpinned extras, a
 });
 test("missing assets are explicit blockers and do not omit any game", async (context) => {
   const root = await temporary(context); const records = await prepareGames({ assetDir: root, download: false });
-  assert.equal(records.length, 8); assert.ok(records.every((item) => !item.ready && item.reason.includes("Missing")));
+  assert.equal(records.length, 9); assert.ok(records.every((item) => !item.ready && item.reason.includes("Missing")));
   await assert.rejects(prepareGames({ assetDir: root, gameIds: ["unknown"] }), /Unknown game/);
 });
 test("catalog Flash assets reject a substituted SWF even when local metadata agrees", async (context) => {

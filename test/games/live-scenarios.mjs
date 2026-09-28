@@ -4,6 +4,7 @@ import { GameUI } from './ui.mjs';
 import { GameTestError, poll } from './observations.mjs';
 import { SITE_STATE } from './sites.mjs';
 import { runBloonsLive } from './bloons-live.mjs';
+import { runBuddyLive } from './buddy-live.mjs';
 import { runCanabaltLive } from './canabalt-live.mjs';
 import { runXenoLive } from './xeno-live.mjs';
 import { runCubeLive } from './cube-live.mjs';
@@ -51,6 +52,7 @@ export async function runLiveGame({session,game,gamePage,site,controls,baseline,
   if(game.id==='F3' && site.runtime==='ruffle')return runCubeLive({session,site,artifactDir,step});
   if(game.id==='F2')return runXenoLive({session,game,gamePage,site,controls,baseline,artifactDir,step});
   if(game.id==='F6')return runCanabaltLive({session,game,gamePage,site,controls,baseline,artifactDir,step});
+  if(game.id==='F7' && site.runtime==='ruffle')return runBuddyLive({session,gamePage,site,controls,baseline,artifactDir,step});
   if(game.id==='F4' && site.runtime==='ruffle')return runBloonsLive({session,gamePage,site,controls,baseline,artifactDir,step});
   throw Object.assign(new GameTestError(`${game.name}: the live website loaded ${site.runtime}${site.runtimeDetails.avm?' '+site.runtimeDetails.avm:''}, but its full rendered-counter gameplay recipe is not qualified. No local game files are required.`),{code:'MISSING_RECIPE'});
 }

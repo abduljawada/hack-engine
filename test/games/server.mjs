@@ -33,7 +33,11 @@ export async function startGameServer({ games, repoRoot = process.cwd() }) {
       let root; let relative;
       if (parts[0] === "games" && ready.has(parts[1])) {
         const game = ready.get(parts[1]); root = game.directory; relative = parts.slice(2).join("/") || game.entry;
-        if (relative === "__flash__.html" && game.ruffle) return send(200, `<!doctype html><meta charset="utf-8"><title>${escape(game.game.name)}</title><style>html,body{width:640px;height:480px;margin:0;overflow:hidden;background:#111}#game,ruffle-player{display:block;width:640px;height:480px;overflow:hidden}</style><div id="game"></div><script>window.RufflePlayer={config:{autoplay:"on",unmuteOverlay:"hidden",allowNetworking:"none",openUrlMode:"deny"}};</script><script src="/ruffle/ruffle.js"></script><script>const player=window.RufflePlayer.newest().createPlayer();document.getElementById("game").appendChild(player);player.ruffle().load({url:"game.swf",allowScriptAccess:false});</script>`);
+        if (relative === "__flash__.html" && game.ruffle) {
+          const {width,height} = game.game.viewport || {width:640,height:480};
+          if (![width,height].every(value=>Number.isInteger(value) && value>=200 && value<=2048)) throw new Error("Invalid game viewport");
+          return send(200, `<!doctype html><meta charset="utf-8"><title>${escape(game.game.name)}</title><style>html,body{width:${width}px;height:${height}px;margin:0;overflow:hidden;background:#111}#game,ruffle-player{display:block;width:${width}px;height:${height}px;overflow:hidden}</style><div id="game"></div><script>window.RufflePlayer={config:{autoplay:"on",unmuteOverlay:"hidden",allowNetworking:"none",openUrlMode:"deny"}};</script><script src="/ruffle/ruffle.js"></script><script>const player=window.RufflePlayer.newest().createPlayer();document.getElementById("game").appendChild(player);player.ruffle().load({url:"game.swf",allowScriptAccess:false});</script>`);
+        }
       } else if (parts[0] === "ruffle") { root = [...ready.values()].find((game) => game.ruffle)?.ruffle.directory; relative = parts.slice(1).join("/"); }
       else if (parts[0] === "test") { root = path.join(repoRoot, "test"); relative = parts.slice(1).join("/"); }
       else if (["practice", "popup", "assets"].includes(parts[0])) { root = path.join(repoRoot, parts[0]); relative = parts.slice(1).join("/"); }

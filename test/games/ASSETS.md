@@ -12,9 +12,9 @@ pins every extracted file. The restrictive archive extractor refuses traversal,
 links, and device entries, and never executes downloaded code.
 
 It also obtains the original publicly served Flash editions of Chibi Knight,
-Xeno Tactic 2, Cube Colossus, and Bloons Tower Defense 3 from their official
+Xeno Tactic 2, Cube Colossus, Bloons Tower Defense 3, and optional Interactive Buddy v1.01 from their official
 Newgrounds embed references. Their SHA-256 values and independent SWF
-classifications were recorded on 2026-09-27 in `catalog.mjs`. These are local test
+classifications were recorded on 2026-09-27–28 in `catalog.mjs`. These are local test
 copies; no redistribution license is asserted. Their official pages remain the
 source of provenance, and changed upstream bytes are rejected. `--no-download`
 uses local assets only. Diggy and original Flash Canabalt require supplied local
@@ -28,8 +28,8 @@ this build locally. A failed download or integrity check is recorded as BLOCKED.
 
 ## User-supplied copies
 
-Each game directory is named by its matrix ID: `F1`–`F6`, `J1`, or `W1`. Flash
-folders contain `game.swf` and `metadata.json`. Selected F2/F4 use the maintained
+Each game directory is named by its matrix ID: `F1`–`F7`, `J1`, or `W1`. Flash
+folders contain `game.swf` and `metadata.json`. Selected F2/F4 and optional F7 use the maintained
 public-input gameplay scenarios in the repository; other exploratory titles need
 a separately hashed `scenario.json`. Obtain original
 editions that you are authorized to test locally. Metadata describes provenance
@@ -71,3 +71,5 @@ those cases as passing.
 Reports retain game hashes, source metadata, Ruffle version/hashes, and independently
 observed AVM type. Flash readiness means the assets passed validation, not that
 all required gameplay checks passed. The release verification command requires all four controlled games in both browsers with the full mandatory scenarios, runtime classification, and loaded-byte provenance. Pull requests and main pushes enforce that same strict core gate. Missing assets, blocked required coverage, or manual-only verification cannot pass it. The separate live-site workflow retains website failures without claiming they are core failures or core successes. Original SWFs and runtime binaries remain cache files, excluded from source/release artifacts.
+
+Interactive Buddy (F7) is an optional AVM1 qualification candidate. Its original [author listing](https://www.newgrounds.com/portal/view/218014), canonical SWF URL, and SHA-256 are pinned in the catalog. Its native stage is 550×400; screenshot observation uses device scale 2 without resizing gameplay. Adding it to the catalog does not replace the required Xeno slot or establish a passing result.

@@ -9,6 +9,7 @@ export const GAME_CATALOG = [
   { id: "F4", required: true, downloadArtifact: { url: "https://uploads.ungrounded.net/463000/463445_bloonstd3.swf?1223339004", sha256: "e2153bc68d0742fe83f7757fe67ab51a80cb3f69ab7d2a8cb28a97cd72b257cb" }, name: "Bloons Tower Defense 3", runtime: "ruffle", expectedAvm: "AVM2", targets: ["Cash", "Lives"], siteUrl: "https://www.newgrounds.com/portal/view/463445", source: "https://www.newgrounds.com/portal/view/463445" },
   { id: "F5", name: "Diggy", runtime: "ruffle", expectedAvm: "AVM2", targets: ["Energy", "Money"], siteUrl: "https://www.kongregate.com/en/games/vogd/diggy", source: "https://www.kongregate.com/en/games/vogd/diggy" },
   { id: "F6", name: "Canabalt", runtime: "ruffle", expectedAvm: "AVM2", targets: ["Distance"], siteUrl: "https://www.newgrounds.com/portal/view/510303", source: "https://www.newgrounds.com/portal/view/510303" },
+  { id: "F7", name: "Interactive Buddy v1.01", runtime: "ruffle", expectedAvm: "AVM1", targets: ["Money"], viewport: {width:550,height:400}, siteUrl: "https://www.newgrounds.com/portal/view/218014", source: "https://www.newgrounds.com/portal/view/218014", downloadArtifact: {url:"https://uploads.ungrounded.net/218000/218014_DAbuddy_latest.swf",sha256:"76da8a05bfe3472afe4a2bca2c09486b5be614881d45621489fa2f2686d16b0f"} },
 ];
 export const ADDITIONAL_TARGETS = { F1: ["experience"], F2: ["lives"], F3: ["currency"], F4: ["lives"], F5: ["money"] };
 export const TARGET_SCENARIOS = ["discovery", "refine", "undo-scan", "watch", "write", "undo", "guarded-undo", "freeze", "stop"];

@@ -1,10 +1,10 @@
 # Local Flash gameplay recipes
 
-This document describes optional `--mode local` fixtures; website mode uses its own site scenarios and requires no local SWF.
+This document describes the optional generic `scenario.json` driver for `--mode local`. Maintained game-specific scenarios for Xeno, Bloons, and optional Interactive Buddy are shared by controlled local and live-site runs and do not require a JSON recipe.
 
 A Flash recipe is executable test input, not a compatibility claim. The suite needs the original authorized SWF, matching Ruffle files, and a version-specific `scenario.json` beside `game.swf`. Add `scenario.json` and its SHA-256 to that game's `metadata.json` hash map. Asset verification rejects missing, modified, and unpinned files before browser execution.
 
-There are currently **no fully qualified bundled Flash gameplay recipes**. The real-game runner reports missing recipes as `BLOCKED` and keeps the release gate closed. Independently passing Flash load, runtime, and playback checks do not count as completed gameplay scenarios. [Bloons 3 qualification](FLASH_QUALIFICATION.md) records a concrete example where cached HUD text requires a event-based expectations used by the separate live Bloons scenario; no qualified local recipe is implied.
+No generic `scenario.json` recipe is currently qualified. Missing recipes remain `BLOCKED`; Flash load/runtime checks alone cannot complete gameplay coverage. The maintained Bloons scenario has independently passed its full controlled workflow in both browsers, including cached-HUD checks based on actual purchase and loss events. Xeno and optional Interactive Buddy remain unqualified; see [current testing evidence](../GAME_TESTING.md).
 
 ## Structure
 
@@ -18,6 +18,7 @@ The root object contains `start` (optional input sequence) and `targets` (requir
 | F4 Bloons Tower Defense 3 | `cash`, `lives` |
 | F5 Diggy | `energy`, `money` |
 | F6 Canabalt | `distance` |
+| F7 Interactive Buddy v1.01 (optional) | `money` |
 
 Each target has these fields:
 

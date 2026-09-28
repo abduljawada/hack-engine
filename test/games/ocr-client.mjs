@@ -31,5 +31,5 @@ export async function createOcrClient({cachePath,langPath,timeoutMs=30000,worker
   });
   try {await request({kind:'initialize',cachePath,langPath});}
   catch(error){await close();throw Object.assign(error,{category:'automation',status:'BLOCKED'});}
-  return {recognize:(path,rectangle)=>request({kind:'recognize',path,rectangle}).catch(error=>{throw Object.assign(error,{category:'automation',status:'BLOCKED'});}),close};
+  return {recognize:(path,rectangle,{words=false}={})=>request({kind:'recognize',path,rectangle,words}).catch(error=>{throw Object.assign(error,{category:'automation',status:'BLOCKED'});}),close};
 }

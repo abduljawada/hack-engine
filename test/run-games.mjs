@@ -15,6 +15,7 @@ import { runLayoutChecks } from './games/layouts.mjs';
 import { runFlashSmoke } from './games/flash-smoke.mjs';
 import { runXenoLive } from './games/xeno-live.mjs';
 import { runBloonsLive } from './games/bloons-live.mjs';
+import { runBuddyLive } from './games/buddy-live.mjs';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 export function parseOptions(args) {
@@ -42,7 +43,7 @@ export function parseOptions(args) {
   if (options.prepareOnly && !options.strict && options.mode !== 'local') throw Error('--prepare-only requires --mode local; websites need no local assets.');
   options.browsers = [...new Set(options.browsers)]; options.gameIds = [...new Set(options.gameIds)];
   if (options.browsers.some(b => !['firefox', 'chrome'].includes(b))) throw Error('Browser must be firefox or chrome.');
-  if (options.gameIds.some(id => !GAME_CATALOG.some(g => g.id === id))) throw Error('Unknown game ID. Use J1,W1,F1,F2,F3,F4,F5,F6.');
+  if (options.gameIds.some(id => !GAME_CATALOG.some(g => g.id === id))) throw Error('Unknown game ID. Use J1,W1,F1,F2,F3,F4,F5,F6,F7.');
   if (options.strict && (options.browsers.length !== 2 || RELEASE_GAME_IDS.some(id => !options.gameIds.includes(id)) || options.prepareOnly)) throw Error('Strict qualification requires J1,W1,F2,F4 in both browsers; preparation-only runs cannot qualify.');
   return options;
 }
@@ -83,7 +84,7 @@ const hash = data => createHash('sha256').update(data).digest('hex');
 export async function main(args = process.argv.slice(2)) {
   const options = parseOptions(args);
   if (options.help) {
-    console.log('npm run test:games -- [--mode website|local] [--browser firefox,chrome] [--game J1,W1,F1,F2,F3,F4,F5,F6] [--assets DIRECTORY] [--output DIRECTORY] [--headed] [--no-download] [--no-build] [--prepare-only] [--strict] [--no-sandbox]');
+    console.log('npm run test:games -- [--mode website|local] [--browser firefox,chrome] [--game J1,W1,F1,F2,F3,F4,F5,F6,F7] [--assets DIRECTORY] [--output DIRECTORY] [--headed] [--no-download] [--no-build] [--prepare-only] [--strict] [--no-sandbox]');
     return 0;
   }
   if (options.build && !options.prepareOnly) await build();
@@ -144,7 +145,7 @@ export async function main(args = process.argv.slice(2)) {
               ensureActive();
               try {
                 caseSession = await launchBrowser({ browser, extensionDirectory: phase === 'extension' ? join(root, 'dist', browser) : undefined,
-                  viewport: options.mode === 'local' && asset.game.runtime === 'ruffle' ? {width:640,height:480} : undefined,
+                  viewport: options.mode === 'local' && asset.game.runtime === 'ruffle' ? (asset.game.viewport || {width:640,height:480}) : undefined,
                   headed: options.headed, noSandbox: options.noSandbox, artifactDir:join(artifactDir,phase) });
               } catch (error) { error.category = 'automation'; error.status = 'BLOCKED'; throw error; }
               // A timed-out case cannot resume into a later case's browser.
@@ -180,6 +181,7 @@ export async function main(args = process.argv.slice(2)) {
               try {
                 if (live) await live.runLiveGame({ session, game:asset.game, gamePage:currentPage, site, controls, baseline:phase==='baseline', artifactDir:join(artifactDir,phase), step });
                 else if (asset.game.id === 'F2') await runXenoLive({session,gamePage:currentPage,site,controls,baseline:phase==='baseline',artifactDir:join(artifactDir,phase),step});
+                else if (asset.game.id === 'F7') await runBuddyLive({session,gamePage:currentPage,site,controls,baseline:phase==='baseline',artifactDir:join(artifactDir,phase),step});
                 else if (asset.game.id === 'F4') await runBloonsLive({session,gamePage:currentPage,site,controls,baseline:phase==='baseline',artifactDir:join(artifactDir,phase),step});
                 else await runGame({ session, game: asset.game, asset, gamePage: currentPage, controls,
                   baseline: phase === 'baseline', artifactDir:join(artifactDir,phase), step });
