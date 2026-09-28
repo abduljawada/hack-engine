@@ -55,7 +55,7 @@ permanent add-on identity, and release notes. It builds both packages and the
 Mozilla source archive, validates checksums and Firefox lint, runs unit tests,
 browser regressions, browser/frame integration, and strict controlled-game
 qualification for exactly eight configurations: Asteroids (JavaScript), Breakout
-(WebAssembly), Xeno Tactic 2 (AVM1), and Bloons Tower Defense 3 (AVM2), each in
+(WebAssembly), Interactive Buddy v1.01 (AVM1), and Bloons Tower Defense 3 (AVM2), each in
 Firefox and Google Chrome for Testing. Original game copies and Ruffle are pinned
 and validated before use; they are served only on loopback and excluded from
 release packages and source archives. Missing assets, uncertain observations,
