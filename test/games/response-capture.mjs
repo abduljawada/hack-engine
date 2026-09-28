@@ -62,3 +62,18 @@ export async function createFirefoxResponseCollector(wire) {
     }
   };
 }
+
+// A responseReceived event precedes loadingFinished. Draining only body-read
+// promises can return before the actual loaded response is ready to read. Keep
+// both stages outstanding, including work added while this flush is running.
+export async function flushResponseCaptures(responses, pending, { timeoutMs = 15000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (responses.size || pending.size) {
+    if (Date.now() >= deadline) {
+      const message = 'Actual loaded response capture did not complete before the observation timeout';
+      for (const resource of responses.values()) resource.hashUnavailable = message;
+      throw Object.assign(new Error(message), { status: 'BLOCKED', category: 'automation' });
+    }
+    await new Promise(resolve => setTimeout(resolve, Math.min(10, Math.max(1, deadline - Date.now()))));
+  }
+}

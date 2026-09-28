@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { classifySwf } from "./assets.mjs";
-import { createFirefoxResponseCollector } from "./response-capture.mjs";
+import { createFirefoxResponseCollector, flushResponseCaptures } from "./response-capture.mjs";
 import { browserPath } from "../browser-path.mjs";
 import { connectTransport, stopBrowserProcess, waitForDebugger } from "./transport.mjs";
 
@@ -114,9 +114,9 @@ export async function launchBrowser({ browser, extensionDirectory, headed = fals
           const key = `${event.sessionId}:${event.params.requestId}`;
           const resource = responseBodies.get(key);
           if (resource) {
-            responseBodies.delete(key);
             if (event.params.encodedDataLength > 64 * 1024 * 1024) {
               resource.hashUnavailable = "Response exceeds the 64 MiB observation limit";
+              responseBodies.delete(key);
             } else {
               const task = wire.call("Network.getResponseBody", { requestId: event.params.requestId }, event.sessionId)
                 .then(({ body, base64Encoded }) => {
@@ -128,9 +128,16 @@ export async function launchBrowser({ browser, extensionDirectory, headed = fals
                     catch(error) { resource.classificationError = error.message; }
                   }
                 }).catch((error) => { resource.hashUnavailable = error.message; })
-                .finally(() => pendingResources.delete(task));
+                .finally(() => { responseBodies.delete(key); pendingResources.delete(task); });
               pendingResources.add(task);
             }
+          }
+        } else if (event.method === "Network.loadingFailed") {
+          const key = `${event.sessionId}:${event.params.requestId}`;
+          const resource = responseBodies.get(key);
+          if (resource) {
+            resource.hashUnavailable = `Response loading failed: ${event.params.errorText || "unknown network error"}`;
+            responseBodies.delete(key);
           }
         } else if (event.method === "network.responseCompleted") {
           const { response, context, request } = event.params;
@@ -290,7 +297,7 @@ export async function launchBrowser({ browser, extensionDirectory, headed = fals
     }
     return {
       browser: firefox ? "firefox" : "chromium", version, logs, resources, newPage, navigate, evaluate, activate, close,
-      async flushResources() { await Promise.all([...pendingResources]); return resources; },
+      async flushResources() { await flushResponseCaptures(responseBodies, pendingResources); return resources; },
       async frames(page) {
         const result = [];
         if (firefox) {

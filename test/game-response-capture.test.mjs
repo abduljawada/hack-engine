@@ -61,3 +61,95 @@ test('BiDi parses AVM from the captured SWF itself', async () => {
   assert.equal(resource.independentlyParsedAvm, 'AVM2');
   assert.equal(resource.sha256, createHash('sha256').update(bytes).digest('hex'));
 });
+
+// Model CDP's two separate events: responseReceived registers the request,
+// loadingFinished starts its asynchronous getResponseBody read later.
+test('flush waits for delayed loadingFinished and the subsequently started body read', async () => {
+  const { flushResponseCaptures } = await import('./games/response-capture.mjs');
+  const resource = {};
+  const responses = new Map([['request', resource]]);
+  const pending = new Set();
+  let finishBody;
+  const body = new Promise(resolve => { finishBody = resolve; });
+  let returned = false;
+  const flush = flushResponseCaptures(responses, pending, {timeoutMs:1000}).then(() => { returned = true; });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(returned, false, 'responseReceived alone cannot complete provenance');
+  const capture = body.then(() => { resource.sha256 = 'actual-response-hash'; })
+    .finally(() => { responses.delete('request'); pending.delete(capture); });
+  pending.add(capture);
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(returned, false, 'loadingFinished alone cannot complete provenance');
+  finishBody();
+  await flush;
+  assert.equal(resource.sha256, 'actual-response-hash');
+});
+
+test('a response which never finishes times out with explicit unavailable evidence', async () => {
+  const { flushResponseCaptures } = await import('./games/response-capture.mjs');
+  const resource = {};
+  await assert.rejects(flushResponseCaptures(new Map([['request',resource]]), new Set(), {timeoutMs:20}),
+    error => error.status === 'BLOCKED' && error.category === 'automation' && /timeout/.test(error.message));
+  assert.match(resource.hashUnavailable, /timeout/);
+  assert.equal(resource.sha256, undefined);
+});
+
+test('flush cannot return successfully while the actual body read remains pending', async () => {
+  const { flushResponseCaptures } = await import('./games/response-capture.mjs');
+  await assert.rejects(flushResponseCaptures(new Map(), new Set([new Promise(() => {})]), {timeoutMs:20}), /timeout/);
+});
+
+test('failed completed captures retain their failure and never acquire a substitute hash', async () => {
+  const { flushResponseCaptures } = await import('./games/response-capture.mjs');
+  const resource = {};
+  const responses = new Map([['request',resource]]);
+  const flush = flushResponseCaptures(responses, new Set(), {timeoutMs:1000});
+  resource.hashUnavailable = 'Response loading failed: net::ERR_CONNECTION_RESET';
+  responses.delete('request');
+  await flush;
+  assert.equal(resource.sha256, undefined);
+  assert.match(resource.hashUnavailable, /ERR_CONNECTION_RESET/);
+});
+
+test('Chrome captures an actual delayed loaded response and reports an aborted response', {
+  skip: process.env.GAME_BROWSER_INTEGRATION !== '1', timeout:30000,
+}, async context => {
+  const {createServer} = await import('node:http');
+  const {launchBrowser} = await import('./games/browser.mjs');
+  const responses = new Map();
+  const server = createServer((request,response) => {
+    if (request.url.endsWith('.wasm')) {
+      responses.set(request.url,response);
+      response.writeHead(200, {'Content-Type':'application/wasm','Content-Length':wasm.length+1});
+      response.write(wasm);
+    } else response.end('<!doctype html><title>Capture fixture</title>');
+  });
+  await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
+  context.after(() => { server.closeAllConnections(); server.close(); });
+  const session = await launchBrowser({browser:'chrome',noSandbox:true});
+  context.after(() => session.close());
+  const page = await session.newPage(`http://127.0.0.1:${server.address().port}/`);
+  const waitForResponse = async path => {
+    await session.evaluate(page, `void fetch(${JSON.stringify(path)}).then(r=>r.arrayBuffer()).catch(()=>{})`);
+    const deadline = Date.now()+5000;
+    while (!session.resources.some(resource=>resource.url.endsWith(path))) {
+      if(Date.now()>deadline) throw new Error('Fixture response was not observed');
+      await new Promise(resolve=>setTimeout(resolve,10));
+    }
+  };
+  await waitForResponse('/delayed.wasm');
+  let flushed=false;
+  const capture=session.flushResources().then(()=>{flushed=true;});
+  await new Promise(resolve=>setTimeout(resolve,30));
+  assert.equal(flushed,false);
+  responses.get('/delayed.wasm').end(Buffer.from([42]));
+  await capture;
+  const delayed=session.resources.find(resource=>resource.url.endsWith('/delayed.wasm'));
+  assert.equal(delayed.sha256,createHash('sha256').update(Buffer.concat([wasm,Buffer.from([42])])).digest('hex'));
+  await waitForResponse('/aborted.wasm');
+  responses.get('/aborted.wasm').destroy();
+  await session.flushResources();
+  const aborted=session.resources.find(resource=>resource.url.endsWith('/aborted.wasm'));
+  assert.equal(aborted.sha256,undefined);
+  assert.match(aborted.hashUnavailable,/Response loading failed/);
+});
