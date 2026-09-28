@@ -51,7 +51,17 @@ test('controlled runtime evidence validates actual loaded bodies against catalog
   assert.equal(flushed,true);
   resources[1].sha256='a'.repeat(64);
   await assert.rejects(localRuntimeEvidence(input),/pinned runtime/);
+  delete resources[1].sha256;
+  resources[1].hashUnavailable='Response loading failed: net::ERR_ABORTED';
+  await assert.rejects(localRuntimeEvidence(input),/hash unavailable.*ERR_ABORTED/);
+  resources[1].status=503;
+  await assert.rejects(localRuntimeEvidence(input),/HTTP 503/);
+  resources[1].status=200;
   resources[1].sha256=RUFFLE_BUILD.expectedHashes[assetPath];
+  delete resources[1].hashUnavailable;
+  const wasmResource=resources.pop();
+  await assert.rejects(localRuntimeEvidence(input),/No local Ruffle Wasm response/);
+  resources.push(wasmResource);
   resources[0].independentlyParsedAvm='AVM1';
   await assert.rejects(localRuntimeEvidence(input),/pinned game/);
 });

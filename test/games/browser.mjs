@@ -1,10 +1,8 @@
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { classifySwf } from "./assets.mjs";
-import { createFirefoxResponseCollector, flushResponseCaptures } from "./response-capture.mjs";
+import { createFirefoxResponseCollector, createChromeResponseCollector, flushResponseCaptures } from "./response-capture.mjs";
 import { browserPath } from "../browser-path.mjs";
 import { connectTransport, stopBrowserProcess, waitForDebugger } from "./transport.mjs";
 
@@ -36,6 +34,7 @@ export async function launchBrowser({ browser, extensionDirectory, headed = fals
   const sessionPages = new Map();
   let initializeTarget;
   let captureFirefoxResponse;
+  let captureChromeResponse;
   const recordResource = (item) => {
     resources.push({ time: new Date().toISOString(), ...item });
     if (resources.length > 20000) resources.splice(0, 1000);
@@ -107,38 +106,13 @@ export async function launchBrowser({ browser, extensionDirectory, headed = fals
           const { response, frameId, type, requestId } = event.params;
           const resource = recordResource({ context: frameId, sessionId: event.sessionId, requestId, type,
             url: response.url, status: response.status, mimeType: response.mimeType });
-          if (/\.(?:swf|wasm)(?:[?#]|$)|ruffle[^?#]*\.js(?:[?#]|$)/i.test(response.url)) {
-            responseBodies.set(`${event.sessionId}:${requestId}`, resource);
-          }
+          captureChromeResponse?.received(event, resource);
+        } else if (event.method === "Network.dataReceived") {
+          captureChromeResponse?.data(event);
         } else if (event.method === "Network.loadingFinished") {
-          const key = `${event.sessionId}:${event.params.requestId}`;
-          const resource = responseBodies.get(key);
-          if (resource) {
-            if (event.params.encodedDataLength > 64 * 1024 * 1024) {
-              resource.hashUnavailable = "Response exceeds the 64 MiB observation limit";
-              responseBodies.delete(key);
-            } else {
-              const task = wire.call("Network.getResponseBody", { requestId: event.params.requestId }, event.sessionId)
-                .then(({ body, base64Encoded }) => {
-                  const bytes = Buffer.from(body, base64Encoded ? "base64" : "utf8");
-                  resource.sha256 = createHash("sha256").update(bytes).digest("hex");
-                  resource.bytes = bytes.length;
-                  if (/\.swf(?:[?#]|$)/i.test(resource.url)) {
-                    try { resource.independentlyParsedAvm = classifySwf(bytes); }
-                    catch(error) { resource.classificationError = error.message; }
-                  }
-                }).catch((error) => { resource.hashUnavailable = error.message; })
-                .finally(() => { responseBodies.delete(key); pendingResources.delete(task); });
-              pendingResources.add(task);
-            }
-          }
+          captureChromeResponse?.finished(event);
         } else if (event.method === "Network.loadingFailed") {
-          const key = `${event.sessionId}:${event.params.requestId}`;
-          const resource = responseBodies.get(key);
-          if (resource) {
-            resource.hashUnavailable = `Response loading failed: ${event.params.errorText || "unknown network error"}`;
-            responseBodies.delete(key);
-          }
+          captureChromeResponse?.finished(event, event.params.errorText || "unknown network error");
         } else if (event.method === "network.responseCompleted") {
           const { response, context, request } = event.params;
           const resource = recordResource({ context, requestId: request.request, url: response.url,
@@ -173,6 +147,7 @@ export async function launchBrowser({ browser, extensionDirectory, headed = fals
         extensionOrigin = `moz-extension://${firefoxUuid}`;
       }
     } else {
+      captureChromeResponse = createChromeResponseCollector(wire, {responses:responseBodies,pending:pendingResources});
       version = (await wire.call("Browser.getVersion")).product;
       if (extensionDirectory) {
         const installed = await wire.call("Extensions.loadUnpacked", { path: resolve(extensionDirectory) });

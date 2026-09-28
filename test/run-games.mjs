@@ -68,7 +68,13 @@ export async function localRuntimeEvidence({session, asset, gameUrl, runtime}) {
     throw Object.assign(Error('Loaded local SWF hash/public runtime does not match the pinned game.'),{status:'BLOCKED',category:'automation'});
   }
   if (!runtimeWasm.length || runtimeWasm.some(resource => !resource.sha256 || resource.sha256 !== asset.ruffle.hashes[resource.assetPath] || resource.sha256 !== RUFFLE_BUILD.expectedHashes[resource.assetPath] || !(resource.status >= 200 && resource.status < 300))) {
-    throw Object.assign(Error('Loaded local Ruffle Wasm bytes do not match the pinned runtime.'),{status:'BLOCKED',category:'automation'});
+    const reasons = !runtimeWasm.length ? ['No local Ruffle Wasm response was observed.'] : runtimeWasm.flatMap(resource => {
+      if (!(resource.status >= 200 && resource.status < 300)) return [`${resource.assetPath}: HTTP ${resource.status}.`];
+      if (!resource.sha256) return [`${resource.assetPath}: response hash unavailable (${resource.hashUnavailable || 'capture did not yield complete bytes'}).`];
+      if (resource.sha256 !== asset.ruffle.hashes[resource.assetPath] || resource.sha256 !== RUFFLE_BUILD.expectedHashes[resource.assetPath]) return [`${resource.assetPath}: captured bytes do not match the pinned runtime.`];
+      return [];
+    });
+    throw Object.assign(Error(`Loaded local Ruffle Wasm provenance failed: ${reasons.join(' ')}`),{status:'BLOCKED',category:'automation'});
   }
   return {runtime:'ruffle', publicAvm:runtime.reportedAvm, primarySwf, runtimeWasm, ruffleVersion:asset.ruffle.provenance.version};
 }

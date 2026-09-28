@@ -152,3 +152,19 @@ test('controlled Flash host preserves original 640x480 geometry and does not ser
   assert.match(page, /allowNetworking:"none"/);
   assert.doesNotMatch(page, /<script src="https?:/);
 });
+
+
+test('controlled assets declare the exact served byte length for GET and HEAD', async context => {
+  const root = await temporary(context);
+  const body = Buffer.from([0, 97, 115, 109, 255, 128, 10]);
+  await fs.writeFile(path.join(root, 'runtime.wasm'), body);
+  const server = await startGameServer({games:[{ready:true,game:GAME_CATALOG[0],directory:root,entry:'runtime.wasm'}],repoRoot:root});
+  context.after(()=>server.close());
+  const response = await fetch(server.urlFor('J1'));
+  assert.equal(response.headers.get('content-length'), String(body.length));
+  assert.equal(response.headers.get('content-encoding'), null);
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), body);
+  const head = await fetch(server.urlFor('J1'), {method:'HEAD'});
+  assert.equal(head.headers.get('content-length'), String(body.length));
+  assert.equal((await head.arrayBuffer()).byteLength, 0);
+});

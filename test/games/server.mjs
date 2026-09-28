@@ -16,7 +16,7 @@ export async function startGameServer({ games, repoRoot = process.cwd() }) {
   const ready = new Map(games.filter((game) => game.ready).map((game) => [game.game.id, game]));
   let origin; let crossOrigin;
   const handler = async (request, response) => {
-    const send = (status, body, contentType = "text/html; charset=utf-8") => { response.writeHead(status, { "Content-Type": contentType, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" }); response.end(body); };
+    const send = (status, body, contentType = "text/html; charset=utf-8", length = Buffer.byteLength(body)) => { response.writeHead(status, { "Content-Type": contentType, "Content-Length": length, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" }); response.end(request.method === "HEAD" ? undefined : body); };
     try {
       if (!["GET", "HEAD"].includes(request.method)) return send(405, "Method not allowed");
       const url = new URL(request.url, origin || "http://127.0.0.1");
@@ -45,7 +45,7 @@ export async function startGameServer({ games, repoRoot = process.cwd() }) {
       if (!root) return send(404, "Not found");
       const filename = await resolveStaticPath(root, relative);
       const body = request.method === "HEAD" ? "" : await fs.readFile(filename);
-      send(200, body, types[path.extname(filename)] || "application/octet-stream");
+      send(200, body, types[path.extname(filename)] || "application/octet-stream", request.method === "HEAD" ? (await fs.stat(filename)).size : body.length);
     } catch (error) { send(error.message === "Forbidden path" ? 403 : 404, "Not found"); }
   };
   const server = createServer(handler); const second = createServer(handler);

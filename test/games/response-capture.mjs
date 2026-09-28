@@ -77,3 +77,83 @@ export async function flushResponseCaptures(responses, pending, { timeoutMs = 15
     await new Promise(resolve => setTimeout(resolve, Math.min(10, Math.max(1, deadline - Date.now()))));
   }
 }
+
+// CI reported ERR_ABORTED after Ruffle initialized. Observing the same request
+// while it arrives retains actual bytes even if terminal body lookup becomes
+// unavailable. The abort's cause is unproven; no response is refetched or altered.
+export function createChromeResponseCollector(wire, {responses, pending}) {
+  const captures = new Map();
+  const key = event => `${event.sessionId}:${event.params.requestId}`;
+  const track = promise => {
+    pending.add(promise);
+    promise.finally(() => pending.delete(promise));
+    return promise;
+  };
+  const append = (capture, encoded, prepend = false) => {
+    if(capture.overflow) return;
+    const bytes = Buffer.from(encoded || '', 'base64');
+    capture.length += bytes.length;
+    if(capture.length > responseLimit) {
+      capture.overflow = true; capture.chunks = []; return;
+    }
+    if(prepend) capture.chunks.unshift(bytes); else capture.chunks.push(bytes);
+  };
+  const retain = (resource, bytes, source) => {
+    if(bytes.length > responseLimit) throw Error('Response exceeds the 64 MiB observation limit');
+    resource.sha256 = createHash('sha256').update(bytes).digest('hex');
+    resource.bytes = bytes.length;
+    resource.bodyCapture = source;
+    if(/\.swf(?:[?#]|$)/i.test(resource.url)) {
+      try {resource.independentlyParsedAvm = classifySwf(bytes);}
+      catch(error) {resource.classificationError = error.message;}
+    }
+  };
+  return {
+    received(event, resource) {
+      if(!needsResponseBody(resource.url)) return;
+      const id = key(event);
+      const headers = Object.fromEntries(Object.entries(event.params.response.headers || {}).map(([name,value]) => [name.toLowerCase(),String(value)]));
+      if (/^\d+$/.test(headers['content-length'] || '') && Number.isSafeInteger(Number(headers['content-length']))) resource.declaredBytes=Number(headers['content-length']);
+      if (headers['content-encoding']) resource.contentEncoding=headers['content-encoding'];
+      const capture = {resource, headers, chunks:[], length:0, overflow:false, terminal:false};
+      captures.set(id,capture); responses.set(id,resource);
+      capture.ready = track(wire.call('Network.streamResourceContent', {requestId:event.params.requestId},event.sessionId)
+        .then(result => {append(capture,result.bufferedData,true);capture.streaming=true;})
+        .catch(error => {capture.streamError=error.message;}));
+    },
+    data(event) {
+      const capture = captures.get(key(event));
+      if(capture && event.params.data !== undefined) append(capture,event.params.data);
+    },
+    finished(event, error) {
+      const id = key(event), capture = captures.get(id);
+      if(!capture || capture.terminal) return;
+      capture.terminal = true;
+      track((async () => {
+        const {resource} = capture;
+        try {
+          await capture.ready;
+          if(error) resource.networkError=error;
+          if(capture.overflow) throw Error('Response exceeds the 64 MiB observation limit');
+          if(capture.streaming) {
+            // A failed transport is not proof of EOF. Only a complete unencoded
+            // Content-Length permits qualification; the release gate still
+            // compares these actual bytes to the independent immutable pin.
+            const length = capture.headers['content-length'];
+            const unencoded = !capture.headers['content-encoding'] || capture.headers['content-encoding'].toLowerCase()==='identity';
+            const completeLength = /^\d+$/.test(length || '') && Number.isSafeInteger(Number(length)) && Number(length)===capture.length;
+            if(!error || (unencoded && completeLength)) {
+              retain(resource,Buffer.concat(capture.chunks),'cdp-response-stream');
+              return;
+            }
+            resource.capturedBytes=capture.length;
+          }
+          if(error) throw Error(`Response loading failed: ${error}; complete response bytes unavailable`);
+          const {body,base64Encoded} = await wire.call('Network.getResponseBody',{requestId:event.params.requestId},event.sessionId);
+          retain(resource,Buffer.from(body,base64Encoded?'base64':'utf8'),'cdp-response-body');
+        } catch(error) {resource.hashUnavailable=error.message;}
+        finally {captures.delete(id);responses.delete(id);capture.chunks=[];}
+      })());
+    },
+  };
+}

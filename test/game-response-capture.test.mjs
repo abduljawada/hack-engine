@@ -118,6 +118,11 @@ test('Chrome captures an actual delayed loaded response and reports an aborted r
   const {launchBrowser} = await import('./games/browser.mjs');
   const responses = new Map();
   const server = createServer((request,response) => {
+    if (request.url === '/wrapped.wasm') {
+      response.writeHead(200, {'Content-Type':'application/wasm','Content-Length':wasm.length});
+      response.write(wasm.subarray(0,4));
+      setTimeout(()=>response.end(wasm.subarray(4)),150); return;
+    }
     if (request.url.endsWith('.wasm')) {
       responses.set(request.url,response);
       response.writeHead(200, {'Content-Type':'application/wasm','Content-Length':wasm.length+1});
@@ -152,4 +157,65 @@ test('Chrome captures an actual delayed loaded response and reports an aborted r
   const aborted=session.resources.find(resource=>resource.url.endsWith('/aborted.wasm'));
   assert.equal(aborted.sha256,undefined);
   assert.match(aborted.hashUnavailable,/Response loading failed/);
+  assert.equal(await session.evaluate(page, `(async () => {
+    const response=await fetch('/wrapped.wasm');
+    const wrapped=new Response(new ReadableStream({async start(controller) {
+      const reader=response.body.getReader();
+      for(;;) {const {done,value}=await reader.read();if(done)break;controller.enqueue(value);}
+      controller.close();
+    }}),response);
+    return (await WebAssembly.compileStreaming(wrapped)) instanceof WebAssembly.Module;
+  })()`),true,'Wrapping the actual fetch stream preserves native Wasm compilation');
+  await session.flushResources();
+  const wrapped=session.resources.find(resource=>resource.url.endsWith('/wrapped.wasm'));
+  assert.equal(wrapped.sha256,createHash('sha256').update(wasm).digest('hex'));
+  assert.equal(wrapped.bodyCapture,'cdp-response-stream');
+});
+
+const chromeEvent = (params={}) => ({sessionId:'renderer',params:{requestId:'same-request',...params}});
+async function chromeCollector(call) {
+  const {createChromeResponseCollector,flushResponseCaptures}=await import('./games/response-capture.mjs');
+  const responses=new Map(),pending=new Set(),calls=[];
+  return {collector:createChromeResponseCollector({call:async(...args)=>{calls.push(args);return call(...args);}},{responses,pending}),calls,
+    flush:()=>flushResponseCaptures(responses,pending,{timeoutMs:1000})};
+}
+
+test('CDP combines buffered bytes before later chunks even when its acknowledgement arrives last',async()=>{
+  let ready;
+  const {collector,flush,calls}=await chromeCollector(()=>new Promise(resolve=>{ready=resolve;}));
+  const resource={url:'http://fixture.test/runtime.wasm'};
+  collector.received(chromeEvent({response:{headers:{'Content-Length':String(wasm.length)}}}),resource);
+  collector.data(chromeEvent({data:wasm.subarray(4).toString('base64')}));
+  collector.finished(chromeEvent());
+  ready({bufferedData:wasm.subarray(0,4).toString('base64')});
+  await flush();
+  assert.equal(resource.sha256,createHash('sha256').update(wasm).digest('hex'));
+  assert.deepEqual(calls,[['Network.streamResourceContent',{requestId:'same-request'},'renderer']]);
+});
+
+for(const kind of ['complete','truncated','unknown-length','encoded'])test(`CDP aborted ${kind} stream cannot substitute or invent complete bytes`,async()=>{
+  const {collector,flush,calls}=await chromeCollector(()=>({bufferedData:wasm.toString('base64')}));
+  const headers=kind==='unknown-length'?{}:{'Content-Length':String(wasm.length+(kind==='truncated'?1:0))};
+  if(kind==='encoded')headers['Content-Encoding']='gzip';
+  const resource={url:'http://fixture.test/runtime.wasm'};
+  collector.received(chromeEvent({response:{headers}}),resource);
+  collector.finished(chromeEvent(),'net::ERR_ABORTED');
+  await flush();
+  assert.equal(resource.networkError,'net::ERR_ABORTED');
+  if(kind==='complete')assert.equal(resource.sha256,createHash('sha256').update(wasm).digest('hex'));
+  else {assert.equal(resource.sha256,undefined);assert.match(resource.hashUnavailable,/complete response bytes unavailable/);}
+  assert.equal(calls.length,1,'an aborted response is never refetched');
+});
+
+test('unsupported CDP streaming uses only successful original-request body lookup',async()=>{
+  const {collector,flush,calls}=await chromeCollector(method=>{
+    if(method==='Network.streamResourceContent')throw Error('unsupported');
+    return {body:wasm.toString('base64'),base64Encoded:true};
+  });
+  const resource={url:'http://fixture.test/runtime.wasm'};
+  collector.received(chromeEvent({response:{headers:{}}}),resource);
+  collector.finished(chromeEvent());await flush();
+  assert.equal(resource.sha256,createHash('sha256').update(wasm).digest('hex'));
+  assert.equal(calls[1][0],'Network.getResponseBody');
+  assert.equal(calls[1][1].requestId,'same-request');
 });
