@@ -100,6 +100,10 @@ export const extensionUiScenario = `(${async function () {
   await api.tabs.reload(inspectedTabId);
   await wait(() => [...ui('#advanced-instance').options].some((option) => /JavaScript/.test(option.textContent) && option.value !== oldSource), 'New document JavaScript identity');
   await wait(() => ui('#advanced-watch-count').textContent === '0', 'Old document watches invalidated');
+  // document_start registers the source before the fixture's external script
+  // defines its game object. Root discovery is a snapshot, so wait for the
+  // reload's scripts to finish before requesting that snapshot.
+  await wait(async () => (await api.tabs.get(inspectedTabId)).status === 'complete', 'Reloaded fixture scripts loaded');
   // Leave a live JavaScript scan for the Chromium worker-recovery check.
   ui('#advanced-instance').value = [...ui('#advanced-instance').options].find((option) => /JavaScript/.test(option.textContent)).value;
   ui('#advanced-instance').dispatchEvent(new Event('change', { bubbles: true }));
