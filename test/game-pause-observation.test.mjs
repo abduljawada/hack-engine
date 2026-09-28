@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import {armPlaybackObservation,armControlObservation,stopPlaybackObservation,stopControlObservation,observedScanPause,withScanPauseObservation,scanCancellationAcknowledged} from './games/pause-observation.mjs';
+import {armPlaybackObservation,armControlObservation,stopPlaybackObservation,stopControlObservation,observedScanPause,withScanPauseObservation,scanCancellationAcknowledged,armProgressCancellation,stopProgressCancellation,withProgressCancellation} from './games/pause-observation.mjs';
 
 function fixture() {
   let time=0,tick,mutation,cleared=false,disconnected=false;
@@ -66,4 +66,58 @@ test('a genuine zero-result scan can prove pause without being mistaken for a sc
   const ui={evaluate:async script=>script.startsWith('({samples:')?control:undefined};
   const result=await withScanPauseObservation({session,gamePage:{},ui},observe=>observe());
   assert.deepEqual(result.evidence,{suspendedAt:12,busyFrom:10,busyUntil:15});
+});
+
+function cancellationFixture() {
+  let mutation,clicks=0,disconnected=false,time=0;
+  const scan={disabled:false},cancel={hidden:true,disabled:false,click(){clicks++;}},status={textContent:'Ready to scan this source.'};
+  const context=vm.createContext({document:{querySelector:s=>({'#advanced-scan':scan,'#cancel-advanced-scan':cancel,'#advanced-status':status}[s])},Date:{now:()=>time},MutationObserver:class{constructor(fn){mutation=fn;}observe(){}disconnect(){disconnected=true;}}});
+  vm.runInContext(armProgressCancellation,context);
+  return{context,scan,cancel,status,mutate(){time++;mutation();},get clicks(){return clicks;},get disconnected(){return disconnected;}};
+}
+test('prearmed public cancellation dispatches during partial progress before a delayed driver can react',()=>{
+  const f=cancellationFixture();
+  f.scan.disabled=true;f.cancel.hidden=false;f.status.textContent='Scanning values…';f.mutate();
+  assert.equal(f.clicks,0,'initial busy controls do not prove actual scanning');
+  f.status.textContent='Scanning… 262,144 / 15,000,000';f.mutate();
+  assert.equal(f.clicks,1);
+  const dispatch=f.context.__hackProgressCancellation.clicked;
+  assert.equal(dispatch.busy,true);assert.equal(dispatch.inspected,262144);assert.equal(dispatch.total,15000000);
+  // A full browser round trip would see only this completed state.
+  f.scan.disabled=false;f.cancel.hidden=true;f.status.textContent='No matching values.';f.mutate();
+  assert.equal(f.clicks,1,'click once only, never retry a completed scan');
+  assert.equal(f.disconnected,true);
+  vm.runInContext(stopProgressCancellation,f.context);assert.equal(f.context.__hackProgressCancellation,undefined);
+});
+test('cancellation never dispatches on zero/final/malformed progress or unavailable controls',()=>{
+  for(const text of ['Scanning values…','Scanning… 0 / 100','Scanning… 100 / 100','Scanning… 101 / 100','No matching values.','Scanning… NaN / 100']){
+    const f=cancellationFixture();f.scan.disabled=true;f.cancel.hidden=false;f.status.textContent=text;f.mutate();assert.equal(f.clicks,0,text);
+  }
+  for(const state of [{busy:false,hidden:false,disabled:false},{busy:true,hidden:true,disabled:false},{busy:true,hidden:false,disabled:true}]){
+    const f=cancellationFixture();f.scan.disabled=state.busy;f.cancel.hidden=state.hidden;f.cancel.disabled=state.disabled;f.status.textContent='Scanning… 1 / 100';f.mutate();assert.equal(f.clicks,0);
+  }
+});
+test('prearmed cancellation observer is cleaned and evidence retained when the UI action fails',async()=>{
+  const scripts=[];const ui={evaluate:async script=>{scripts.push(script);return {clicked:null,status:'Ready',busy:false};}};
+  await assert.rejects(withProgressCancellation(ui,async()=>{throw Error('Click failed');}),error=>/Click failed; cancellation dispatch evidence/.test(error.message));
+  assert.ok(scripts.includes(stopProgressCancellation));
+});
+
+test('cancellation cleanup cannot hide a primary failure or silently pass',async()=>{
+  const ui={evaluate:async script=>{if(script===stopProgressCancellation)throw Error('Closed controls');return {clicked:{time:1}};}};
+  await assert.rejects(withProgressCancellation(ui,async()=>{throw Error('Primary failure');}),/Primary failure/);
+  await assert.rejects(withProgressCancellation(ui,async()=>{}),/Cancellation observer cleanup failed: Closed controls/);
+});
+
+test('repeated busy mutations do not create false boundaries at genuine suspended samples',()=>{
+  const controls=[{time:9724,busy:false},...[9727,9728,9810,9813,9815,9817,9817,9819,9820,9820].map(time=>({time,busy:true})),{time:9821,busy:false}];
+  assert.deepEqual(observedScanPause([{time:9810,playing:false},{time:9813,playing:false}],controls),{suspendedAt:9810,busyFrom:9727,busyUntil:9821});
+  assert.equal(observedScanPause([{time:9727,playing:false},{time:9821,playing:false}],controls),null,'real boundaries still require strict overlap');
+  assert.equal(observedScanPause([{time:9830,playing:false}],controls),null);
+  assert.equal(observedScanPause([{time:20,playing:false}],[{time:10,busy:true},{time:15,busy:false},{time:25,busy:true}]),null,'separate scans cannot merge across idle time');
+});
+test('partially armed cancellation observers are cleaned when setup rejects',async()=>{
+  const scripts=[];const ui={evaluate:async script=>{scripts.push(script);if(script===armProgressCancellation)throw Error('Setup interrupted');return null;}};
+  await assert.rejects(withProgressCancellation(ui,async()=>{}),/Setup interrupted/);
+  assert.ok(scripts.includes(stopProgressCancellation));
 });

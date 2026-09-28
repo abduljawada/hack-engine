@@ -1,7 +1,7 @@
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { GameUI } from './ui.mjs';
-import { withScanPauseObservation, scanCancellationAcknowledged } from './pause-observation.mjs';
+import { withScanPauseObservation, scanCancellationAcknowledged, withProgressCancellation } from './pause-observation.mjs';
 import { GameTestError, delay, poll, readRenderedValue, renderedSamples, sampleValue, asteroidsEditWindow, createOcrObserver } from './observations.mjs';
 export { OBSERVER_SCRIPT, GameTestError } from './observations.mjs';
 
@@ -390,15 +390,13 @@ export async function runPauseCases({ ui, read, naturalChange, target, runStep, 
     await ui.set('#advanced-condition', 'exact');
     await ui.set('#advanced-value', 987654321);
     const cancelledScan = await observeScan('Scan cancellation', async observe => {
-      await ui.click('#advanced-scan');
-      try { await ui.wait(`!document.querySelector('#cancel-advanced-scan').hidden`, 'Cancellable scan', 3000); }
-      catch { throw new GameTestError('Scan completed before cancellation could be exercised; cancellation coverage is incomplete.'); }
-      await observe();
-      await ui.click('#cancel-advanced-scan');
+      const cancellation=await withProgressCancellation(ui,()=>ui.click('#advanced-scan'));
+      await observe().catch(error=>{error.message += `; cancellation dispatch evidence: ${JSON.stringify(cancellation)}`;throw error;});
+      return cancellation;
     });
-    const cancellationStatus = await poll(() => ui.evaluate(`document.querySelector('#advanced-status').textContent`), scanCancellationAcknowledged, {timeout:5000,description:'Packaged scan cancellation acknowledged',category:'extension',status:'FAIL'});
+    const cancellationStatus = await poll(() => ui.evaluate(`document.querySelector('#advanced-status').textContent`), scanCancellationAcknowledged, {timeout:5000,description:'Packaged scan cancellation acknowledged',category:'extension',status:'FAIL'}).catch(error=>{error.message += `; cancellation dispatch evidence: ${JSON.stringify(cancelledScan)}`;throw error;});
     await ui.wait(`!document.querySelector('#advanced-scan').disabled && document.querySelector('#pause-game').getAttribute('aria-pressed')==='false'`, 'Cancellation released scan-owned pause');
     await poll(isPlaying, value => value === true, { description: 'Public Ruffle playback resumed after cancellation', category: 'extension', status: 'FAIL' });
-    return { cancelled: true, cancellationStatus, resumed: true, observation: cancelledScan.evidence };
+    return { cancelled: true, cancellationStatus, resumed: true, observation: cancelledScan.evidence, cancellation: cancelledScan.result };
   });
 }
