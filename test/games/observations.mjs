@@ -24,8 +24,9 @@ export async function poll(read, predicate, { timeout = 30000, interval = 100, d
 export const OBSERVER_SCRIPT = `(${function () {
   if (globalThis.__gameRenderedText) return;
   const samples = [];
+  let frame = 0;
   const record = (kind, text, x, y) => {
-    samples.push({ kind, text: String(text), x: Number(x), y: Number(y), time: Date.now() });
+    samples.push({ kind, text: String(text), x: Number(x), y: Number(y), time: Date.now(), frame });
     if (samples.length > 6000) samples.splice(0, 1000);
   };
   Object.defineProperty(globalThis, '__gameRenderedText', { value: samples });
@@ -33,6 +34,35 @@ export const OBSERVER_SCRIPT = `(${function () {
     const original = CanvasRenderingContext2D.prototype[name];
     CanvasRenderingContext2D.prototype[name] = function (text, x, y, ...rest) {
       record(name, text, x, y); return original.call(this, text, x, y, ...rest);
+    };
+  }
+  // Asteroids draws each player projectile as a two-pixel X. Observe the
+  // submitted canvas path, never sprite state, to wait for outstanding shots
+  // before an exact write/undo assertion. A released fire key does not remove
+  // bullets already in flight.
+  const paths = new WeakMap();
+  const clearRect = CanvasRenderingContext2D.prototype.clearRect;
+  CanvasRenderingContext2D.prototype.clearRect = function (...args) {
+    frame++; return clearRect.apply(this, args);
+  };
+  for (const method of ['beginPath', 'moveTo', 'lineTo', 'stroke']) {
+    const original = CanvasRenderingContext2D.prototype[method];
+    CanvasRenderingContext2D.prototype[method] = function (...args) {
+      if (method === 'beginPath') paths.set(this, []);
+      else if (method === 'moveTo' || method === 'lineTo') {
+        const path = paths.get(this);
+        if (path && path.length < 5) path.push([method, ...args]);
+      } else {
+        const path = paths.get(this);
+        if (this.lineWidth === 2 && path?.length === 4) {
+          const [a,b,c,d] = path;
+          if (a[0] === 'moveTo' && b[0] === 'lineTo' && c[0] === 'moveTo' && d[0] === 'lineTo' &&
+              Math.abs(b[1]-a[1]-2) < 1e-7 && Math.abs(b[2]-a[2]-2) < 1e-7 && c[1] === b[1] && c[2] === a[2] && d[1] === a[1] && d[2] === b[2]) {
+            record('projectile', '', a[1]+1, a[2]+1);
+          }
+        }
+      }
+      return original.apply(this, args);
     };
   }
   // Breakout draws the ball as a 16x16 rectangle. Observing its rendered
@@ -104,4 +134,16 @@ export async function createOcrObserver({ session, page, target, artifactDir }) 
     },
     close: () => worker.close(),
   };
+}
+
+// Require two completed, advancing rendered frames without a player shot. This
+// establishes a quiet edit window from visible output, not elapsed time or an
+// assumed score/memory address. Shots drawn in an unfinished frame are ignored
+// until its score paint completes it.
+export function asteroidsEditWindow(samples) {
+  const scores = samples.filter(row => sampleValue(row, 'J1') !== null);
+  const latest = scores.at(-1), previous = scores.at(-2);
+  if (!latest || !previous || latest.frame <= previous.frame || latest.text !== previous.text) return null;
+  if (samples.some(row => row.kind === 'projectile' && (row.frame === previous.frame || row.frame === latest.frame))) return null;
+  return { value: sampleValue(latest, 'J1'), frames: [previous.frame, latest.frame] };
 }

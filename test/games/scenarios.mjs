@@ -1,7 +1,7 @@
-import { readFile, mkdir } from 'node:fs/promises';
+import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { GameUI } from './ui.mjs';
-import { GameTestError, delay, poll, readRenderedValue, renderedSamples, sampleValue, createOcrObserver } from './observations.mjs';
+import { GameTestError, delay, poll, readRenderedValue, renderedSamples, sampleValue, asteroidsEditWindow, createOcrObserver } from './observations.mjs';
 export { OBSERVER_SCRIPT, GameTestError } from './observations.mjs';
 
 export async function performActions(session, page, actions = []) {
@@ -184,6 +184,11 @@ export async function runGame({ session, game, asset, gamePage, controls, baseli
         const limit = game.id === 'J1' ? selected + 1 : Math.min(candidates.length, 20);
         for (let index = selected; index < limit; index++) {
           if (index !== selected) await ui.select(index);
+          if (game.id === 'J1') {
+            const since = Date.now();
+            targetEvidence.editWindow = await poll(async () => asteroidsEditWindow(await renderedSamples(session, gamePage, since)), Boolean,
+              { timeout: 10000, description: 'Two rendered Asteroids frames without outstanding player shots' });
+          }
           const before = await read();
           await ui.write(target.editValue);
           let edited = false;
@@ -207,8 +212,20 @@ export async function runGame({ session, game, asset, gamePage, controls, baseli
         return { restored: targetEvidence.beforeWrite };
       });
       await runStep('guarded-undo', async () => {
+        if (game.id === 'J1') {
+          const since = Date.now();
+          await poll(async () => asteroidsEditWindow(await renderedSamples(session, gamePage, since)), Boolean,
+            { timeout: 10000, description: 'Shot-free rendered frames before second Asteroids write' });
+        }
+        const writeStarted = Date.now();
         await ui.write(target.editValue);
-        await poll(read, x => x === target.editValue, { timeout: 3000, description: 'Second write visible', category: 'extension', status: 'FAIL' });
+        try {
+          await poll(read, x => x === target.editValue, { timeout: 3000, description: 'Second write visible', category: 'extension', status: 'FAIL' });
+        } finally {
+          if (game.id === 'J1') await writeFile(join(artifactDir, 'second-write-rendered.json'), JSON.stringify({
+            expected: target.editValue, writeStarted, samples: await renderedSamples(session, gamePage, writeStarted), controls: await ui.state(),
+          }, null, 2));
+        }
         const changed = await naturalChange(target.editValue);
         await ui.restore({ guarded: true });
         const after = await read();
