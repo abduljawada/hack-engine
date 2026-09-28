@@ -44,7 +44,7 @@ export function parseOptions(args) {
   options.browsers = [...new Set(options.browsers)]; options.gameIds = [...new Set(options.gameIds)];
   if (options.browsers.some(b => !['firefox', 'chrome'].includes(b))) throw Error('Browser must be firefox or chrome.');
   if (options.gameIds.some(id => !GAME_CATALOG.some(g => g.id === id))) throw Error('Unknown game ID. Use J1,W1,F1,F2,F3,F4,F5,F6,F7.');
-  if (options.strict && (options.browsers.length !== 2 || RELEASE_GAME_IDS.some(id => !options.gameIds.includes(id)) || options.prepareOnly)) throw Error('Strict qualification requires J1,W1,F2,F4 in both browsers; preparation-only runs cannot qualify.');
+  if (options.strict && (options.browsers.length !== 2 || RELEASE_GAME_IDS.some(id => !options.gameIds.includes(id)) || options.prepareOnly)) throw Error('Strict qualification requires J1,W1,F7,F4 in both browsers; preparation-only runs cannot qualify.');
   return options;
 }
 

@@ -62,7 +62,7 @@ test("missing assets are explicit blockers and do not omit any game", async (con
 });
 test("catalog Flash assets reject a substituted SWF even when local metadata agrees", async (context) => {
   const root = await temporary(context);
-  for (const id of ["F1", "F2", "F4"]) {
+  for (const id of ["F1", "F2", "F4", "F7"]) {
     const game = path.join(root,id); await fs.mkdir(game);
     await fs.writeFile(path.join(game,"game.swf"),swf(id === "F4" ? "AVM2" : "AVM1")); await pin(game);
     const result = (await prepareGames({assetDir:root,gameIds:[id],download:false}))[0];
@@ -74,9 +74,9 @@ test("required Flash downloads use their pinned public artifact rather than the 
   const root = await temporary(context), urls = [], original = globalThis.fetch;
   globalThis.fetch = async url => { urls.push(url); return {ok:false,status:503}; };
   try {
-    const records = await prepareGames({assetDir:root,gameIds:["F2","F4"]});
+    const records = await prepareGames({assetDir:root,gameIds:["F4","F7"]});
     assert.ok(records.every(item=>!item.ready && /HTTP 503/.test(item.reason)));
-    assert.deepEqual(urls,GAME_CATALOG.filter(game=>["F2","F4"].includes(game.id)).map(game=>game.downloadArtifact.url));
+    assert.deepEqual(urls,GAME_CATALOG.filter(game=>["F4","F7"].includes(game.id)).map(game=>game.downloadArtifact.url));
   } finally {globalThis.fetch=original;}
 });
 test("archive extraction rejects traversal and symlink members", async (context) => {
@@ -129,7 +129,7 @@ test("failed downloads preserve blockers, reject upstream hash changes, and leav
 test('strict controlled core rejects absent or mismatched same-run Flash evidence in either phase', () => {
   for (const phase of ['baseline','extension']) for (const defect of ['primary','wasm','avm','version','missing']) {
     const report = completeReport();
-    const entry = report.cases.find(item => item.gameId === 'F2' && item.browser === 'firefox');
+    const entry = report.cases.find(item => item.gameId === 'F7' && item.browser === 'firefox');
     const step = entry.steps.find(step => step.name === 'local-runtime-provenance' && step.phase === phase);
     if (defect === 'primary') step.details.primarySwf.sha256 = 'f'.repeat(64);
     if (defect === 'wasm') step.details.runtimeWasm[0].sha256 = 'f'.repeat(64);

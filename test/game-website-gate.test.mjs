@@ -153,7 +153,7 @@ test('ordinary JUnit fails required missing assets and skips optional asset bloc
 
  test('release qualification needs exactly the four runtime representatives, without retired titles', () => {
   const report = websiteReport();
-  report.cases = report.cases.filter(item => ['J1','W1','F2','F4'].includes(item.gameId));
+  report.cases = report.cases.filter(item => ['J1','W1','F7','F4'].includes(item.gameId));
   assert.equal(report.cases.length, 8);
   assert.equal(evaluateGate(report, {strict:true}).passed, true);
   for (const entry of report.cases) {
@@ -168,13 +168,13 @@ test('ordinary JUnit fails required missing assets and skips optional asset bloc
   }
 });
 test('release representatives cannot silently switch runtime families or AVM versions', () => {
-  for (const id of ['J1','W1','F2','F4']) {
+  for (const id of ['J1','W1','F7','F4']) {
     const report=websiteReport(), entry=report.cases.find(item=>item.gameId===id);
     entry.observedRuntime='javascript';
     if(id==='J1') entry.observedRuntime='wasm';
     assert.equal(evaluateGate(report,{strict:true}).passed,false);
   }
-  const report=websiteReport(), entry=report.cases.find(item=>item.gameId==='F2');
+  const report=websiteReport(), entry=report.cases.find(item=>item.gameId==='F7');
   for(const step of entry.steps) {
     if(step.name==='runtime-detection') step.details.runtimeDetails.avm='AVM2';
     if(step.name==='flash-load') {step.details.runtime.avm='AVM2';step.details.primarySwf.independentlyParsedAvm='AVM2';}

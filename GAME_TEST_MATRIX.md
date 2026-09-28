@@ -1,14 +1,14 @@
 # Release game test list
 
-Prepared 2026-09-27; automated qualification now targets Hack Engine v1.3.0. This is a qualification list, not a claim that all games pass. The primary runner installs Firefox and Chrome packages and visits the actual game websites. Pinned local builds remain a separate regression mode.
+Prepared 2026-09-27; automated qualification now targets Hack Engine v1.3.0. This is a qualification list, not a claim that all games pass. The core runner installs Firefox and Chrome packages and exercises pinned original games on loopback. A separate advisory workflow visits the actual game websites.
 
 ## Automated execution
 
-Run `npm run test:games` for the four release games, or `npm run test:games -- --strict` for their complete release gate. Both default and strict selections are J1, W1, F2 and F4 in Firefox and Chromium: **eight required combinations**. GitHub pull requests and main pushes enforce strict qualification. The original eight-game catalog is preserved below and remains explicitly selectable with `--game`. Each invocation preserves its own HTML/JSON/JUnit report and screenshots under `artifacts/game-tests/`; the top-level index links the latest run. See [testing instructions](test/GAME_TESTING.md) and [asset provenance/setup](test/games/ASSETS.md).
+Run `npm run test:games` for the four release games, or `npm run test:games -- --strict` for their complete release gate. Both default and strict selections are J1, W1, F7 and F4 in Firefox and Chromium: **eight required combinations**. GitHub pull requests and main pushes enforce strict qualification. The original eight-game catalog is preserved below and remains explicitly selectable with `--game`. Each invocation preserves its own HTML/JSON/JUnit report and screenshots under `artifacts/game-tests/`; the top-level index links the latest run. See [testing instructions](test/GAME_TESTING.md) and [asset provenance/setup](test/games/ASSETS.md).
 
-Website runs need no local game files: each site supplies its game and player. The runner observes the runtime loaded in each run, rather than assuming every historically Flash title is still Flash. The four release games cover JavaScript, non-Ruffle WebAssembly, AVM1 and AVM2. The other four catalog games are optional exploratory coverage. Player loading, runtime detection, and manual pause smoke checks alone never qualify full gameplay. Missing interactions, counter observations, or target workflows remain BLOCKED with evidence.
+Website runs need no local game files: each site supplies its game and player. The runner observes the runtime loaded in each run, rather than assuming every historically Flash title is still Flash. The four release games cover JavaScript, non-Ruffle WebAssembly, AVM1 and AVM2. Other catalog games are optional exploratory coverage. Player loading, runtime detection, and manual pause smoke checks alone never qualify full gameplay. Missing interactions, counter observations, or target workflows remain BLOCKED with evidence.
 
-Use `npm run test:games -- --mode local --game J1,W1` for pinned Asteroids/Breakout regression and controlled frame scenarios. Local Flash fixtures can be supplied separately; missing originals block only that optional mode. Website results and local fixture results must remain distinguishable.
+Use `npm run test:games -- --game J1,W1` for focused Asteroids/Breakout diagnosis and controlled frame scenarios. Required Flash originals are downloaded and verified against catalog hashes; missing or changed files block core qualification. Optional exploratory titles remain separately selectable. Website compatibility and controlled results remain distinguishable.
 
 ## Release selection
 
@@ -16,7 +16,7 @@ Use `npm run test:games -- --mode local --game J1,W1` for pinned Asteroids/Break
 | --- | --- | --- | --- |
 | J1 | HTML5-Asteroids | JavaScript | Firefox and Chromium |
 | W1 | Breakout.Rust.Web | Non-Ruffle WebAssembly | Firefox and Chromium |
-| F2 | Xeno Tactic 2 | AVM1 / Ruffle | Firefox and Chromium |
+| F7 | Interactive Buddy v1.01 | AVM1 / Ruffle | Firefox and Chromium |
 | F4 | Bloons Tower Defense 3 | AVM2 / Ruffle | Firefox and Chromium |
 
 Every selected game must pass its existing mandatory target, gameplay, lifecycle and provenance checks. Manual verification does not count as an automated pass. Blocked, failed, unsupported or unrun required cases prevent release qualification. No release or tag is created by these checks.
@@ -88,11 +88,11 @@ The full headed website run is preserved at `artifacts/game-tests/2026-09-27T10-
 | Diggy | The observed portal did not expose a playable game after genuine Play inputs; baseline blocked in both browsers. |
 | Canabalt | Current HTML5 edition played and increasing distance observed in both browsers (including Firefox 106 m → 128 m). A reliably editable distance target remains unqualified. |
 
-Firefox now captures actual loaded response bytes through BiDi; strict qualification still requires matching per-phase hashes and independent AVM evidence. The historical 16-combination acceptance was not achieved. The release gate now requires eight combinations across J1, W1, F2 and F4; changing that selection does not qualify the outstanding Xeno/Bloons scenarios or waive provenance checks. **The new eight-combination gate has not yet passed.**
+Firefox now captures actual loaded response bytes through BiDi; strict qualification still requires matching per-phase hashes and independent AVM evidence. The historical 16-combination acceptance was not achieved. The earlier eight-case selection used J1, W1, F2 and F4 and did not pass as a whole. These historical results do not qualify the current matrix or waive provenance checks.
 
 
 ## Controlled core and live compatibility
 
-The approved release gate now uses original pinned J1/W1/F2/F4 copies, each in Firefox and Chrome (eight configurations), with identical target and pause assertions. Live-site compatibility is a separate advisory workflow and reports blocked public sites as blocked, never as passes. See [test/GAME_TESTING.md](test/GAME_TESTING.md) for the precise evidence boundary and current repair status. No AVM1 replacement has been qualified yet.
+The approved release gate now uses original pinned J1/W1/F7/F4 copies, each in Firefox and Chrome (eight configurations), with identical target and pause assertions. Live-site compatibility is a separate advisory workflow and reports blocked public sites as blocked, never as passes. See [test/GAME_TESTING.md](test/GAME_TESTING.md) for the precise evidence boundary and current repair status. Interactive Buddy replaced only the AVM1 slot after the complete same-recipe Firefox and Chrome run `2026-09-28T12-34-45.485Z-447790` passed. Its money target is proven by real earnings, previously unaffordable shop unlocks, confirmed write/undo, three frozen purchases, Stop, and all pause/lifecycle checks. Xeno remains optional and unqualified.
 
-September 28 core CI [36417955861](https://github.com/abduljawada/hack-engine/actions/runs/36417955861) subsequently passed J1, W1, and F4 in both browsers, including complete Bloons cash/lives and pause/lifecycle workflows. Both Xeno cases remained blocked, so the eight-case gate failed. These controlled results do not replace the historical website outcomes above. Interactive Buddy (F7) is an optional AVM1 candidate only; no release slot has changed.
+September 28 core CI [36417955861](https://github.com/abduljawada/hack-engine/actions/runs/36417955861) subsequently passed J1, W1, and F4 in both browsers, including complete Bloons cash/lives and pause/lifecycle workflows. Both Xeno cases remained blocked, so the eight-case gate failed. These controlled results do not replace the historical website outcomes above. This failure preceded the subsequently qualified AVM1 replacement; it remains failed evidence. A fresh complete eight-case CI pass is still required before merging or releasing.

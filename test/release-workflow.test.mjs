@@ -38,7 +38,7 @@ test('runner, CI, package release command and store gate share the eight control
   const { parseOptions } = await import('./run-games.mjs');
   const { RELEASE_GAME_IDS, BROWSERS } = await import('./games/catalog.mjs');
   const { createReport } = await import('./games/report.mjs');
-  assert.deepEqual([...RELEASE_GAME_IDS], ['J1', 'W1', 'F2', 'F4']);
+  assert.deepEqual([...RELEASE_GAME_IDS], ['J1', 'W1', 'F7', 'F4']);
   assert.deepEqual(BROWSERS, ['firefox', 'chrome']);
   const ci = yaml.load(readFileSync('.github/workflows/tests.yml', 'utf8'));
   const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
