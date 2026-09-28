@@ -2517,14 +2517,19 @@
   async function resetScan({ requestId, instanceId, type }) {
     const key = scanKey(String(instanceId), type);
     if (activeScans.size) throw new Error("Cancel the running scan before resetting.");
+    const resetSession = currentSession;
     const previous = scans.get(key);
     scans.delete(key);
     const checkpoint = undoScans.get(key);
     undoScans.delete(key);
+    // Snapshot IDs are unique. Only these detached snapshots belong to this
+    // reset; a new scan may start while their IndexedDB deletion is pending.
     await deleteSnapshot(previous?.snapshot).catch(() => {});
     if (checkpoint?.snapshot !== previous?.snapshot) await deleteSnapshot(checkpoint?.snapshot).catch(() => {});
-    currentSession = null;
-    emitSession();
+    if (currentSession === resetSession) {
+      currentSession = null;
+      emitSession();
+    }
     send({ kind: "scanReset", requestId, instanceId: String(instanceId), type });
   }
 

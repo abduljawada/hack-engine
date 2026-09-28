@@ -289,3 +289,17 @@ test("keys and buttons held before Pause can release without resuming or stickin
   await h.command({ kind: "setGamePaused", instanceId, paused: false });
   assert.deepEqual(player.inputState, { keyHeld: false, pointerHeld: false });
 });
+
+test("an older asynchronous reset cannot erase a newly started scan session", async () => {
+  const h = setup(), player = h.player(), instanceId = h.capture(player);
+  await h.command(scan(instanceId, { requestId: "first" })); await h.drain();
+  // Reset enters asynchronous cleanup; a user may immediately start again.
+  const resetting = h.command({ kind: "resetScan", instanceId, type: "i32", requestId: "reset-old" });
+  const starting = h.command(scan(instanceId, { requestId: "second" }));
+  await Promise.all([resetting, starting]); await h.drain();
+  await h.command({ kind: "getSessionState" });
+  const state = h.messages.filter(message => message.kind === "agentState").at(-1);
+  assert.equal(state.session?.requestId, "second");
+  assert.equal(state.session?.status, "complete");
+  assert.ok(h.messages.some(message => message.kind === "scanResults" && message.requestId === "second"));
+});

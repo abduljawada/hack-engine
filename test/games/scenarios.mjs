@@ -351,7 +351,14 @@ export async function runGame({ session, game, asset, gamePage, controls, baseli
 export async function runPauseCases({ ui, read, naturalChange, target, runStep, session, gamePage }) {
   const isPlaying = () => session.evaluate(gamePage, `(() => { const player = document.querySelector('ruffle-player'); if (!player) return null; const api = typeof player.ruffle === 'function' ? player.ruffle(1) : player; return typeof api.suspended === 'boolean' ? !api.suspended : typeof api.isPlaying === 'boolean' ? api.isPlaying : null; })()`);
   const observeScanPause = async () => {
-    await poll(async () => ({ playing: await isPlaying(), busy: await ui.evaluate(`document.querySelector('#advanced-scan').disabled`) }), state => state.busy && state.playing === false,
+    await poll(async () => {
+      const [playing, controls] = await Promise.all([
+        isPlaying(),
+        ui.evaluate(`({busy:document.querySelector('#advanced-scan').disabled,error:document.querySelector('#advanced-status').classList.contains('error'),status:document.querySelector('#advanced-status').textContent})`),
+      ]);
+      if (!controls.busy && controls.error) throw new GameTestError(`Packaged scan failed before pause could be observed: ${controls.status}`, 'extension', 'FAIL');
+      return { playing, ...controls };
+    }, state => state.busy && state.playing === false,
       { timeout: 5000, description: 'Public Ruffle playback suspended during an active scan' });
   };
 
