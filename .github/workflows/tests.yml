@@ -1,0 +1,65 @@
+name: Extension and real-game tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      # Pin the automation environment independently from moving browser channels.
+      FIREFOX_VERSION: '155.0.1'
+      CHROME_VERSION: '152.0.7977.82'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+          cache: npm
+      - name: Install pinned browsers
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/hack-browsers"
+          curl --fail --location --retry 2 "https://archive.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/linux-x86_64/en-US/firefox-${FIREFOX_VERSION}.tar.xz" -o "$RUNNER_TEMP/firefox.tar.xz"
+          tar -xJf "$RUNNER_TEMP/firefox.tar.xz" -C "$RUNNER_TEMP/hack-browsers"
+          curl --fail --location --retry 2 "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chrome-linux64.zip" -o "$RUNNER_TEMP/chrome.zip"
+          unzip -q "$RUNNER_TEMP/chrome.zip" -d "$RUNNER_TEMP/hack-browsers"
+          echo "FIREFOX_PATH=$RUNNER_TEMP/hack-browsers/firefox/firefox" >> "$GITHUB_ENV"
+          echo "CHROME_PATH=$RUNNER_TEMP/hack-browsers/chrome-linux64/chrome" >> "$GITHUB_ENV"
+      - run: npm ci --ignore-scripts
+      - run: npm run test:unit
+      - run: npm run build:source && npm run check && npm run lint:firefox
+      - name: Browser adapter and cross-site frame checks
+        run: GAME_BROWSER_INTEGRATION=1 GAME_BROWSER_NO_SANDBOX=1 node --test test/game-live-browser.test.mjs test/game-response-capture.test.mjs
+      - name: Existing browser regressions
+        run: npm run test:regression
+      - name: Restore verified game downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/game-assets/J1
+            .cache/game-assets/W1
+            .cache/game-assets/ruffle
+          key: games-${{ runner.os }}-${{ hashFiles('test/games/catalog.mjs', 'test/games/assets.mjs') }}
+      - name: Eight controlled real-game release configurations
+        run: npm run test:games -- --mode local --no-build --no-sandbox --strict
+      - name: Upload game reports and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: game-test-evidence
+          path: artifacts/game-tests/
+          if-no-files-found: warn
+          retention-days: 14

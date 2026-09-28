@@ -1,0 +1,117 @@
+// Runs inside the packaged persistent popup, bound to the practice tab.
+export const extensionUiScenario = `(${async function () {
+  const wait = async (predicate, description) => {
+    const deadline = Date.now() + 15000;
+    while (Date.now() < deadline) { if (await predicate()) return; await new Promise((resolve) => setTimeout(resolve, 50)); }
+    throw new Error(`${description}: ${document.body.innerText.slice(-1800)}`);
+  };
+  const api = globalThis.browser ?? globalThis.chrome;
+  const ui = (selector) => document.querySelector(selector);
+  await wait(() => !ui('#quick-scan').disabled, 'Game connection');
+  ui('[data-view="advanced"]').click();
+  await wait(() => [...ui('#advanced-instance').options].some((option) => !/JavaScript/.test(option.textContent)), 'WebAssembly source');
+  ui('#advanced-instance').value = [...ui('#advanced-instance').options].find((option) => !/JavaScript/.test(option.textContent)).value;
+  ui('#advanced-instance').dispatchEvent(new Event('change', { bubbles: true }));
+  ui('#advanced-type').value = 'i32';
+  ui('#advanced-value').value = '100';
+  ui('#advanced-scan').click();
+  await wait(() => ui('#advanced-result-count').textContent === '1' && !ui('#advanced-scan').disabled, 'First scan');
+  ui('#advanced-value').value = '1234567'; ui('#advanced-scan').click();
+  await wait(() => ui('#advanced-result-count').textContent === '0' && !ui('[data-action="undo"]').disabled, 'Wrong refinement');
+  ui('[data-action="undo"]').click();
+  await wait(() => ui('#advanced-result-count').textContent === '1' && ui('.advanced-candidate'), 'Undo scan');
+  const address = Number(ui('.advanced-candidate').dataset.candidateKey.split(':').at(-1));
+  if (ui('#candidate-select-mode') || ui('#batch-watch')) throw new Error('Removed candidate selection controls remain');
+  ui('.advanced-candidate').click();
+  await wait(() => ui('#advanced-watch-count').textContent === '1', 'Individual candidate watch');
+  ui('#advanced-write-value').value = '500'; ui('#advanced-write').click();
+  await wait(() => !ui('[data-action="restore"]').disabled, 'Write bookkeeping');
+  await wait(() => [...document.querySelectorAll('.watch-state')].some((node) => node.textContent.includes('Verified through 250 ms')), 'Final write diagnostic');
+  if (!ui('#advanced-editor .selected-feedback').textContent.includes('250 ms')) throw new Error('Selected value missed final diagnostic');
+  if (ui('#advanced-write-value').value !== '500') throw new Error('Write acknowledgement replaced the entered value');
+  ui('#advanced-freeze').click();
+  await wait(() => ui('[data-count]').textContent === '1', 'Freeze written value');
+  const frozenValue = await new Promise((resolve, reject) => {
+    const targetTab = Number(new URLSearchParams(location.search).get('tabId'));
+    const port = api.runtime.connect({ name: 'hack-popup:' + targetTab });
+    const requestId = 'quick:release-freeze-check';
+    const [frameId, instanceId] = ui('.advanced-candidate').dataset.candidateKey.split(':');
+    const timer = setTimeout(() => { port.disconnect(); reject(new Error('Frozen-value read timed out')); }, 15000);
+    port.onMessage.addListener((message) => {
+      if (message.payload?.requestId !== requestId) return;
+      clearTimeout(timer); port.disconnect();
+      if (message.payload.kind === 'watchValues') resolve(message.payload.values[0]?.value);
+      else reject(new Error('Frozen-value read failed'));
+    });
+    port.postMessage({ kind: 'routeCommand', frameId: Number(frameId), payload: {
+      kind: 'readValues', requestId, instanceId, entries: [{ id: 'release-check', type: 'i32', address }],
+    } });
+  });
+  if (ui('#advanced-write-value').value !== '500' || frozenValue !== 500) throw new Error('Write then Freeze used an older value: ' + frozenValue);
+  ui('[data-action="stop"]').click();
+  await wait(() => ui('[data-count]').textContent === '0', 'Stop written-value freeze');
+  ui('[data-action="restore"]').click();
+  await wait(() => ui('[data-action="restore"]').disabled, 'Restore write');
+  ui('#advanced-write-value').value = '200'; ui('#advanced-freeze').click();
+  await wait(() => ui('[data-count]').textContent === '1', 'Freeze status');
+  ui('[data-action="stop"]').click();
+  await wait(() => ui('[data-count]').textContent === '0', 'Stop all freezes');
+  const label = ui('[aria-label^="Watch label"]');
+  label.value = 'Practice score'; label.dispatchEvent(new Event('change', { bubbles: true }));
+  await wait(() => ui('[aria-label^="Watch label"]').value === 'Practice score', 'Shared watch label');
+  ui('[data-workspace="watches"]').click();
+  if (ui('#manual-address') || ui('#manual-add')) throw new Error('Removed manual address controls remain');
+  if (ui('#watch-select-mode') || ui('[aria-label^="Group for"]')) throw new Error('Removed watch selection or groups remain');
+  ui('[data-workspace="candidates"]').click(); ui('.advanced-candidate').click();
+  if (ui('[aria-label^="Watch label"]').value !== 'Practice score') throw new Error('Watch metadata lost when reselecting a candidate');
+  if (ui('[data-action="save"]') || ui('[data-action="import"]')) throw new Error('Removed workspace controls remain');
+  ui('#reset-advanced-scan').click();
+  await wait(() => !ui('#advanced-instance').disabled, 'Reset before JavaScript scan');
+  const jsOption = [...ui('#advanced-instance').options].find((option) => /JavaScript/.test(option.textContent));
+  if (!jsOption) throw new Error('JavaScript source missing');
+  const oldSource = jsOption.value;
+  ui('#advanced-instance').value = oldSource;
+  ui('#advanced-instance').dispatchEvent(new Event('change', { bubbles: true }));
+  // Number formats now remain selectable for JavaScript: the previous i32
+  // choice targets typed arrays, while this fixture uses an ordinary property.
+  ui('#advanced-type').value = 'number';
+  ui('#javascript-load-roots').click();
+  await wait(() => [...ui('#javascript-root').options].some((option) => option.value === JSON.stringify(['hackEnginePracticeJS'])), 'JavaScript object picker');
+  ui('#javascript-root').value = JSON.stringify(['hackEnginePracticeJS']);
+  ui('#advanced-value').value = '100'; ui('#advanced-scan').click();
+  await wait(() => ui('#advanced-result-count').textContent === '1' && !ui('#advanced-scan').disabled, 'JavaScript scan');
+  if (!ui('.advanced-candidate').textContent.includes('hackEnginePracticeJS.score')) throw new Error('JavaScript property path missing');
+  ui('#advanced-value').value = '1234567'; ui('#advanced-scan').click();
+  await wait(() => ui('#advanced-result-count').textContent === '0' && !ui('[data-action="undo"]').disabled, 'JavaScript refinement');
+  ui('[data-action="undo"]').click();
+  await wait(() => ui('#advanced-result-count').textContent === '1' && ui('.advanced-candidate'), 'JavaScript undo');
+  ui('.advanced-candidate').click();
+  await wait(() => ui('#advanced-watch-count').textContent === '2', 'Mixed source watches');
+  ui('#advanced-write-value').value = '500'; ui('#advanced-write').click();
+  await wait(() => !ui('[data-action="restore"]').disabled, 'JavaScript write bookkeeping');
+  await wait(() => ui('#advanced-editor .selected-feedback').textContent.includes('250 ms'), 'JavaScript verified write');
+  ui('[data-action="restore"]').click();
+  await wait(() => ui('[data-action="restore"]').disabled, 'JavaScript restore');
+  ui('#advanced-write-value').value = '200'; ui('#advanced-freeze').click();
+  await wait(() => ui('[data-count]').textContent === '1', 'JavaScript freeze');
+  ui('[data-action="stop"]').click();
+  await wait(() => ui('[data-count]').textContent === '0', 'JavaScript stop freezes');
+  const inspectedTabId = Number(new URLSearchParams(location.search).get('tabId'));
+  await api.tabs.reload(inspectedTabId);
+  await wait(() => [...ui('#advanced-instance').options].some((option) => /JavaScript/.test(option.textContent) && option.value !== oldSource), 'New document JavaScript identity');
+  await wait(() => ui('#advanced-watch-count').textContent === '0', 'Old document watches invalidated');
+  // document_start registers the source before the fixture's external script
+  // defines its game object. Root discovery is a snapshot, so wait for the
+  // reload's scripts to finish before requesting that snapshot.
+  await wait(async () => (await api.tabs.get(inspectedTabId)).status === 'complete', 'Reloaded fixture scripts loaded');
+  // Leave a live JavaScript scan for the Chromium worker-recovery check.
+  ui('#advanced-instance').value = [...ui('#advanced-instance').options].find((option) => /JavaScript/.test(option.textContent)).value;
+  ui('#advanced-instance').dispatchEvent(new Event('change', { bubbles: true }));
+  ui('#advanced-type').value = 'number';
+  ui('#javascript-load-roots').click();
+  await wait(() => [...ui('#javascript-root').options].some((option) => option.value === JSON.stringify(['hackEnginePracticeJS'])), 'Reloaded JavaScript root');
+  ui('#javascript-root').value = JSON.stringify(['hackEnginePracticeJS']);
+  ui('#advanced-value').value = '100'; ui('#advanced-scan').click();
+  await wait(() => ui('#advanced-result-count').textContent === '1' && !ui('#advanced-scan').disabled, 'Reloaded JavaScript scan');
+  return 'PASS: packaged Wasm and JavaScript controls scan, refine, undo, watch, diagnose writes, restore, freeze/stop, reload, and invalidate old watches.';
+}})()`;

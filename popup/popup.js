@@ -6,6 +6,11 @@
   const MAX_ADVANCED_CANDIDATES = 200;
   const MAX_SHARED_WATCHES = 256;
   const MAX_LIVE_READS = 256;
+  const AVM_RECOMMENDED_TYPES = Object.freeze({
+    avm1: ["f64"],
+    avm2: ["i32", "u32", "f64"],
+  });
+  const TYPE_LABELS = Object.freeze({ i32: "Int32 (i32)", u32: "Uint32 (u32)", f32: "Float32 (f32)", f64: "Float64 (f64)" });
   const NUMERIC_LIMITS = Object.freeze({
     i8: ["-128", "127"],
     u8: ["0", "255"],
@@ -14,6 +19,7 @@
     i32: ["-2147483648", "2147483647"],
     u32: ["0", "4294967295"],
     f32: ["-3.4028234663852886e+38", "3.4028234663852886e+38"],
+    number: ["-1.7976931348623157e+308", "1.7976931348623157e+308"],
     f64: ["-1.7976931348623157e+308", "1.7976931348623157e+308"],
   });
   const popupParameters = new URLSearchParams(location.search);
@@ -33,6 +39,9 @@
   const pendingCandidateInstances = new Set();
   let activeTab = null;
   let port = null;
+  let reconnectTimer = null;
+  let closing = false;
+  let editorSelectionKey = "";
   let pollTimer = null;
   let candidateRefreshTimer = null;
   let requestSequence = 1;
@@ -43,6 +52,17 @@
   let memoryDetected = false;
   let hasScanResults = false;
   let candidateTotal = 0;
+  let diagnostics = {};
+  let scanWatchdog;
+  let watchdogRequest = null;
+  let watchdogProgress = null;
+  let stalledRequest = null;
+  let renderedResult = null;
+  let rootsRequest = null;
+  let sourceChosen = false;
+  let pauseWhileScanning = false;
+  let pausePreferenceChanged = false;
+  const ui = (id) => document.getElementById(id);
 
   const elements = {
     pin: document.querySelector("#pin-popup"),
@@ -50,6 +70,10 @@
     statusTitle: document.querySelector("#status-title"),
     connectionState: document.querySelector(".header-status"),
     viewSwitcher: document.querySelector("#view-switcher"),
+    gameControls: document.querySelector("#game-controls"),
+    pauseGame: document.querySelector("#pause-game"),
+    pauseWhileScanning: document.querySelector("#pause-while-scanning"),
+    pauseStatus: document.querySelector("#pause-status"),
     viewButtons: [...document.querySelectorAll("#view-switcher [data-view]")],
     quickTools: document.querySelector("#quick-tools"),
     condition: document.querySelector("#quick-condition"),
@@ -74,6 +98,9 @@
     write: document.querySelector("#quick-write"),
     freeze: document.querySelector("#quick-freeze"),
     advancedTools: document.querySelector("#advanced-tools"),
+    advancedAvmType: document.querySelector("#advanced-avm-type"),
+    advancedRecommendedTypes: document.querySelector("#advanced-recommended-types"),
+    advancedRuntimeHint: document.querySelector("#advanced-runtime-hint"),
     advancedSessionBadge: document.querySelector("#advanced-session-badge"),
     advancedCondition: document.querySelector("#advanced-condition"),
     advancedValue: document.querySelector("#advanced-value"),
@@ -85,7 +112,6 @@
     advancedAlignment: document.querySelector("#advanced-alignment"),
     advancedInstance: document.querySelector("#advanced-instance"),
     advancedInstanceLabel: document.querySelector("#advanced-instance-label"),
-    advancedMultiplier: document.querySelector("#advanced-multiplier"),
     advancedScan: document.querySelector("#advanced-scan"),
     advancedCancel: document.querySelector("#cancel-advanced-scan"),
     advancedReset: document.querySelector("#reset-advanced-scan"),
@@ -108,11 +134,59 @@
     advancedSetMax: document.querySelector("#advanced-set-max"),
     advancedWrite: document.querySelector("#advanced-write"),
     advancedFreeze: document.querySelector("#advanced-freeze"),
-    openInspector: document.querySelector("#open-inspector"),
     popOut: document.querySelector("#pop-out-window"),
-    refreshConnection: document.querySelector("#refresh-connection"),
     howItWorks: document.querySelector("#how-it-works"),
   };
+
+  function markUnavailable(entry, reason) {
+    entry.readError = reason || "This address could not be read.";
+    entry.candidate.value = undefined;
+    entry.candidate.displayValue = undefined;
+    for (const cell of entry.valueCells) cell.textContent = "—";
+  }
+
+  function diagnosticFor(key) {
+    const entry = watchedCandidates.get(key) || candidateRecords.get(key);
+    const diagnostic = diagnostics[key];
+    if (entry?.readError) return { label: "Unavailable", detail: entry.readError };
+    if (frozenCandidates.has(key)) return { label: "Frozen", detail: "Rewritten while the game is visible. Use Unfreeze here or Stop all freezes below." };
+    const labels = { checking: "Checking write…", verified: "Verified through 250 ms", persistent: "Verified through 250 ms", restored: "Game restored it", rejected: "Write rejected", unavailable: "Unavailable" };
+    return diagnostic ? { label: labels[diagnostic.state] || "Live", detail: diagnostic.detail || "" }
+      : { label: entry?.candidate.value === undefined ? "Waiting for value" : "Live", detail: "Current read only; no retained write diagnostic." };
+  }
+
+  function updateDiagnosticUI() {
+    for (const node of document.querySelectorAll("[data-watch-key]")) {
+      const state = diagnosticFor(node.dataset.watchKey);
+      node.querySelector(".watch-state").textContent = state.label;
+      node.querySelector(".watch-detail").textContent = state.detail;
+    }
+    const state = selectedCandidate ? diagnosticFor(candidateKey(selectedCandidate)) : null;
+    for (const node of document.querySelectorAll(".selected-feedback")) node.textContent = state ? `${state.label}${state.detail ? ` · ${state.detail}` : ""}` : "";
+  }
+
+  function updateScanWatchdog() {
+    if (!port || quickSession?.status !== "scanning") {
+      clearTimeout(scanWatchdog); watchdogRequest = null; watchdogProgress = null; stalledRequest = null; return;
+    }
+    const id = quickSession.requestId;
+    const progress = JSON.stringify(quickSession.progress || null);
+    if (watchdogRequest === id && watchdogProgress === progress) return;
+    clearTimeout(scanWatchdog); watchdogRequest = id; watchdogProgress = progress;
+    if (stalledRequest === id) return;
+    scanWatchdog = setTimeout(() => {
+      if (!port || quickSession?.status !== "scanning" || quickSession.requestId !== id) return;
+      stalledRequest = id;
+      setQuickStatus("No recent progress. The scan may still be running; Cancel remains available.");
+      send({ kind: "getSessionState", requestId: nextRequestId("recover") }, quickSession.frameId);
+    }, 15000);
+  }
+
+  function installAdvancedControls() {
+    ui("advanced-instance").addEventListener("change", () => {
+      renderCandidateLists(); renderWatches();
+    });
+  }
 
   function nextRequestId(action = "scan") {
     return `quick:${action}:${Date.now()}:${requestSequence++}`;
@@ -120,6 +194,12 @@
 
   function formatAddress(address) {
     return `0x${Number(address).toString(16).padStart(8, "0")}`;
+  }
+
+  function candidateLocation(candidate) {
+    return candidate.kind === "javascript" || candidate.type === "number"
+      ? candidate.displayPath || (candidate.path || []).join(".") || "JavaScript value"
+      : formatAddress(candidate.address);
   }
 
   function newTabOptions(url) {
@@ -167,6 +247,8 @@
     }
     if (extensionApi.sidePanel?.close && activeTab?.id) {
       await extensionApi.sidePanel.close({ tabId: activeTab.id });
+    } else if (extensionApi.sidePanel && activeTab?.id) {
+      await extensionApi.sidePanel.setOptions({ tabId: activeTab.id, enabled: false });
     }
   }
 
@@ -213,6 +295,7 @@
 
   function updateCandidateValue(entry, rawValue) {
     const displayValue = displayCandidateValue(rawValue, entry.candidate.multiplier);
+    entry.readError = null;
     entry.candidate.value = rawValue;
     entry.candidate.displayValue = displayValue;
     for (const valueCell of entry.valueCells || []) {
@@ -222,10 +305,10 @@
 
   function refreshCandidateValues() {
     const liveRecords = new Map();
-    for (const [key, entry] of candidateRecords) {
+    for (const [key, entry] of watchedCandidates) {
       liveRecords.set(key, entry);
     }
-    for (const [key, entry] of watchedCandidates) {
+    for (const [key, entry] of candidateRecords) {
       if (!liveRecords.has(key) && liveRecords.size < MAX_LIVE_READS) {
         liveRecords.set(key, entry);
       }
@@ -239,13 +322,20 @@
       return;
     }
     const groups = new Map();
+    let unavailable = false;
     for (const [key, entry] of liveRecords) {
       const instanceKey = `${entry.candidate.frameId}:${entry.candidate.instanceId}`;
+      if (!instances.has(instanceKey)) {
+        markUnavailable(entry, "Game memory disconnected. Reconnect to read this address.");
+        unavailable = true;
+        continue;
+      }
       if (!groups.has(instanceKey)) {
         groups.set(instanceKey, []);
       }
       groups.get(instanceKey).push({ key, entry });
     }
+    if (unavailable) updateDiagnosticUI();
     for (const [instanceKey, entries] of groups) {
       if (pendingCandidateInstances.has(instanceKey)) {
         continue;
@@ -276,7 +366,7 @@
 
   function selectedInstance() {
     const records = [...instances.values()];
-    return records.find((record) => record.looksLikeRuffle) || records[0] || null;
+    return instances.get(elements.advancedInstance.value) || records.find((record) => record.looksLikeRuffle) || records.find((record) => record.kind !== "javascript") || records[0] || null;
   }
 
   function sessionInstance() {
@@ -289,6 +379,29 @@
   function advancedSelectedInstance() {
     const key = elements.advancedInstance.value;
     return instances.get(key) || selectedInstance();
+  }
+
+  function playbackInstance() {
+    return quickSession?.canRefine || quickSession?.status === "scanning"
+      ? sessionInstance()
+      : advancedSelectedInstance();
+  }
+
+  function updatePlaybackControls() {
+    const record = playbackInstance();
+    const supported = Boolean(record?.pauseSupported);
+    const scanning = quickSession?.status === "scanning";
+    const paused = Boolean(record?.gamePaused);
+    elements.pauseGame.disabled = !port || !supported || scanning;
+    elements.pauseGame.textContent = paused ? "Resume game" : "Pause game";
+    elements.pauseGame.setAttribute("aria-pressed", String(paused));
+    elements.pauseWhileScanning.checked = pauseWhileScanning;
+    elements.pauseWhileScanning.disabled = !port || !supported || scanning;
+    elements.pauseStatus.textContent = !supported
+      ? "Pause is available for supported Ruffle games."
+      : paused
+        ? scanning && !record.manuallyPaused ? "Game paused for this scan." : "Game paused. Resume when you’re ready."
+        : "Game running.";
   }
 
   function send(payload, frameId = selectedInstance()?.frameId) {
@@ -327,6 +440,7 @@
   function updateViewVisibility() {
     const persistentSurface = isSidebarPanel || isPopoutWindow;
     elements.viewSwitcher.hidden = !persistentSurface || !memoryDetected;
+    elements.gameControls.hidden = !memoryDetected;
     elements.quickTools.hidden = !memoryDetected || activeView !== "simple";
     elements.advancedTools.hidden = !memoryDetected || activeView !== "advanced";
     document.body.classList.toggle("advanced-active", activeView === "advanced");
@@ -363,17 +477,16 @@
       detected ? "" : summary.connected ? "searching" : "offline"
     }`;
     elements.connectionState.classList.toggle("offline", !summary.connected);
-    elements.openInspector.disabled = !activeTab?.id;
     updateViewVisibility();
 
     if (detected) {
-      elements.statusTitle.textContent = summary.ruffleCount > 0
-        ? "Ruffle memory detected"
-        : "WebAssembly memory detected";
+      elements.statusTitle.textContent = "Game inspection available";
     } else if (summary.connected) {
-      elements.statusTitle.textContent = "Connected to this tab";
+      elements.statusTitle.textContent = "No source available — start or reload the game";
     } else {
-      elements.statusTitle.textContent = "No connection yet";
+      elements.statusTitle.textContent = /^(about:|chrome:|edge:)/.test(activeTab?.url || "")
+        ? "This browser page cannot be inspected"
+        : "No capture — reload the game or check site access";
     }
   }
 
@@ -416,16 +529,64 @@
       const option = document.createElement("option");
       option.value = `${record.frameId}:${record.id}`;
       const mib = Number(record.memoryBytes) / (1024 * 1024);
-      option.textContent = `${record.looksLikeRuffle ? "Ruffle" : "WASM"} · ${Number.isFinite(mib) ? `${mib.toFixed(1)} MiB` : record.id}`;
+      option.textContent = `${record.displayName || (record.looksLikeRuffle ? "Ruffle" : record.kind === "javascript" ? "JavaScript" : "WebAssembly")} · frame ${record.frameId}${record.kind === "javascript" ? "" : ` · ${mib.toFixed(1)} MiB`}`;
       elements.advancedInstance.append(option);
     }
-    if ([...elements.advancedInstance.options].some((option) => option.value === previous)) {
+    if ((sourceChosen || quickSession) && [...elements.advancedInstance.options].some((option) => option.value === previous)) {
       elements.advancedInstance.value = previous;
     } else {
-      const preferred = selectedInstance();
+      const preferred = records.find((record) => record.looksLikeRuffle) || records.find((record) => record.kind !== "javascript") || records[0];
       elements.advancedInstance.value = preferred ? `${preferred.frameId}:${preferred.id}` : "";
     }
     elements.advancedInstanceLabel.hidden = records.length <= 1;
+    const simple = ui("quick-instance");
+    simple.replaceChildren(...[...elements.advancedInstance.options].map((option) => new Option(option.textContent, option.value)));
+    simple.value = elements.advancedInstance.value;
+    ui("quick-instance-label").hidden = records.length <= 1;
+  }
+
+  function updateRuntimeGuidance() {
+    const usesSession = quickSession?.canRefine || quickSession?.status === "scanning";
+    const record = usesSession ? sessionInstance() : advancedSelectedInstance();
+    const javascript = record?.kind === "javascript";
+    elements.advancedType.closest("label").hidden = false;
+    for (const option of elements.advancedType.options) {
+      if (option.value === "number") option.hidden = option.disabled = !javascript;
+      if (!["smart", "auto", "number"].includes(option.value)) {
+        const label = option.value.startsWith("f") ? `Float${option.value.slice(1)}` : `${option.value.startsWith("u") ? "Uint" : "Int"}${option.value.slice(1)}`;
+        option.textContent = javascript ? `${label} typed arrays` : label;
+      }
+    }
+    if (!javascript && elements.advancedType.value === "number") elements.advancedType.value = "smart";
+    elements.advancedAlignment.closest("label").hidden = javascript;
+    ui("javascript-root-controls").hidden = !javascript;
+    ui("javascript-root").disabled = !!usesSession;
+    ui("javascript-load-roots").disabled = !!usesSession;
+    if (javascript) {
+      elements.advancedAvmType.textContent = "JavaScript";
+      elements.advancedRecommendedTypes.textContent = "Number properties or typed-array elements";
+      elements.advancedRuntimeHint.textContent = "Automatic searches all finite numbers. Choose Number properties for ordinary objects and arrays, or a typed-array format to target its elements. Choose an object below to narrow discovery. Private or server-controlled state may be inaccessible.";
+      return;
+    }
+    const avmKind = record?.looksLikeRuffle && record.avmKind !== undefined
+      ? record.avmKind
+      : usesSession ? quickSession?.results?.avmKind || "unknown" : "unknown";
+    elements.advancedRecommendedTypes.textContent = AVM_RECOMMENDED_TYPES[avmKind]
+      ?.map((type) => TYPE_LABELS[type]).join(", ") || "All numeric types";
+    if (avmKind === "avm1") {
+      elements.advancedAvmType.textContent = "AVM1";
+      elements.advancedRuntimeHint.textContent = "Automatic searches Float64 for this runtime.";
+    } else if (avmKind === "avm2") {
+      elements.advancedAvmType.textContent = "AVM2";
+      elements.advancedRuntimeHint.textContent = "Start with Int32 or Uint32 for whole numbers, Float64 for decimals. Automatic narrows decimal searches to Float64.";
+    } else if (record && !record.looksLikeRuffle) {
+      elements.advancedAvmType.textContent = "WebAssembly";
+      elements.advancedRecommendedTypes.textContent = "Int32, Uint32, Float32, Float64";
+      elements.advancedRuntimeHint.textContent = "Automatic starts with 32-bit integers and floating-point formats; decimals use Float32 and Float64. These are starting guesses, not detected variable types. Use All numeric types for smaller integers, or select a format below.";
+    } else {
+      elements.advancedAvmType.textContent = "Unknown";
+      elements.advancedRuntimeHint.textContent = "Automatic searches all numeric types in this WebAssembly memory.";
+    }
   }
 
   function updateScanControls() {
@@ -442,7 +603,7 @@
       elements.condition.value = "changed";
     }
     elements.scan.textContent = canRefine ? "Next scan" : "First scan";
-    elements.scan.disabled = scanning || !selectedInstance();
+    elements.scan.disabled = !port || scanning || !selectedInstance();
     elements.cancel.hidden = !scanning;
     elements.reset.hidden = !quickSession;
     for (const option of elements.advancedCondition.querySelectorAll("[data-refine-only]")) {
@@ -456,20 +617,23 @@
       elements.advancedCondition.value = "changed";
     }
     elements.advancedScan.textContent = canRefine ? "Next scan" : "First scan";
-    elements.advancedScan.disabled = scanning || !(canRefine ? sessionInstance() : advancedSelectedInstance());
+    elements.advancedScan.disabled = !port || scanning || !(canRefine ? sessionInstance() : advancedSelectedInstance());
     elements.advancedCancel.hidden = !scanning;
     elements.advancedReset.hidden = !quickSession;
     elements.advancedType.disabled = canRefine || scanning;
     elements.advancedAlignment.disabled = canRefine || scanning;
     elements.advancedInstance.disabled = canRefine || scanning;
-    elements.advancedMultiplier.disabled = canRefine || scanning;
+    ui("quick-instance").disabled = canRefine || scanning;
     elements.advancedSessionBadge.textContent = scanning
       ? "Scanning"
       : canRefine
         ? `${candidateTotal.toLocaleString()} candidates`
         : "New scan";
     elements.advancedSessionBadge.classList.toggle("active", scanning || canRefine);
+    updateRuntimeGuidance();
     updateConditionControls();
+    updateScanWatchdog();
+    updatePlaybackControls();
   }
 
   function candidateValueText(candidate) {
@@ -482,18 +646,26 @@
     for (const row of document.querySelectorAll("[data-candidate-key]")) {
       row.classList.toggle("selected", row.dataset.candidateKey === selectedKey);
     }
+    updateDiagnosticUI();
     const hasSelection = Boolean(selectedCandidate);
+    const liveSelection = !!port && !!selectedCandidate && instances.has(`${selectedCandidate.frameId}:${selectedCandidate.instanceId}`);
+    for (const button of [elements.write, elements.advancedWrite, elements.freeze, elements.advancedFreeze]) button.disabled = !liveSelection;
     elements.editor.hidden = !hasSelection;
     elements.advancedEditor.hidden = !hasSelection;
     if (!selectedCandidate) {
+      editorSelectionKey = "";
       return;
     }
-    const address = formatAddress(selectedCandidate.address);
+    const address = candidateLocation(selectedCandidate);
     const value = candidateValueText(selectedCandidate);
     elements.selectedAddress.textContent = address;
     elements.advancedSelectedAddress.textContent = address;
-    elements.writeValue.value = value;
-    elements.advancedWriteValue.value = value;
+    // Workspace/diagnostic updates must not replace a draft used by Write/Freeze.
+    if (editorSelectionKey !== selectedKey) {
+      elements.writeValue.value = value;
+      elements.advancedWriteValue.value = value;
+      editorSelectionKey = selectedKey;
+    }
     const frozen = frozenCandidates.has(selectedKey);
     for (const button of [elements.freeze, elements.advancedFreeze]) {
       button.textContent = frozen ? "Unfreeze" : "Freeze";
@@ -506,9 +678,12 @@
     return {
       frameId: candidate.frameId,
       instanceId: String(candidate.instanceId),
+      kind: candidate.kind || (candidate.type === "number" ? "javascript" : "wasm"),
+      ...(candidate.path ? { path: candidate.path, displayPath: candidate.displayPath } : {}),
       type: candidate.type,
       multiplier: Number(candidate.multiplier) || 1,
       address: candidate.address,
+      label: candidate.label || watchedCandidates.get(candidateKey(candidate))?.candidate.label || "",
       hint: instance?.hint || "",
       url: instance?.url || "",
     };
@@ -529,12 +704,14 @@
   }
 
   function selectCandidate(candidate) {
+    editorSelectionKey = "";
     selectedCandidate = candidate;
     addWatch(candidate);
     updateSelectionUI();
   }
 
   function applySharedWorkspace(workspace) {
+    diagnostics = workspace?.diagnostics || {};
     const incoming = new Map();
     for (const watch of Array.isArray(workspace?.watches) ? workspace.watches : []) {
       const key = candidateKey(watch);
@@ -546,6 +723,7 @@
         value: undefined,
       };
       candidate.multiplier = Number(watch.multiplier) || 1;
+      candidate.label = watch.label || "";
       incoming.set(key, existing || { candidate, valueCells: new Set() });
     }
     watchedCandidates.clear();
@@ -576,16 +754,33 @@
     return value;
   }
 
+  function candidateTypePriority(candidate) {
+    const instance = instances.get(`${candidate.frameId}:${candidate.instanceId}`);
+    const belongsToSession = candidate.frameId === quickSession?.frameId &&
+      candidate.instanceId === String(quickSession?.instanceId);
+    const avmKind = instance?.looksLikeRuffle && instance.avmKind !== undefined
+      ? instance.avmKind
+      : belongsToSession ? quickSession?.results?.avmKind || "unknown" : "unknown";
+    const types = AVM_RECOMMENDED_TYPES[avmKind] || (instance && !instance.looksLikeRuffle && instance.kind !== "javascript" ? ["i32", "u32", "f32", "f64"] : []);
+    const index = types.indexOf(candidate.type);
+    return index < 0 ? types.length : index;
+  }
+
+  function compareRecommendedCandidates([, left], [, right]) {
+    return candidateTypePriority(left.candidate) - candidateTypePriority(right.candidate) ||
+      left.candidate.address - right.candidate.address;
+  }
+
   function renderSimpleCandidates() {
     elements.candidates.replaceChildren();
-    for (const [key, entry] of [...candidateRecords].slice(0, 20)) {
+    for (const [key, entry] of [...candidateRecords].sort(compareRecommendedCandidates).slice(0, 20)) {
       const row = document.createElement("button");
       row.type = "button";
       row.className = "quick-candidate";
       row.dataset.candidateKey = key;
       const address = document.createElement("span");
       address.className = "candidate-address";
-      address.textContent = formatAddress(entry.candidate.address);
+      address.textContent = candidateLocation(entry.candidate);
       row.append(address, makeValueCell(entry));
       row.addEventListener("click", () => selectCandidate(entry.candidate));
       elements.candidates.append(row);
@@ -597,18 +792,27 @@
     const filter = elements.advancedFilter.value.trim().toLowerCase();
     const records = [...candidateRecords.entries()].filter(([, entry]) => {
       const candidate = entry.candidate;
-      return !filter || `${formatAddress(candidate.address)} ${candidateValueText(candidate)} ${candidate.type}`.toLowerCase().includes(filter);
+      return !filter || `${candidateLocation(candidate)} ${candidateValueText(candidate)} ${candidate.type}`.toLowerCase().includes(filter);
     });
     const sort = elements.advancedSort.value;
-    records.sort(([, left], [, right]) => {
-      if (sort === "value") {
-        return Number(left.candidate.displayValue) - Number(right.candidate.displayValue);
+    records.sort((leftEntry, rightEntry) => {
+      if (sort === "recommended") {
+        return compareRecommendedCandidates(leftEntry, rightEntry);
+      }
+      const [, left] = leftEntry;
+      const [, right] = rightEntry;
+      if (sort === "value" || sort === "valueDesc") {
+        return (Number(left.candidate.displayValue) - Number(right.candidate.displayValue)) * (sort === "valueDesc" ? -1 : 1);
       }
       if (sort === "type") {
         return String(left.candidate.type).localeCompare(String(right.candidate.type)) || left.candidate.address - right.candidate.address;
       }
-      return left.candidate.address - right.candidate.address;
+      const order = left.candidate.type === "number" && right.candidate.type === "number"
+        ? candidateLocation(left.candidate).localeCompare(candidateLocation(right.candidate))
+        : left.candidate.address - right.candidate.address;
+      return order * (sort === "addressDesc" ? -1 : 1);
     });
+    ui("advanced-preview-count").textContent = `${records.length} visible · ${candidateRecords.size} previewed · ${candidateTotal.toLocaleString()} total matches`;
     for (const [key, entry] of records) {
       const row = document.createElement("button");
       row.type = "button";
@@ -616,7 +820,7 @@
       row.dataset.candidateKey = key;
       const address = document.createElement("span");
       address.className = "candidate-address";
-      address.textContent = formatAddress(entry.candidate.address);
+      address.textContent = candidateLocation(entry.candidate);
       const type = document.createElement("span");
       type.className = "candidate-type";
       type.textContent = entry.candidate.type;
@@ -636,6 +840,12 @@
   }
 
   function renderWatches() {
+    const focused = document.activeElement;
+    const draft = elements.advancedWatches.contains(focused) && focused.dataset.metadataField
+      ? { key: focused.dataset.metadataKey, field: focused.dataset.metadataField,
+        value: focused.value, start: focused.selectionStart, end: focused.selectionEnd } : null;
+    const expanded = new Set([...elements.advancedWatches.querySelectorAll("details[open]")].map((node) => node.dataset.watchKey));
+    let restoredInput = null;
     elements.advancedWatches.replaceChildren();
     for (const [key, entry] of watchedCandidates) {
       entry.valueCells.clear();
@@ -647,7 +857,7 @@
       select.dataset.candidateKey = key;
       const address = document.createElement("span");
       address.className = "candidate-address";
-      address.textContent = formatAddress(entry.candidate.address);
+      address.textContent = candidateLocation(entry.candidate);
       const type = document.createElement("span");
       type.className = "candidate-type";
       type.textContent = entry.candidate.type;
@@ -656,7 +866,7 @@
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "watch-remove";
-      remove.setAttribute("aria-label", `Remove watch at ${formatAddress(entry.candidate.address)}`);
+      remove.setAttribute("aria-label", `Remove watch at ${candidateLocation(entry.candidate)}`);
       remove.textContent = "×";
       remove.addEventListener("click", () => {
         if (frozenCandidates.has(key)) {
@@ -668,15 +878,48 @@
         sendWorkspace("removeWatch", { key });
       });
       row.append(select, remove);
+      const state = document.createElement("details"); state.className = "watch-diagnostic";
+      state.dataset.watchKey = key;
+      state.open = expanded.has(key);
+      const summary = document.createElement("summary"); summary.className = "watch-state";
+      const detail = document.createElement("p"); detail.className = "watch-detail";
+      state.append(summary, detail); row.append(state);
+      const metadata = document.createElement("div");
+      metadata.className = "watch-metadata";
+      for (const field of ["label"]) {
+        const input = document.createElement("input");
+        input.type = "text"; input.maxLength = 80;
+        input.dataset.metadataKey = key; input.dataset.metadataField = field;
+        input.value = entry.candidate[field] || "";
+        if (draft?.key === key && draft.field === field) {
+          input.value = draft.value;
+          restoredInput = input;
+        }
+        input.placeholder = "Watch label";
+        input.setAttribute("aria-label", `${input.placeholder} for ${candidateLocation(entry.candidate)}`);
+        input.addEventListener("change", () => {
+          entry.candidate[field] = input.value;
+          sendWorkspace("upsertWatch", { watch: entry.candidate });
+        });
+        metadata.append(input);
+      }
+      row.append(metadata);
       elements.advancedWatches.append(row);
+    }
+    if (restoredInput) {
+      restoredInput.focus({ preventScroll: true });
+      restoredInput.setSelectionRange(draft.start, draft.end);
     }
     elements.advancedWatchCount.textContent = String(watchedCandidates.size);
     elements.advancedWatchEmpty.hidden = watchedCandidates.size > 0;
-    elements.advancedWorkspace.hidden = !hasScanResults && watchedCandidates.size === 0;
+    elements.advancedWorkspace.hidden = false;
     updateSelectionUI();
   }
 
   function renderResults(payload, frameId = quickSession?.frameId) {
+    const resultIdentity = `${frameId}:${payload.instanceId}:${payload.requestId}`;
+    const retainedSelection = renderedResult === resultIdentity ? selectedCandidate : null;
+    renderedResult = resultIdentity;
     const preview = Array.isArray(payload?.preview)
       ? payload.preview.slice(0, MAX_ADVANCED_CANDIDATES)
       : [];
@@ -697,11 +940,15 @@
       };
       candidateRecords.set(candidateKey(record), { candidate: record, valueCells: new Set() });
     }
+    if (retainedSelection) {
+      const key = candidateKey(retainedSelection);
+      selectedCandidate = candidateRecords.get(key)?.candidate || watchedCandidates.get(key)?.candidate || null;
+    }
     renderCandidateLists();
     renderWatches();
 
     const searchedTypes = Array.isArray(payload?.searchedTypes) ? payload.searchedTypes : [];
-    elements.broaden.hidden = !(
+    elements.broaden.hidden = sessionInstance()?.kind === "javascript" || !(
       quickSession?.request?.refine === false &&
       ["exact", "range"].includes(quickSession?.request?.condition) &&
       searchedTypes.length > 0 &&
@@ -711,12 +958,15 @@
     if (payload?.allCandidates) {
       setQuickStatus("Baseline captured. Change the game value, choose a comparison, then run Next scan.", "ready");
     } else if (Number(payload?.total) === 0) {
-      setQuickStatus("No matching values found. You can broaden the search or reset.", "error");
+      setQuickStatus(payload.coverage?.numbers === 0 || payload.noAccessibleState ? "No accessible numeric state found. Choose another object or source and scan again." : "No matching values. Undo the last scan, widen the range, or reset.", "error");
     } else {
       setQuickStatus(
         `${candidateTotal.toLocaleString()} candidates remain; showing ${preview.length}.`,
         "ready",
       );
+    }
+    if (payload.coverage?.partial || payload.partial || payload.coverage?.complete === false) {
+      setQuickStatus(`${elements.quickStatus.textContent} Discovery was incomplete; choose a narrower object and scan again.`, "ready");
     }
     updateScanControls();
     refreshCandidateValues();
@@ -724,6 +974,7 @@
 
   function applyQuickSession(session) {
     quickSession = session || null;
+    updateScanWatchdog();
     if (session?.request) {
       elements.condition.value = session.request.condition || "exact";
       elements.value.value = session.request.rawValue ?? elements.value.value;
@@ -733,14 +984,15 @@
       elements.advancedMaxValue.value = session.request.rawMaxValue ?? elements.advancedMaxValue.value;
       elements.advancedType.value = session.request.type || "smart";
       elements.advancedAlignment.value = session.request.alignment || "aligned";
-      elements.advancedMultiplier.value = session.request.multiplier ?? 1;
     }
     if (session?.status === "scanning") {
       const progress = session.progress;
       setQuickStatus(
-        progress?.total
+        stalledRequest === session.requestId
+          ? "No recent progress. The scan may still be running; Cancel remains available."
+          : progress?.total
           ? `Scanning… ${Number(progress.inspected).toLocaleString()} / ${Number(progress.total).toLocaleString()}`
-          : "Scanning memory…",
+          : "Scanning values…",
       );
     } else if (session?.status === "error" || session?.status === "disconnected") {
       setQuickStatus(session.error || "The scan could not continue.", "error");
@@ -749,6 +1001,7 @@
     } else if (session?.results) {
       renderResults(session.results, session.frameId);
     } else if (!session) {
+      renderedResult = null;
       clearCandidateRefreshState();
       hasScanResults = false;
       candidateTotal = 0;
@@ -758,7 +1011,7 @@
       elements.advancedCandidates.replaceChildren();
       elements.advancedResultCount.textContent = "0";
       renderWatches();
-      setQuickStatus("Ready to scan this memory.");
+      setQuickStatus("Ready to scan this source.");
     }
     updateScanControls();
   }
@@ -769,14 +1022,28 @@
     }
     updateInstanceOptions();
     updateScanControls();
+    if (candidateRecords.size) renderCandidateLists();
   }
 
   function handlePagePayload(message, payload) {
-    if (payload?.kind === "instanceCaptured") {
+    if (payload?.kind === "javaScriptRoots" && rootsRequest?.requestId === payload.requestId && rootsRequest.frameId === message.frameId) {
+      const picker = ui("javascript-root");
+      picker.replaceChildren(new Option("Automatic discovery", ""));
+      for (const root of payload.roots || []) {
+        if (Array.isArray(root.path)) picker.append(new Option(root.displayPath || root.path.join("."), JSON.stringify(root.path)));
+      }
+      rootsRequest = null;
+      setQuickStatus(`${payload.roots?.length || 0} accessible objects available. Select one or use automatic discovery.`);
+      return;
+    }
+    if (payload?.kind === "instanceCaptured" || payload?.kind === "instanceUpdated") {
       addInstances(message.frameId, message.url, [payload.instance]);
       return;
     }
     if (payload?.kind === "instanceList") {
+      for (const [key, record] of instances) {
+        if (record.frameId === message.frameId) instances.delete(key);
+      }
       addInstances(message.frameId, message.url, payload.instances);
       return;
     }
@@ -788,7 +1055,9 @@
       candidateReadRequests.delete(payload.requestId);
       pendingCandidateInstances.delete(instanceKey);
       for (const value of Array.isArray(payload.values) ? payload.values : []) {
-        if (!value.error) {
+        if (value.error) {
+          for (const entry of [candidateRecords.get(value.id), watchedCandidates.get(value.id)]) if (entry) markUnavailable(entry, value.error);
+        } else {
           const candidateEntry = candidateRecords.get(value.id);
           const watchEntry = watchedCandidates.get(value.id);
           if (candidateEntry) {
@@ -799,11 +1068,13 @@
           }
         }
       }
+      updateDiagnosticUI();
     } else if (payload.kind === "scanProgress") {
       if (quickSession) {
         quickSession.status = "scanning";
         quickSession.progress = payload;
       }
+      updateScanWatchdog();
       setQuickStatus(
         `Scanning… ${Number(payload.inspected).toLocaleString()} / ${Number(payload.total).toLocaleString()}`,
       );
@@ -820,12 +1091,18 @@
       renderResults(payload, message.frameId);
       updateScanControls();
     } else if (payload.kind === "scanCancelled") {
+      if (quickSession?.requestId !== payload.requestId) {
+        setQuickStatus("Scan cancelled; the previous completed results are available.", "ready");
+        return;
+      }
       if (quickSession) {
         quickSession.status = "cancelled";
       }
       setQuickStatus("Scan cancelled.");
       updateScanControls();
     } else if (payload.kind === "writeComplete" || payload.kind === "writeVerified") {
+      const diagnostic = diagnostics[candidateKey({ frameId: message.frameId, instanceId: String(payload.instanceId), type: payload.type, address: payload.address })];
+      if (diagnostic && diagnostic.requestId !== payload.requestId) return;
       const entry = candidateRecords.get(candidateKey({
         frameId: message.frameId,
         instanceId: String(payload.instanceId),
@@ -845,12 +1122,7 @@
       if (watchedEntry && refreshedValue !== undefined && watchedEntry !== entry) {
         updateCandidateValue(watchedEntry, refreshedValue);
       }
-      setQuickStatus(
-        payload.kind === "writeVerified" && payload.persisted === false
-          ? "The game restored the old value. Freeze it to keep the replacement."
-          : `Wrote ${payload.displayValue ?? payload.value} successfully.`,
-        payload.persisted === false ? "error" : "ready",
-      );
+      updateDiagnosticUI();
     } else if (payload.kind === "freezeChanged") {
       const record = {
         frameId: message.frameId,
@@ -872,6 +1144,10 @@
         const instanceKey = candidateReadRequests.get(payload.requestId);
         candidateReadRequests.delete(payload.requestId);
         pendingCandidateInstances.delete(instanceKey);
+        for (const entry of [...candidateRecords.values(), ...watchedCandidates.values()]) {
+          if (`${entry.candidate.frameId}:${entry.candidate.instanceId}` === instanceKey) markUnavailable(entry, payload.message);
+        }
+        updateDiagnosticUI();
         return;
       }
       if (quickSession?.requestId === payload.requestId) {
@@ -890,6 +1166,9 @@
     } else if (message?.kind === "frameConnected") {
       send({ kind: "listInstances", requestId: nextRequestId("instances") }, message.frameId);
     } else if (message?.kind === "frameDisconnected") {
+      for (const entry of [...candidateRecords.values(), ...watchedCandidates.values()]) {
+        if (entry.candidate.frameId === message.frameId) markUnavailable(entry, "Game memory disconnected. Reconnect to read this address.");
+      }
       for (const [key, record] of instances) {
         if (record.frameId === message.frameId) {
           instances.delete(key);
@@ -899,6 +1178,7 @@
       pendingCandidateInstances.clear();
       updateInstanceOptions();
       updateScanControls();
+      updateSelectionUI();
     } else if (message?.kind === "pageMessage") {
       handlePagePayload(message, message.payload);
     }
@@ -924,26 +1204,41 @@
     }
   }
 
+  function connectPopup() {
+    if (closing) return;
+    clearTimeout(reconnectTimer);
+    try {
+      const nextPort = extensionApi.runtime.connect({ name: `hack-popup:${activeTab.id}` });
+      port = nextPort;
+      nextPort.onMessage.addListener(handlePortMessage);
+      nextPort.onDisconnect.addListener(() => {
+        if (port !== nextPort) return;
+        port = null;
+        clearTimeout(scanWatchdog);
+        for (const entry of [...candidateRecords.values(), ...watchedCandidates.values()]) markUnavailable(entry, "Connection lost.");
+        setQuickStatus("Reconnecting to this game…", "error");
+        updateScanControls();
+        reconnectTimer = setTimeout(connectPopup, 750);
+      });
+      send({ kind: "listInstances", requestId: nextRequestId("instances") });
+      extensionApi.runtime.sendMessage({ kind: "getQuickSession", tabId: activeTab.id }).then(applyQuickSession).catch(() => {});
+    } catch { reconnectTimer = setTimeout(connectPopup, 1000); }
+  }
+
   async function initialize() {
+    try {
+      const saved = await extensionApi.storage.local.get("pauseWhileScanning");
+      if (!pausePreferenceChanged) pauseWhileScanning = saved.pauseWhileScanning === true;
+      updatePlaybackControls();
+    } catch {
+      // Playback controls still work when preference storage is unavailable.
+    }
     const tab = hasBoundTab
       ? await extensionApi.tabs.get(boundTabId)
       : (await extensionApi.tabs.query({ active: true, currentWindow: true }))[0];
     activeTab = tab || null;
     elements.pin.disabled = !activeTab?.id;
-    if (activeTab?.id) {
-      port = extensionApi.runtime.connect({ name: `hack-popup:${activeTab.id}` });
-      port.onMessage.addListener(handlePortMessage);
-      port.onDisconnect.addListener(() => {
-        port = null;
-        setQuickStatus("The extension connection was closed.", "error");
-        updateScanControls();
-      });
-      const session = await extensionApi.runtime.sendMessage({
-        kind: "getQuickSession",
-        tabId: activeTab.id,
-      });
-      applyQuickSession(session);
-    }
+    if (activeTab?.id) connectPopup();
     await refreshSummary();
     pollTimer = setInterval(refreshSummary, 1000);
     candidateRefreshTimer = setInterval(refreshCandidateValues, CANDIDATE_REFRESH_MS);
@@ -951,6 +1246,27 @@
 
   elements.condition.addEventListener("change", updateConditionControls);
   elements.advancedCondition.addEventListener("change", updateConditionControls);
+  function sourceChanged() {
+    sourceChosen = true;
+    ui("quick-instance").value = elements.advancedInstance.value;
+    ui("javascript-root").replaceChildren(new Option("Automatic discovery", ""));
+    rootsRequest = null;
+    updateRuntimeGuidance();
+    updatePlaybackControls();
+  }
+  elements.advancedInstance.addEventListener("change", sourceChanged);
+  ui("quick-instance").addEventListener("change", () => {
+    elements.advancedInstance.value = ui("quick-instance").value;
+    sourceChanged();
+  });
+  ui("javascript-load-roots").addEventListener("click", () => {
+    const record = advancedSelectedInstance();
+    if (!record || record.kind !== "javascript") return;
+    const requestId = nextRequestId("roots");
+    rootsRequest = { requestId, frameId: record.frameId };
+    send({ kind: "listJavaScriptRoots", requestId, instanceId: record.id }, record.frameId);
+    setQuickStatus("Looking for accessible objects…");
+  });
   for (const button of elements.viewButtons) {
     button.addEventListener("click", () => setActiveView(button.dataset.view));
   }
@@ -959,6 +1275,32 @@
   }
   elements.advancedFilter.addEventListener("input", renderCandidateLists);
   elements.advancedSort.addEventListener("change", renderCandidateLists);
+
+  elements.pauseGame.addEventListener("click", () => {
+    const record = playbackInstance();
+    if (!record?.pauseSupported || quickSession?.status === "scanning") return;
+    send({
+      kind: "setGamePaused",
+      requestId: nextRequestId("pause"),
+      instanceId: record.id,
+      paused: !record.gamePaused,
+    }, record.frameId);
+  });
+  elements.pauseWhileScanning.addEventListener("change", async () => {
+    pausePreferenceChanged = true;
+    pauseWhileScanning = elements.pauseWhileScanning.checked;
+    try {
+      await extensionApi.storage.local.set({ pauseWhileScanning });
+    } catch {
+      setQuickStatus("Pause preference applies here, but could not be saved for next time.", "error");
+    }
+  });
+  extensionApi.storage?.onChanged?.addListener((changes, areaName) => {
+    if (areaName !== "local" || !changes.pauseWhileScanning) return;
+    pausePreferenceChanged = true;
+    pauseWhileScanning = changes.pauseWhileScanning.newValue === true;
+    updatePlaybackControls();
+  });
 
   elements.pin.addEventListener("click", async () => {
     try {
@@ -998,11 +1340,12 @@
     const record = refine ? sessionInstance() : advanced ? advancedSelectedInstance() : selectedInstance();
     if (!record) {
       setQuickStatus(
-        refine ? "The memory used by this scan is no longer available. Reset and scan again." : "No WebAssembly memory is available.",
+        refine ? "The memory used by this scan is no longer available. Reset and scan again." : "No inspection source is available.",
         "error",
       );
       return false;
     }
+    if (record.kind === "javascript") { multiplier = 1; alignment = "aligned"; }
     const needsValue = ["exact", "range", "increasedBy", "decreasedBy"].includes(condition);
     if (needsValue && rawValue.trim() === "") {
       setQuickStatus("Enter a value to scan for.", "error");
@@ -1030,6 +1373,8 @@
       alignment: refine ? previous?.alignment || "aligned" : alignment,
       type: refine ? previous?.type || "smart" : type,
       refine,
+      pauseWhileScanning: Boolean(record.pauseSupported && pauseWhileScanning),
+      ...(record.kind === "javascript" ? { rootPath: refine ? previous?.rootPath : advanced && ui("javascript-root").value ? JSON.parse(ui("javascript-root").value) : undefined } : {}),
     };
     quickSession = {
       requestId,
@@ -1046,7 +1391,7 @@
       instanceId: record.id,
       ...request,
     }, record.frameId)) {
-      setQuickStatus(condition === "unknown" ? "Capturing the initial snapshot…" : "Scanning memory…");
+      setQuickStatus(condition === "unknown" ? "Capturing the initial snapshot…" : "Scanning values…");
       updateScanControls();
       return true;
     }
@@ -1070,7 +1415,7 @@
       condition: elements.advancedCondition.value,
       rawValue: elements.advancedValue.value,
       rawMaxValue: elements.advancedMaxValue.value,
-      multiplier: elements.advancedMultiplier.value,
+      multiplier: 1,
       alignment: elements.advancedAlignment.value,
       type: elements.advancedType.value,
       advanced: true,
@@ -1091,6 +1436,7 @@
   elements.advancedCancel.addEventListener("click", cancelScan);
 
   function resetScan() {
+    renderedResult = null;
     const record = sessionInstance() || selectedInstance();
     if (!record) {
       return;
@@ -1113,7 +1459,7 @@
       return;
     }
     const requestId = nextRequestId("broaden");
-    const request = { ...previousRequest, type: "auto", refine: false };
+    const request = { ...previousRequest, type: "auto", refine: false, pauseWhileScanning: Boolean(record.pauseSupported && pauseWhileScanning) };
     quickSession = {
       requestId,
       frameId: record.frameId,
@@ -1139,13 +1485,16 @@
       setQuickStatus("Select a candidate and enter its new value.", "error");
       return;
     }
+    const rawValue = input.value;
+    elements.writeValue.value = rawValue;
+    elements.advancedWriteValue.value = rawValue;
     send({
       kind: "writeValue",
       requestId: nextRequestId("write"),
       instanceId: selectedCandidate.instanceId,
       type: selectedCandidate.type,
       address: selectedCandidate.address,
-      rawValue: input.value,
+      rawValue,
       multiplier: selectedCandidate.multiplier,
     }, selectedCandidate.frameId);
     setQuickStatus("Writing and checking the value…");
@@ -1195,27 +1544,6 @@
   elements.freeze.addEventListener("click", () => toggleFreeze(elements.writeValue));
   elements.advancedFreeze.addEventListener("click", () => toggleFreeze(elements.advancedWriteValue));
 
-  elements.openInspector.addEventListener("click", async () => {
-    if (!activeTab?.id) {
-      return;
-    }
-    const url = new URL(extensionApi.runtime.getURL("devtools/panel/panel.html"));
-    url.searchParams.set("standalone", "1");
-    url.searchParams.set("tabId", String(activeTab.id));
-    await extensionApi.tabs.create(newTabOptions(url.href));
-    if (!isSidebarPanel && !isPopoutWindow) {
-      window.close();
-    }
-  });
-
-  elements.refreshConnection.addEventListener("click", async () => {
-    if (!activeTab?.id) {
-      return;
-    }
-    elements.statusTitle.textContent = "Reloading this tab…";
-    await extensionApi.tabs.reload(activeTab.id);
-  });
-
   elements.howItWorks.addEventListener("click", async () => {
     await extensionApi.tabs.create(newTabOptions(
       "https://abduljawada.github.io/hack-engine/#capabilities",
@@ -1226,11 +1554,15 @@
   });
 
   window.addEventListener("unload", () => {
+    clearTimeout(scanWatchdog);
     clearInterval(pollTimer);
     clearInterval(candidateRefreshTimer);
+    closing = true;
+    clearTimeout(reconnectTimer);
     port?.disconnect?.();
   });
 
+  installAdvancedControls();
   updateConditionControls();
   updateInstanceOptions();
   setActiveWorkspace("candidates");

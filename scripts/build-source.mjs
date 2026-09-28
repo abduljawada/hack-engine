@@ -9,7 +9,10 @@ const distRoot = join(projectRoot, "dist");
 const version = JSON.parse(readFileSync(join(projectRoot, "manifest.json"), "utf8")).version;
 const archivePath = join(distRoot, `hack-engine-source-v${version}.zip`);
 const sourceEntries = [
+  ".github/workflows",
+  "STORE_AUTOMATION.md",
   "CHANGELOG.md",
+  "COMPATIBILITY.md",
   "LICENSE",
   "PRIVACY.md",
   "README.md",
@@ -20,12 +23,14 @@ const sourceEntries = [
   "assets",
   "background.js",
   "content-bridge.js",
-  "devtools",
   "docs",
   "manifest.json",
   "package-lock.json",
   "package.json",
   "page-agent.js",
+  "javascript-source.js",
+  "workspace-controls.js",
+  "workspace-controls.css",
   "popup",
   "scripts",
   "store",
@@ -34,6 +39,7 @@ const sourceEntries = [
 
 function filesBelow(path) {
   const entries = readdirSync(path, { withFileTypes: true })
+    .filter((entry) => !entry.name.startsWith("._") && entry.name !== ".DS_Store")
     .sort((left, right) => left.name.localeCompare(right.name));
   return entries.flatMap((entry) => {
     const child = join(path, entry.name);

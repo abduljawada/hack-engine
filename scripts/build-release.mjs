@@ -23,15 +23,17 @@ const runtimeEntries = [
   "assets",
   "background.js",
   "content-bridge.js",
-  "devtools",
   "page-agent.js",
+  "javascript-source.js",
+  "workspace-controls.js",
+  "workspace-controls.css",
   "popup",
 ];
 
 function copyRuntime(target) {
   mkdirSync(target, { recursive: true });
   for (const entry of runtimeEntries) {
-    cpSync(join(projectRoot, entry), join(target, entry), { recursive: true });
+    cpSync(join(projectRoot, entry), join(target, entry), { recursive: true, filter: (path) => !/(^|[\\/])(?:\._[^/\\]*|\.DS_Store)$/.test(path) });
   }
   for (const document of ["PRIVACY.md", "SECURITY.md", "USER_GUIDE.md", "LICENSE"]) {
     if (existsSync(join(projectRoot, document))) {

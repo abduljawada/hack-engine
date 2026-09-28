@@ -1,13 +1,18 @@
+import { browserPath } from "./browser-path.mjs";
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chromePath = browserPath("chrome");
 const baseUrl = process.argv[2] ?? "http://127.0.0.1:8765";
 const allHarnesses = [
+  ["JavaScript workflow", "/test/javascript-harness.html", 30000],
+  ["Wasm capture", "/test/wasm-capture-harness.html", 30000],
+  ["recovery", "/test/recovery-harness.html", 90_000],
   ["exact scan", "/test/harness.html", 30_000],
   ["scan cancellation", "/test/scan-cancellation-harness.html", 90_000],
+  ["scan scheduling", "/test/scan-scheduling-harness.html", 90_000],
   ["freeze", "/test/freeze-harness.html", 30_000],
   ["watch diagnostics", "/test/watch-diagnostics-harness.html", 30_000],
   ["representation discovery", "/test/representation-discovery-harness.html", 90_000],
@@ -16,7 +21,7 @@ const allHarnesses = [
   ["memory growth", "/test/memory-growth-harness.html", 30_000],
   ["advanced scan", "/test/advanced-scan-harness.html", 90_000],
   ["bridge payload", "/test/bridge-payload-harness.html", 30_000],
-  ["panel watchdog", "/test/panel-watchdog-harness.html", 30_000],
+  ["advanced migration", "/test/advanced-migration-harness.html?sidebar=1&tabId=77", 30_000],
   ["toolbar popup", "/test/popup-harness.html", 30_000],
   ["sidebar toolbar popup", "/test/popup-harness.html?sidebar=1&tabId=77", 30_000],
   ["pop-out toolbar popup", "/test/popup-harness.html?popout=1&tabId=77", 30_000],
@@ -51,6 +56,7 @@ if (!requestedHarness) {
 const profileDirectory = mkdtempSync(join(tmpdir(), "ruffle-memory-harness-"));
 const chrome = spawn(chromePath, [
   "--headless=new",
+  "--mute-audio",
   "--disable-background-networking",
   "--disable-component-update",
   "--disable-default-apps",
@@ -186,5 +192,5 @@ try {
       resolve();
     });
   });
-  rmSync(profileDirectory, { recursive: true, force: true });
+  rmSync(profileDirectory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }

@@ -1,0 +1,56 @@
+name: Live-site compatibility (advisory)
+
+# Kept separate from the pinned core release gate. This workflow still fails
+# when website access or gameplay evidence is blocked; no silent green fallback.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compatibility-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compatibility:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      FIREFOX_VERSION: '155.0.1'
+      CHROME_VERSION: '152.0.7977.82'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+          cache: npm
+      - name: Install pinned browsers
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/hack-browsers"
+          curl --fail --location --retry 2 "https://archive.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/linux-x86_64/en-US/firefox-${FIREFOX_VERSION}.tar.xz" -o "$RUNNER_TEMP/firefox.tar.xz"
+          tar -xJf "$RUNNER_TEMP/firefox.tar.xz" -C "$RUNNER_TEMP/hack-browsers"
+          curl --fail --location --retry 2 "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chrome-linux64.zip" -o "$RUNNER_TEMP/chrome.zip"
+          unzip -q "$RUNNER_TEMP/chrome.zip" -d "$RUNNER_TEMP/hack-browsers"
+          echo "FIREFOX_PATH=$RUNNER_TEMP/hack-browsers/firefox/firefox" >> "$GITHUB_ENV"
+          echo "CHROME_PATH=$RUNNER_TEMP/hack-browsers/chrome-linux64/chrome" >> "$GITHUB_ENV"
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Eight live-site compatibility configurations
+        run: npm run test:games -- --mode website --no-build --no-sandbox --strict
+      - name: Explain compatibility scope
+        if: always()
+        run: |
+          echo '## Live-site compatibility only' >> "$GITHUB_STEP_SUMMARY"
+          echo 'This run does not qualify the pinned core release suite. Blocked websites, unreliable readings, or failed gameplay remain failures here; see the retained report for each browser/game result.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain live-site results even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-site-compatibility
+          path: artifacts/game-tests/
+          if-no-files-found: warn
+          retention-days: 14

@@ -2,3 +2,13 @@ dist/
 node_modules/
 .DS_Store
 *.log
+
+# AppleDouble metadata created by file transfers.
+._*
+
+# Downloaded games and generated test evidence never ship in extension packages.
+.cache/
+artifacts/game-tests/
+
+# Store automation metadata and submission results.
+artifacts/store-release/

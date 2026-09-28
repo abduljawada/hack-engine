@@ -32,9 +32,12 @@ assert(!chrome.sidebar_action, "Chrome package must omit Firefox sidebar_action.
 
 for (const browser of ["firefox", "chrome"]) {
   const root = join(distRoot, browser);
+  const manifest = JSON.parse(readFileSync(join(root, "manifest.json"), "utf8"));
+  assert(!manifest.devtools_page, `${browser} package must not register the retired inspector.`);
   for (const path of walk(root)) {
     const relative = path.slice(root.length + 1);
-    assert(!/(^|\/)(test|docs|scripts|dist|node_modules|\.git)(\/|$)/.test(relative), `${browser} package contains development path: ${relative}`);
+    assert(!/(^|\/)(?:\._[^/]*|\.DS_Store)$/.test(relative), `${browser} package contains transfer metadata: ${relative}`);
+    assert(!/(^|\/)(test|practice|docs|scripts|dist|devtools|node_modules|\.git)(\/|$)/.test(relative), `${browser} package contains development path: ${relative}`);
     if (path.endsWith(".js")) {
       const source = readFileSync(path, "utf8");
       assert(!/\beval\s*\(/.test(source), `${browser} package contains eval in ${relative}`);
@@ -46,6 +49,7 @@ for (const browser of ["firefox", "chrome"]) {
   const listing = execFileSync("/usr/bin/unzip", ["-Z1", archive], { encoding: "utf8" });
   assert(listing.split("\n").includes("manifest.json"), `${browser} archive lacks a root manifest.json.`);
   assert(listing.split("\n").includes("LICENSE"), `${browser} archive lacks the MIT license.`);
+  assert(!/(^|\/)\._[^\n]*/m.test(listing), `${browser} archive contains AppleDouble metadata.`);
   assert(!listing.includes(".DS_Store"), `${browser} archive contains .DS_Store.`);
 }
 

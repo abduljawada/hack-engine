@@ -19,10 +19,12 @@
       });
       port.onDisconnect.addListener(() => {
         port = null;
+        window.postMessage({ channel: CHANNEL, direction: "to-page", payload: { kind: "bridgeDisconnected" } }, "*");
         clearTimeout(reconnectTimer);
         reconnectTimer = setTimeout(connect, 500);
       });
       port.postMessage({ kind: "bridgeReady", url: location.href });
+      window.postMessage({ channel: CHANNEL, direction: "to-page", payload: { kind: "getSessionState" } }, "*");
     } catch {
       clearTimeout(reconnectTimer);
       reconnectTimer = setTimeout(connect, 500);

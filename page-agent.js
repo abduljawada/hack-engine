@@ -3,6 +3,7 @@
 
   const CHANNEL = "ruffle-memory-inspector:v1";
   const RESULT_PREVIEW_LIMIT = 200;
+  const MAX_SCAN_BYTES = 256 * 1024 * 1024;
   const SCAN_CHUNK_SIZE = 100_000;
   const SPARSE_CANDIDATE_DENSITY_DIVISOR = 32;
   const SNAPSHOT_CHUNK_SIZE = 1024 * 1024;
@@ -11,22 +12,61 @@
   const SNAPSHOT_STORE_NAME = "chunks";
   const AUTO_TYPES = ["i8", "u8", "i16", "u16", "i32", "u32", "f32", "f64"];
   const RUFFLE_PLAYER_SELECTOR = "ruffle-player, ruffle-embed, ruffle-object";
+  const AVM_RETRY_DELAY_MS = 1000;
+  const AVM_MAX_RETRIES = 15;
+  let activeRuffleMetadataContext = null;
+  let avmDetectionPaused = false;
 
   if (window.__ruffleMemoryInspectorV1) {
     return;
   }
 
+  const documentId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const undoScans = new Map();
+  const activeScans = new Map();
+  const ownedSnapshots = new Set();
+  let currentSession = null;
+  let lastWrite = null;
+  let releaseSnapshotLease = null;
+  let snapshotLeaseReady = null;
+  function ensureSnapshotLease() {
+    if (!snapshotLeaseReady) {
+      snapshotLeaseReady = new Promise((resolve) => {
+        if (!navigator.locks) return resolve();
+        navigator.locks.request(`hack-engine-snapshot:${documentId}`, async () => {
+          resolve();
+          await new Promise((release) => { releaseSnapshotLease = release; });
+        }).catch(resolve);
+      });
+    }
+    return snapshotLeaseReady;
+  }
   const instances = new Map();
   const scans = new Map();
   const freezes = new Map();
   const cancelledScans = new Set();
+  const pausedPlayers = new Map();
   const activeWriteDiagnostics = new Map();
   let nextInstanceId = 1;
   let nextSnapshotId = 1;
   let freezeFrameHandle = null;
   let snapshotDatabasePromise = null;
+  let scanYieldChannel = null;
+  const scanYieldQueue = [];
+
+  const javaScript = globalThis.__hackEngineJavaScript?.({ documentId, yieldToPage });
+  if (javaScript) {
+    const source = javaScript.describe();
+    instances.set(source.id, { ...source, backend: javaScript });
+  }
+  const isJavaScript = (record) => record?.kind === "javascript";
+  const viewFor = (record) => isJavaScript(record)
+    ? { byteLength: Number.MAX_SAFE_INTEGER, read: (address) => record.backend.read(address),
+        write: (address, value) => record.backend.write(address, value) }
+    : new DataView(record.memory.buffer);
 
   const typeSpecs = {
+    number: { size: 0, read: (view, address) => view.read(address), write: (view, address, value) => view.write(address, value) },
     i8: {
       size: 1,
       integer: true,
@@ -88,42 +128,278 @@
   };
 
   function send(payload) {
+    const source = instances.get(String(payload.instanceId));
+    if (source) {
+      payload.sourceKind = source.kind || "wasm";
+      if (payload.address !== undefined) {
+        payload.targetKind = isJavaScript(source) ? "javascript" : "wasm";
+        if (isJavaScript(source)) {
+          try {
+            const { path, displayPath, writable } = source.backend.metadata(payload.address);
+            Object.assign(payload, { path, displayPath, writable });
+          } catch { /* Lifecycle/error messages must still reach controls for stale properties. */ }
+        }
+      }
+    }
+    if (currentSession && payload.requestId === currentSession.requestId) {
+      if (payload.kind === "scanProgress") currentSession.progress = payload;
+      if (payload.kind === "scanResults") {
+        payload.canUndo = undoScans.has(scanKey(payload.instanceId, payload.type));
+        currentSession = { ...currentSession, status: "complete", canRefine: true, results: payload, progress: null };
+      }
+    }
     window.postMessage({ channel: CHANNEL, direction: "from-page", payload }, "*");
   }
 
   function describeInstance(record) {
-    const avmKind = record.looksLikeRuffle ? detectRuffleAvmKind() : "unknown";
+    if (isJavaScript(record)) return { ...record.backend.describe(), url: location.href };
+    const avmKind = record.avmKind || "unknown";
     return {
       id: record.id,
+      kind: "wasm", displayName: record.looksLikeRuffle ? "Ruffle memory" : "WebAssembly memory",
+      capabilities: ["scan", "watch", "write", "freeze", "undo", "restore"],
       url: location.href,
       hint: record.hint,
       memoryBytes: record.memory.buffer.byteLength,
       exportNames: record.exportNames,
       looksLikeRuffle: record.looksLikeRuffle,
       avmKind,
+      ...pauseState(record),
     };
+  }
+
+  // Use only players proven to belong to this memory. Never suspend page timers:
+  // those also drive scan progress, cancellation, and extension messaging.
+  function pauseTargets(record) {
+    const targets = [];
+    for (const player of record?.avmPlayers || []) {
+      if (!player.isConnected) continue;
+      try {
+        const api = typeof player.ruffle === "function" ? player.ruffle(1) : player;
+        if (typeof api?.suspend === "function" && typeof api.resume === "function" && typeof api.suspended === "boolean") {
+          targets.push({ player, paused: () => api.suspended, pause: () => api.suspend(), resume: () => api.resume() });
+        } else if (typeof api?.pause === "function" && typeof api.play === "function" && typeof api.isPlaying === "boolean") {
+          targets.push({ player, paused: () => !api.isPlaying, pause: () => api.pause(), resume: () => api.play() });
+        } else return [];
+      } catch { return []; }
+    }
+    return targets;
+  }
+
+  function pauseState(record) {
+    const targets = pauseTargets(record);
+    return {
+      pauseSupported: targets.length > 0,
+      gamePaused: targets.length > 0 && targets.every((target) => target.paused()),
+      manuallyPaused: targets.some(({ player }) => pausedPlayers.get(player)?.owners.has(`manual:${record.id}`)),
+    };
+  }
+
+  // Ruffle's public suspend() displays a Play overlay. Its click handler can
+  // resume playback even while our manual/scan pause lease remains active.
+  // Stop input before it reaches that player, including its shadow DOM; keep
+  // unrelated page controls and other players fully interactive.
+  // Release events still reach the runtime so keys/buttons held before Pause
+  // cannot remain stuck after Resume; any resulting activation click is blocked.
+  const pauseInputEvents = [
+    "pointerdown", "mousedown", "click", "dblclick",
+    "touchstart", "keydown", "keypress",
+  ];
+  function guardPausedPlayerInput(event) {
+    const path = typeof event.composedPath === "function" ? event.composedPath() : [event.target];
+    for (const [player, entry] of pausedPlayers) {
+      if (!player.isConnected || !entry.owners.size || !path.includes(player)) continue;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+  }
+  for (const type of pauseInputEvents) {
+    window.addEventListener(type, guardPausedPlayerInput, { capture: true, passive: false });
+  }
+
+  function notifyPauseState() {
+    for (const record of instances.values()) {
+      if (record.avmPlayers?.size) send({ kind: "instanceUpdated", instance: describeInstance(record) });
+    }
+  }
+
+  function releasePause(owner) {
+    let failure;
+    for (const [player, entry] of pausedPlayers) {
+      if (!entry.owners.delete(owner) || entry.owners.size) continue;
+      try {
+        if (entry.resumeAfter && player.isConnected) entry.target.resume();
+        pausedPlayers.delete(player);
+      } catch (error) {
+        // Retain ownership so a later Resume or disconnect can retry recovery.
+        entry.owners.add(owner);
+        failure = error;
+      }
+    }
+    notifyPauseState();
+    if (failure) throw new Error("Unable to resume the game. Use the game's play control or retry Resume game.");
+  }
+
+  function acquirePause(record, owner) {
+    const targets = pauseTargets(record);
+    if (!targets.length) throw new Error("Pause is available for supported Ruffle games only.");
+    try {
+      for (const target of targets) {
+        let entry = pausedPlayers.get(target.player);
+        if (!entry) {
+          entry = { target, owners: new Set(), resumeAfter: !target.paused() };
+          pausedPlayers.set(target.player, entry);
+        }
+        entry.owners.add(owner);
+        target.pause();
+        if (!target.paused()) throw new Error("The game did not pause.");
+      }
+    } catch (error) {
+      releasePause(owner);
+      throw error;
+    }
+    notifyPauseState();
+  }
+
+  function setGamePaused({ instanceId, paused }) {
+    const record = instances.get(String(instanceId));
+    if (!record) throw new Error("This game is no longer available.");
+    if (activeScans.size) throw new Error("Wait for the scan to finish before changing game pause.");
+    const owner = `manual:${record.id}`;
+    if (paused) acquirePause(record, owner);
+    else {
+      releasePause(owner);
+      // A failed automatic resume retains its lease for an explicit retry.
+      const orphaned = new Set(pauseTargets(record).flatMap(({ player }) =>
+        [...(pausedPlayers.get(player)?.owners || [])].filter((token) => token.startsWith("scan:"))));
+      for (const token of orphaned) releasePause(token);
+      // Explicit Resume also resumes a player paused from its own controls.
+      for (const target of pauseTargets(record)) {
+        if (!pausedPlayers.get(target.player)?.owners.size && target.paused()) target.resume();
+      }
+      notifyPauseState();
+    }
+  }
+
+  function releaseAllPauses() {
+    for (const requestId of activeScans.values()) cancelledScans.add(requestId);
+    const owners = new Set([...pausedPlayers.values()].flatMap((entry) => [...entry.owners]));
+    for (const owner of owners) {
+      try { releasePause(owner); }
+      catch (error) { send({ kind: "error", message: error.message }); }
+    }
   }
 
   function detectRuffle(hint, exportNames) {
     const text = `${hint || ""} ${exportNames.join(" ")}`;
-    return /ruffle/i.test(text) || Boolean(document.querySelector(RUFFLE_PLAYER_SELECTOR));
+    return /ruffle/i.test(text);
   }
 
-  function detectRuffleAvmKind() {
+  function detectRuffleAvmKind(record) {
     const kinds = new Set();
-    for (const player of document.querySelectorAll(RUFFLE_PLAYER_SELECTOR)) {
+    // A Wasm runtime can serve multiple players. Only consult players observed
+    // receiving metadata from this memory, never unrelated players in the frame.
+    for (const player of record.avmPlayers) {
       try {
+        if (!player.isConnected) {
+          // Ruffle destroys its player on disconnection. A replacement may
+          // reuse this memory and must not inherit the removed player's type.
+          record.avmPlayers.delete(player);
+          continue;
+        }
         const api = typeof player.ruffle === "function" ? player.ruffle(1) : player;
         const metadata = api?.metadata ?? player.metadata;
         if (typeof metadata?.isActionScript3 === "boolean") {
           kinds.add(metadata.isActionScript3 ? "avm2" : "avm1");
-        }
+        } else return "unknown";
       } catch {
-        // Older or partially initialized Ruffle players may not expose metadata.
+        return "unknown";
       }
     }
     return kinds.size === 1 ? [...kinds][0] : "unknown";
   }
+
+  function refreshAvm(record, restart = false) {
+    if (!record.looksLikeRuffle || avmDetectionPaused) return record.avmKind || "unknown";
+    if (restart) record.avmRetries = 0;
+    const previous = record.avmKind;
+    record.avmKind = detectRuffleAvmKind(record);
+    clearTimeout(record.avmTimer);
+    record.avmTimer = null;
+    if (record.avmKind === "unknown" && record.avmRetries < AVM_MAX_RETRIES) {
+      record.avmTimer = setTimeout(() => {
+        record.avmRetries++;
+        refreshAvm(record);
+      }, AVM_RETRY_DELAY_MS);
+    }
+    if (previous !== record.avmKind) {
+      send({ kind: "instanceUpdated", instance: describeInstance(record) });
+    }
+    return record.avmKind;
+  }
+
+  // Ruffle's setMetadata import synchronously dispatches loadedmetadata on its
+  // player element. Watching that call links both old heap-index glue and newer
+  // externref glue without relying on private player fields or DOM ordering.
+  function instrumentRuffleImports(imports) {
+    const context = { players: new Set(), records: new Set() };
+    if (!imports || typeof imports !== "object") return { imports, context };
+    try {
+      const descriptors = Object.getOwnPropertyDescriptors(imports);
+      // Leave accessor-based imports untouched: cloning can change their `this`.
+      if (Object.values(descriptors).some((entry) => !("value" in entry))) return { imports, context };
+      let changed = false;
+      for (const descriptor of Object.values(descriptors)) {
+        const namespace = descriptor.value;
+        if (!namespace || typeof namespace !== "object") continue;
+        const members = Object.getOwnPropertyDescriptors(namespace);
+        if (Object.values(members).some((entry) => !("value" in entry))) continue;
+        let wrapped = false;
+        for (const [name, member] of Object.entries(members)) {
+          if (!/^__wbg_setMetadata(?:_|$)/i.test(name) || typeof member.value !== "function") continue;
+          const original = member.value;
+          member.value = function (...args) {
+            const previous = activeRuffleMetadataContext;
+            activeRuffleMetadataContext = context;
+            try { return Reflect.apply(original, this, args); }
+            finally { activeRuffleMetadataContext = previous; }
+          };
+          wrapped = true;
+        }
+        if (wrapped) {
+          descriptor.value = Object.create(Object.getPrototypeOf(namespace), members);
+          changed = true;
+        }
+      }
+      return { imports: changed ? Object.create(Object.getPrototypeOf(imports), descriptors) : imports, context };
+    } catch {
+      // Reflection on a proxy or unsupported import shape must not break Wasm.
+      return { imports, context };
+    }
+  }
+
+  document.addEventListener("loadedmetadata", (event) => {
+    const player = event.target;
+    if (!player?.matches?.(RUFFLE_PLAYER_SELECTOR) &&
+        !/^ruffle-(?:player|embed|object)-\d+$/.test(player?.localName || "")) return;
+    const context = activeRuffleMetadataContext;
+    if (context) {
+      context.players.add(player);
+      for (const record of context.records) {
+        record.avmPlayers.add(player);
+        if (!record.looksLikeRuffle) {
+          record.looksLikeRuffle = true;
+          send({ kind: "instanceUpdated", instance: describeInstance(record) });
+        }
+      }
+    }
+    // A subsequent movie load gets a fresh retry budget even when the same Wasm
+    // memory is reused. Unrelated media events do not restart detection.
+    for (const record of instances.values()) {
+      if (record.avmPlayers?.has(player)) refreshAvm(record, true);
+    }
+  }, true);
 
   function collectImportedMemories(imports) {
     const memories = [];
@@ -131,11 +407,13 @@
       return memories;
     }
 
-    for (const namespace of Object.values(imports)) {
+    for (const namespaceDescriptor of Object.values(Object.getOwnPropertyDescriptors(imports))) {
+      const namespace = namespaceDescriptor.value;
       if (!namespace || typeof namespace !== "object") {
         continue;
       }
-      for (const value of Object.values(namespace)) {
+      for (const memoryDescriptor of Object.values(Object.getOwnPropertyDescriptors(namespace))) {
+        const value = memoryDescriptor.value;
         if (value instanceof WebAssembly.Memory) {
           memories.push(value);
         }
@@ -144,7 +422,7 @@
     return memories;
   }
 
-  function captureInstance(instance, imports, hint = "") {
+  function captureInstance(instance, imports, hint = "", context) {
     if (!(instance instanceof WebAssembly.Instance)) {
       return;
     }
@@ -158,22 +436,33 @@
 
     for (const memory of memories) {
       const duplicate = [...instances.values()].find(
-        (record) => record.instance === instance && record.memory === memory,
+        (record) => record.memory === memory,
       );
       if (duplicate) {
+        context?.records.add(duplicate);
+        for (const player of context?.players || []) duplicate.avmPlayers.add(player);
+        if (context?.players.size) duplicate.looksLikeRuffle = true;
+        refreshAvm(duplicate);
         continue;
       }
 
-      const id = String(nextInstanceId++);
+      const id = `${documentId}.${nextInstanceId++}`;
       const record = {
         id,
+        kind: "wasm",
         instance,
         memory,
         hint,
         exportNames: exportNames.slice(0, 40),
-        looksLikeRuffle: detectRuffle(hint, exportNames),
+        looksLikeRuffle: detectRuffle(hint, exportNames) || !!context?.players.size,
+        avmPlayers: new Set(context?.players),
+        avmKind: "unknown",
+        avmRetries: 0,
+        avmTimer: null,
       };
       instances.set(id, record);
+      context?.records.add(record);
+      refreshAvm(record);
       send({ kind: "instanceCaptured", instance: describeInstance(record) });
     }
   }
@@ -195,10 +484,20 @@
     return "";
   }
 
+  const NativeInstance = WebAssembly.Instance;
+  WebAssembly.Instance = new Proxy(NativeInstance, {
+    construct(target, args, newTarget) {
+      const prepared = instrumentRuffleImports(args[1]);
+      const instance = Reflect.construct(target, [args[0], prepared.imports], newTarget);
+      try { captureInstance(instance, prepared.imports, "", prepared.context); } catch { /* Inspection must not break a game. */ }
+      return instance;
+    },
+  });
   const originalInstantiate = WebAssembly.instantiate.bind(WebAssembly);
   WebAssembly.instantiate = async function instrumentedInstantiate(source, imports) {
-    const result = await originalInstantiate(source, imports);
-    captureInstance(extractInstance(result), imports, responseHint(source));
+    const prepared = instrumentRuffleImports(imports);
+    const result = await originalInstantiate(source, prepared.imports);
+    try { captureInstance(extractInstance(result), prepared.imports, responseHint(source), prepared.context); } catch { /* Preserve successful instantiation. */ }
     return result;
   };
 
@@ -208,14 +507,15 @@
       source,
       imports,
     ) {
-      const result = await originalInstantiateStreaming(source, imports);
+      const prepared = instrumentRuffleImports(imports);
+      const result = await originalInstantiateStreaming(source, prepared.imports);
       let resolvedSource = source;
       try {
         resolvedSource = await Promise.resolve(source);
       } catch {
         // The successful instantiation is more important than a missing URL hint.
       }
-      captureInstance(extractInstance(result), imports, responseHint(resolvedSource));
+      try { captureInstance(extractInstance(result), prepared.imports, responseHint(resolvedSource), prepared.context); } catch { /* Preserve successful instantiation. */ }
       return result;
     };
   }
@@ -232,7 +532,9 @@
     if (spec?.integer && (value < spec.minimum || value > spec.maximum)) {
       throw new Error(`${type} value is outside its numeric range.`);
     }
-    return type === "f32" ? Math.fround(value) : value;
+    const normalized = type === "f32" ? Math.fround(value) : value;
+    if (!Number.isFinite(normalized)) throw new Error(`${type} value is outside its finite numeric range.`);
+    return normalized;
   }
 
   function parseMultiplier(rawMultiplier) {
@@ -256,6 +558,12 @@
   }
 
   async function clearInstanceScans(instanceId) {
+    for (const [key, scan] of undoScans) {
+      if (key.startsWith(`${instanceId}:`)) {
+        undoScans.delete(key);
+        await deleteSnapshot(scan.snapshot).catch(() => {});
+      }
+    }
     const prefix = `${instanceId}:`;
     const snapshots = new Set();
     for (const key of scans.keys()) {
@@ -283,7 +591,16 @@
   }
 
   async function yieldToPage(requestId) {
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // A posted task lets progress and cancellation messages run without the
+    // minimum delay imposed on repeatedly nested zero-delay timers.
+    if (!scanYieldChannel) {
+      scanYieldChannel = new MessageChannel();
+      scanYieldChannel.port1.onmessage = () => scanYieldQueue.shift()?.();
+    }
+    await new Promise((resolve) => {
+      scanYieldQueue.push(resolve);
+      scanYieldChannel.port2.postMessage(null);
+    });
     throwIfScanCancelled(requestId);
   }
 
@@ -420,7 +737,8 @@
     return new Uint8Array(await new Response(stream).arrayBuffer());
   }
 
-  function openSnapshotDatabase() {
+  async function openSnapshotDatabase() {
+    await ensureSnapshotLease();
     if (snapshotDatabasePromise) {
       return snapshotDatabasePromise;
     }
@@ -439,13 +757,30 @@
       };
       request.onsuccess = () => {
         const database = request.result;
-        const transaction = database.transaction(SNAPSHOT_STORE_NAME, "readwrite");
-        transaction.objectStore(SNAPSHOT_STORE_NAME).clear();
-        transaction.oncomplete = () => resolve(database);
-        transaction.onerror = () => reject(
-          transaction.error || new Error("Unable to initialize snapshot storage."),
-        );
-        transaction.onabort = transaction.onerror;
+        // Never clear another document's live snapshots. Reclaim only owners
+        // whose Web Lock is available; unavailable locks identify live pages.
+        resolve(database);
+        if (navigator.locks) {
+          const transaction = database.transaction(SNAPSHOT_STORE_NAME, "readonly");
+          const keys = transaction.objectStore(SNAPSHOT_STORE_NAME).getAllKeys();
+          keys.onsuccess = () => {
+            const owners = new Set(keys.result.map(([id]) => String(id).split(":")[0]));
+            for (const owner of owners) {
+              if (owner === documentId) continue;
+              navigator.locks.request(`hack-engine-snapshot:${owner}`, { ifAvailable: true }, (lock) => {
+                if (!lock) return;
+                return new Promise((done) => {
+                  const cleanup = database.transaction(SNAPSHOT_STORE_NAME, "readwrite");
+                  const store = cleanup.objectStore(SNAPSHOT_STORE_NAME);
+                  for (const key of keys.result) {
+                    if (String(key[0]).split(":")[0] === owner) store.delete(key);
+                  }
+                  cleanup.oncomplete = cleanup.onerror = cleanup.onabort = done;
+                });
+              }).catch(() => {});
+            }
+          };
+        }
       };
       request.onerror = () => reject(request.error || new Error("Unable to open snapshot storage."));
       request.onblocked = () => reject(new Error("Snapshot storage is blocked by another page."));
@@ -517,18 +852,19 @@
       [snapshot.id, Number.MAX_SAFE_INTEGER],
     );
     await runSnapshotTransaction("readwrite", (store) => store.delete(range));
+    ownedSnapshots.delete(snapshot);
   }
 
   function createSnapshot(byteLength) {
-    return {
-      id: typeof globalThis.crypto?.randomUUID === "function"
-        ? globalThis.crypto.randomUUID()
-        : `${Date.now().toString(36)}-${nextSnapshotId++}-${Math.random().toString(36).slice(2)}`,
+    const snapshot = {
+      id: `${documentId}:${nextSnapshotId++}`,
       byteLength,
       chunkSize: SNAPSHOT_CHUNK_SIZE,
       chunks: [],
       compressedBytes: 0,
     };
+    ownedSnapshots.add(snapshot);
+    return snapshot;
   }
 
   async function captureSnapshot(record, requestId, byteLength, spec) {
@@ -609,7 +945,7 @@
     stride,
   }) {
     const matches = scanValueMatcher(type, condition, rawValue, rawMaxValue, multiplier);
-    let view = new DataView(record.memory.buffer);
+    let view = viewFor(record);
     const slotCount = slotCountFor(view.byteLength, spec, stride);
     const candidates = createCandidateSet(slotCount, type, stride);
 
@@ -623,7 +959,7 @@
       if (inspected % SCAN_CHUNK_SIZE === 0) {
         send({ kind: "scanProgress", requestId, inspected, total: slotCount });
         await yieldToPage(requestId);
-        view = new DataView(record.memory.buffer);
+        view = viewFor(record);
       }
     }
 
@@ -683,7 +1019,6 @@
     snapshot.chunks = new Array(chunkCount).fill(null);
     try {
       for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
-        await yieldToPage(requestId);
         const chunkOffset = chunkIndex * snapshot.chunkSize;
         const uniqueLength = Math.min(snapshot.chunkSize, byteLength - chunkOffset);
         const startSlot = Math.ceil(chunkOffset / candidates.stride);
@@ -694,6 +1029,7 @@
         if (!candidateRangeHasMatches(candidates, startSlot, endSlot)) {
           continue;
         }
+        await yieldToPage(requestId);
         const readLength = Math.min(
           uniqueLength + spec.size - 1,
           byteLength - chunkOffset,
@@ -727,7 +1063,6 @@
     snapshot.chunks = new Array(chunkCount).fill(null);
     try {
       for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
-        await yieldToPage(requestId);
         const chunkOffset = chunkIndex * snapshot.chunkSize;
         const uniqueLength = Math.min(snapshot.chunkSize, byteLength - chunkOffset);
         const hasCandidates = [...sets.values()].some((candidates) => {
@@ -741,6 +1076,7 @@
         if (!hasCandidates) {
           continue;
         }
+        await yieldToPage(requestId);
         const readLength = Math.min(
           uniqueLength + typeSpecs.f64.size - 1,
           byteLength - chunkOffset,
@@ -790,7 +1126,7 @@
       return finalizeCandidateSet(candidates);
     }
     const matches = scanComparisonMatcher(type, condition, rawValue, multiplier);
-    let view = new DataView(record.memory.buffer);
+    let view = viewFor(record);
     if (sparsePrevious) {
       const sparseLimit = sparseLowerBound(previous.sparseSlots, slotCount);
       for (let sparseIndex = 0; sparseIndex < sparseLimit; sparseIndex += 1) {
@@ -803,7 +1139,7 @@
         if (inspected % SCAN_CHUNK_SIZE === 0) {
           send({ kind: "scanProgress", requestId, inspected, total: sparseLimit });
           await yieldToPage(requestId);
-          view = new DataView(record.memory.buffer);
+          view = viewFor(record);
         }
       }
       return finalizeCandidateSet(candidates);
@@ -834,7 +1170,7 @@
           total: slotCount,
         });
         await yieldToPage(requestId);
-        view = new DataView(record.memory.buffer);
+        view = viewFor(record);
       }
     }
     return finalizeCandidateSet(candidates);
@@ -859,7 +1195,7 @@
       sparseCapacity: sparsePrevious ? previous.count : 0,
     });
     const matches = scanValueMatcher(type, condition, rawValue, rawMaxValue, multiplier);
-    let view = new DataView(record.memory.buffer);
+    let view = viewFor(record);
     if (sparsePrevious) {
       const sparseLimit = sparseLowerBound(previous.sparseSlots, slotCount);
       for (let sparseIndex = 0; sparseIndex < sparseLimit; sparseIndex += 1) {
@@ -872,7 +1208,7 @@
         if (inspected % SCAN_CHUNK_SIZE === 0) {
           send({ kind: "scanProgress", requestId, inspected, total: sparseLimit });
           await yieldToPage(requestId);
-          view = new DataView(record.memory.buffer);
+          view = viewFor(record);
         }
       }
       return finalizeCandidateSet(candidates);
@@ -901,7 +1237,7 @@
         const inspected = Math.min((byteIndex + 1) * 8, slotCount);
         send({ kind: "scanProgress", requestId, inspected, total: slotCount });
         await yieldToPage(requestId);
-        view = new DataView(record.memory.buffer);
+        view = viewFor(record);
       }
     }
     return finalizeCandidateSet(candidates);
@@ -942,7 +1278,6 @@
         chunkIndex < previous.snapshot.chunks.length;
         chunkIndex += 1
       ) {
-        await yieldToPage(requestId);
         const previousChunk = previous.snapshot.chunks[chunkIndex];
         const chunkOffset = chunkIndex * previous.snapshot.chunkSize;
         const uniqueLength = Math.min(
@@ -963,6 +1298,7 @@
           continue;
         }
 
+        await yieldToPage(requestId);
         const currentReadLength = Math.min(
           uniqueLength + spec.size - 1,
           currentByteLength - chunkOffset,
@@ -1114,23 +1450,25 @@
   }
 
   function smartScanTypes(record, rawValue, rawMaxValue, multiplier, condition) {
-    const avmKind = record.looksLikeRuffle ? detectRuffleAvmKind() : "unknown";
+    const avmKind = record.looksLikeRuffle ? refreshAvm(record) : "unknown";
     if (avmKind === "avm1") {
       return ["f64"];
     }
-    if (avmKind !== "avm2") {
+    if (record.looksLikeRuffle && avmKind !== "avm2") {
       return AUTO_TYPES.slice();
     }
+    const wholeTypes = avmKind === "avm2" ? ["i32", "u32", "f64"] : ["i32", "u32", "f32", "f64"];
+    const decimalTypes = avmKind === "avm2" ? ["f64"] : ["f32", "f64"];
 
     if (!["exact", "range", "increasedBy", "decreasedBy"].includes(condition)) {
-      return ["i32", "u32", "f64"];
+      return wholeTypes;
     }
     const values = [rawValue, condition === "range" ? rawMaxValue : rawValue]
       .map((value) => Number(value) * multiplier)
       .filter(Number.isFinite);
     return values.some((value) => !Number.isInteger(value))
-      ? ["f64"]
-      : ["i32", "u32", "f64"];
+      ? decimalTypes
+      : wholeTypes;
   }
 
   function emptyCandidatesFor(record, type, spec, alignment, byteLength) {
@@ -1315,7 +1653,6 @@
 
     try {
       for (let chunkIndex = 0; chunkIndex < previousSnapshot.chunks.length; chunkIndex += 1) {
-        await yieldToPage(requestId);
         const previousChunk = previousSnapshot.chunks[chunkIndex];
         const chunkOffset = chunkIndex * previousSnapshot.chunkSize;
         const uniqueLength = Math.min(
@@ -1342,6 +1679,7 @@
           });
           continue;
         }
+        await yieldToPage(requestId);
         const currentReadLength = Math.min(
           uniqueLength + typeSpecs.f64.size - 1,
           currentByteLength - chunkOffset,
@@ -1430,7 +1768,7 @@
   }
 
   function sendAutoScanResults(requestId, record, group) {
-    const view = new DataView(record.memory.buffer);
+    const view = viewFor(record);
     const preview = [];
     let total = 0;
     let allCandidates = true;
@@ -1471,7 +1809,7 @@
       instanceId: record.id,
       type: group.mode || "auto",
       multiplier: group.multiplier,
-      avmKind: record.looksLikeRuffle ? detectRuffleAvmKind() : "unknown",
+      avmKind: record.looksLikeRuffle ? refreshAvm(record) : "unknown",
       searchedTypes: group.types,
       total,
       preview,
@@ -1557,15 +1895,16 @@
         types,
       });
     group.mode = mode;
+    // Deliver late cancellation before replacing the completed scan or Undo.
+    await yieldToPage(requestId);
     scans.set(key, group);
-    if (previous?.snapshot && previous.snapshot !== group.snapshot) {
-      deleteSnapshot(previous.snapshot).catch(() => {});
-    }
+    await commitCheckpoint(key, previous, group);
+    group.options = { ...options };
     sendAutoScanResults(requestId, record, group);
     cancelledScans.delete(String(requestId));
   }
 
-  async function memoryScan({
+  async function performMemoryScan({
     requestId,
     instanceId,
     type,
@@ -1652,17 +1991,132 @@
       await captureCandidateSnapshot({ requestId, record, candidates, spec });
     }
 
+    // This is the commit boundary; cancellation must leave both states intact.
+    await yieldToPage(requestId);
     scans.set(key, candidates);
-    if (previous?.snapshot && previous.snapshot !== candidates.snapshot) {
-      deleteSnapshot(previous.snapshot).catch(() => {});
-    }
+    await commitCheckpoint(key, previous, candidates);
+    candidates.options = { requestId, instanceId, type, rawValue, rawMaxValue, multiplier, condition, alignment, refine };
     sendScanResults(requestId, record, type, candidates, multiplier);
     cancelledScans.delete(String(requestId));
   }
 
+  async function commitCheckpoint(key, previous, next) {
+    const expired = undoScans.get(key);
+    if (previous) undoScans.set(key, previous);
+    else undoScans.delete(key);
+    if (expired?.snapshot && expired.snapshot !== previous?.snapshot && expired.snapshot !== next.snapshot) {
+      await deleteSnapshot(expired.snapshot).catch(() => {});
+    }
+  }
+
+  function emitSession() {
+    send({ kind: "agentState", documentId, instances: [...instances.values()].map(describeInstance),
+      session: currentSession, freezes: [...freezes.values()].map(({ record, type, address, value }) =>
+        ({ instanceId: record.id, type, address, value: wireNumber(value) })),
+      lastWrite: lastWrite ? { instanceId: lastWrite.record.id, type: lastWrite.type, address: lastWrite.address } : null });
+  }
+
+  function sendJavaScriptResults(requestId, record, type, group) {
+    const preview = group.entries.slice(0, RESULT_PREVIEW_LIMIT).map((entry) => {
+      let value = null;
+      try { value = record.backend.read(entry.address); } catch { /* Stale candidate remains visibly unavailable. */ }
+      return { ...entry, value, displayValue: value, multiplier: 1 };
+    });
+    send({ kind: "scanResults", requestId, instanceId: record.id, type, multiplier: 1,
+      searchedTypes: type === "smart" || type === "auto" ? record.backend.describe().supportedTypes : [type], total: group.entries.length, preview, coverage: group.coverage,
+      memoryBytes: 0, candidateStorage: "properties", allCandidates: false });
+  }
+
+  async function javaScriptScan(options, record) {
+    const { requestId, type = "smart", condition = "exact", refine, rawValue, rawMaxValue } = options;
+    if (!["smart", "auto", ...record.backend.describe().supportedTypes].includes(type)) throw new Error("Unsupported JavaScript scan type.");
+    if (!refine && !["exact", "range", "unknown"].includes(condition)) throw new Error("First scans support exact, range, or unknown initial values.");
+    if (refine && condition === "unknown") throw new Error("Unknown initial value is only available for a first scan.");
+    const key = scanKey(record.id, type);
+    const previous = refine ? scans.get(key) : null;
+    if (refine && !previous?.javascript) throw new Error("Run a first scan before filtering.");
+    const matches = condition === "unknown" ? () => true
+      : ["exact", "range"].includes(condition) ? scanValueMatcher("number", condition, rawValue, rawMaxValue, 1)
+      : scanComparisonMatcher("number", condition, rawValue, 1);
+    const discovered = previous || await record.backend.discover({ requestId, rootPath: options.rootPath, type });
+    const entries = [];
+    for (let index = 0; index < discovered.entries.length; index++) {
+      const entry = discovered.entries[index];
+      try {
+        const value = record.backend.read(entry.address);
+        if (matches(value, entry.value)) entries.push({ ...entry, value });
+      } catch { /* Removed properties do not survive refinement. */ }
+      if (index % 500 === 0) {
+        send({ kind: "scanProgress", requestId, inspected: index, total: discovered.entries.length });
+        await yieldToPage(requestId);
+      }
+    }
+    await yieldToPage(requestId);
+    const group = { javascript: true, entries, coverage: discovered.coverage, options: { ...options, multiplier: 1 } };
+    if (!refine) await clearInstanceScans(record.id);
+    scans.set(key, group);
+    await commitCheckpoint(key, previous, group);
+    sendJavaScriptResults(requestId, record, type, group);
+  }
+
+  async function memoryScan(options) {
+    const id = String(options.instanceId);
+    if (activeScans.size) throw new Error("A scan is already running in this game frame. Cancel it before starting another.");
+    if (!instances.has(id)) throw new Error("This game was reloaded. Select its new memory and start again.");
+    const record = instances.get(id);
+    if (!isJavaScript(record) && record.memory.buffer.byteLength > MAX_SCAN_BYTES) throw new Error("This memory exceeds the 256 MiB scan limit. Choose a smaller captured memory.");
+    const existing = scans.get(scanKey(id, options.type));
+    if (!isJavaScript(record) && (options.condition === "unknown" || options.condition === "range" || existing?.snapshot) && navigator.storage?.estimate) {
+      const estimate = await navigator.storage.estimate().catch(() => ({}));
+      const required = Math.ceil(record.memory.buffer.byteLength * 1.1);
+      if (Number.isFinite(estimate.quota) && estimate.quota - (estimate.usage || 0) < required) {
+        throw new Error("Not enough site storage for a recoverable scan. Previous results are unchanged; clear unused site data or choose a smaller memory.");
+      }
+    }
+    if (activeScans.size) throw new Error("A scan is already running in this game frame.");
+    const priorSession = currentSession;
+    const priorSnapshots = new Set(ownedSnapshots);
+    currentSession = { updatedAt: Date.now(), requestId: options.requestId, instanceId: id, request: { ...options }, status: "scanning", canRefine: !!options.refine, results: null };
+    activeScans.set(id, String(options.requestId));
+    const pauseOwner = `scan:${options.requestId}`;
+    try {
+      if (options.pauseWhileScanning) acquirePause(record, pauseOwner);
+      if (isJavaScript(record)) await javaScriptScan(options, record);
+      else await performMemoryScan(options);
+    } catch (error) {
+      // Refinement builds new candidate sets; keep the last committed baseline.
+      for (const snapshot of ownedSnapshots) {
+        if (!priorSnapshots.has(snapshot)) await deleteSnapshot(snapshot).catch(() => {});
+      }
+      currentSession = options.refine || isJavaScript(record) ? priorSession : null;
+      throw error;
+    } finally {
+      activeScans.delete(id);
+      cancelledScans.delete(String(options.requestId));
+      try { releasePause(pauseOwner); } finally { emitSession(); }
+    }
+  }
+
+  async function undoScan({ requestId, instanceId, type }) {
+    if (activeScans.size) throw new Error("Cancel the running scan before undoing.");
+    const key = scanKey(String(instanceId), type);
+    const previous = undoScans.get(key);
+    const record = instances.get(String(instanceId));
+    if (!previous || !record) throw new Error("No previous scan is available for this game session.");
+    const discarded = scans.get(key);
+    undoScans.delete(key);
+    scans.set(key, previous);
+    if (discarded?.snapshot && discarded.snapshot !== previous.snapshot) await deleteSnapshot(discarded.snapshot);
+    currentSession = { updatedAt: Date.now(), requestId, instanceId: record.id, request: previous.options, status: "complete", canRefine: true };
+    if (previous.javascript) sendJavaScriptResults(requestId, record, type, previous);
+    else if (previous.multi) sendAutoScanResults(requestId, record, previous);
+    else sendScanResults(requestId, record, type, previous, previous.options?.multiplier || 1);
+    emitSession();
+  }
+
   function sendScanResults(requestId, record, type, candidates, multiplier = 1) {
     const spec = typeSpecs[type];
-    const view = new DataView(record.memory.buffer);
+    const view = viewFor(record);
     const preview = candidates.preview.map((address) => {
       const value = address + spec.size <= view.byteLength
         ? spec.read(view, address)
@@ -1731,7 +2185,7 @@
 
   function sampleAddress(record, spec, address, requestedValue, stage, startedAt) {
     try {
-      const view = new DataView(record.memory.buffer);
+      const view = viewFor(record);
       if (address + spec.size > view.byteLength) {
         throw new Error("Address is outside the current WASM memory.");
       }
@@ -1858,20 +2312,23 @@
   function writeValue({ requestId, instanceId, type, address, rawValue, multiplier: rawMultiplier = 1 }) {
     const record = instances.get(String(instanceId));
     const spec = typeSpecs[type];
-    if (!record || !spec) {
+    if (!record || !spec || (isJavaScript(record) !== (type === "number"))) {
       throw new Error("Invalid instance or value type.");
     }
     const numericAddress = Number(address);
     if (!Number.isSafeInteger(numericAddress) || numericAddress < 0) {
       throw new Error("Address must be a non-negative integer byte offset.");
     }
-    const view = new DataView(record.memory.buffer);
+    const view = viewFor(record);
     if (numericAddress + spec.size > view.byteLength) {
       throw new Error("Address is outside the current WASM memory.");
     }
     const multiplier = parseMultiplier(rawMultiplier);
     const value = parseDisplayValue(type, rawValue, multiplier);
+    const before = isJavaScript(record) ? spec.read(view, numericAddress) : new Uint8Array(record.memory.buffer, numericAddress, spec.size).slice();
     spec.write(view, numericAddress, value);
+    lastWrite = { record, type, address: numericAddress, before,
+      after: isJavaScript(record) ? spec.read(view, numericAddress) : new Uint8Array(record.memory.buffer, numericAddress, spec.size).slice() };
     const activeFreeze = freezes.get(freezeKey(record.id, type, numericAddress));
     if (activeFreeze) {
       activeFreeze.value = value;
@@ -1885,6 +2342,7 @@
       value: wireNumber(spec.read(view, numericAddress)),
       displayValue: wireNumber(spec.read(view, numericAddress) / multiplier),
     });
+    emitSession();
     const diagnosticKey = freezeKey(record.id, type, numericAddress);
     activeWriteDiagnostics.set(diagnosticKey, requestId);
     runWriteDiagnostics({
@@ -1915,26 +2373,22 @@
     if (!Array.isArray(entries) || entries.length > MAX_WATCH_VALUES) {
       throw new Error(`A watch refresh supports at most ${MAX_WATCH_VALUES} addresses.`);
     }
-    const view = new DataView(record.memory.buffer);
+    const view = viewFor(record);
     const values = entries.map((entry) => {
       const spec = typeSpecs[entry?.type];
       const address = Number(entry?.address);
       const id = String(entry?.id ?? "");
       if (
         !id ||
-        !spec ||
+        !spec || (isJavaScript(record) !== (entry.type === "number")) ||
         !Number.isSafeInteger(address) ||
         address < 0 ||
         address + spec.size > view.byteLength
       ) {
         return { id, type: entry?.type, address, error: "Address is unavailable." };
       }
-      return {
-        id,
-        type: entry.type,
-        address,
-        value: wireNumber(spec.read(view, address)),
-      };
+      try { return { id, type: entry.type, address, value: wireNumber(spec.read(view, address)) }; }
+      catch (error) { return { id, type: entry.type, address, error: error.message }; }
     });
     send({
       kind: "watchValues",
@@ -1944,11 +2398,48 @@
     });
   }
 
+  function stopAllFreezes({ requestId } = {}) {
+    for (const entry of freezes.values()) {
+      send({ kind: "freezeChanged", requestId, instanceId: entry.record.id, type: entry.type, address: entry.address, enabled: false });
+    }
+    freezes.clear();
+    if (freezeFrameHandle !== null) cancelAnimationFrame(freezeFrameHandle);
+    freezeFrameHandle = null;
+    emitSession();
+  }
+
+  function restoreWrite({ requestId, instanceId, type, address }) {
+    if (!lastWrite || lastWrite.record.id !== instanceId || lastWrite.type !== type || lastWrite.address !== address) {
+      throw new Error("The previous write is no longer available in this game session.");
+    }
+    const { record, before, after } = lastWrite;
+    if (isJavaScript(record)) {
+      if (!Object.is(record.backend.read(address), after)) throw new Error("The game changed this property after the write. Restore was cancelled.");
+      record.backend.write(address, before);
+      freezes.delete(freezeKey(instanceId, type, address));
+      activeWriteDiagnostics.delete(freezeKey(instanceId, type, address));
+      lastWrite = null;
+      send({ kind: "writeRestored", requestId, instanceId, type, address });
+      emitSession();
+      return;
+    }
+    const current = new Uint8Array(record.memory.buffer, address, before.length);
+    if (!current.every((value, index) => value === after[index])) {
+      throw new Error("The game changed this address after the write. Restore was cancelled to preserve its current value.");
+    }
+    freezes.delete(freezeKey(instanceId, type, address));
+    activeWriteDiagnostics.delete(freezeKey(instanceId, type, address));
+    current.set(before);
+    lastWrite = null;
+    send({ kind: "writeRestored", requestId, instanceId, type, address });
+    emitSession();
+  }
+
   function applyFreezes() {
     freezeFrameHandle = null;
     for (const [key, entry] of freezes) {
       try {
-        const view = new DataView(entry.record.memory.buffer);
+        const view = viewFor(entry.record);
         if (entry.address + entry.spec.size > view.byteLength) {
           freezes.delete(key);
           continue;
@@ -1956,6 +2447,8 @@
         entry.spec.write(view, entry.address, entry.value);
       } catch {
         freezes.delete(key);
+        send({ kind: "freezeChanged", instanceId: entry.record.id, type: entry.type, address: entry.address, enabled: false, reason: "Value is unavailable." });
+        emitSession();
       }
     }
     if (freezes.size > 0) {
@@ -1980,7 +2473,7 @@
   }) {
     const record = instances.get(String(instanceId));
     const spec = typeSpecs[type];
-    if (!record || !spec) {
+    if (!record || !spec || (isJavaScript(record) !== (type === "number"))) {
       throw new Error("Invalid instance or value type.");
     }
     const numericAddress = Number(address);
@@ -1991,7 +2484,7 @@
     if (enabled) {
       const multiplier = parseMultiplier(rawMultiplier);
       const value = parseDisplayValue(type, rawValue, multiplier);
-      const view = new DataView(record.memory.buffer);
+      const view = viewFor(record);
       if (numericAddress + spec.size > view.byteLength) {
         throw new Error("Address is outside the current WASM memory.");
       }
@@ -2023,9 +2516,20 @@
 
   async function resetScan({ requestId, instanceId, type }) {
     const key = scanKey(String(instanceId), type);
+    if (activeScans.size) throw new Error("Cancel the running scan before resetting.");
+    const resetSession = currentSession;
     const previous = scans.get(key);
     scans.delete(key);
+    const checkpoint = undoScans.get(key);
+    undoScans.delete(key);
+    // Snapshot IDs are unique. Only these detached snapshots belong to this
+    // reset; a new scan may start while their IndexedDB deletion is pending.
     await deleteSnapshot(previous?.snapshot).catch(() => {});
+    if (checkpoint?.snapshot !== previous?.snapshot) await deleteSnapshot(checkpoint?.snapshot).catch(() => {});
+    if (currentSession === resetSession) {
+      currentSession = null;
+      emitSession();
+    }
     send({ kind: "scanReset", requestId, instanceId: String(instanceId), type });
   }
 
@@ -2042,6 +2546,37 @@
     Promise.resolve()
       .then(() => {
         switch (command?.kind) {
+          case "listJavaScriptRoots":
+            if (!javaScript || command.instanceId !== javaScript.describe().id) throw new Error("JavaScript source is unavailable.");
+            send({ kind: "javaScriptRoots", requestId: command.requestId, instanceId: command.instanceId, roots: javaScript.roots() });
+            break;
+          case "resolveJavaScriptPaths": {
+            if (!javaScript || command.instanceId !== javaScript.describe().id) throw new Error("JavaScript source is unavailable.");
+            if (!Array.isArray(command.paths) || command.paths.length > MAX_WATCH_VALUES) throw new Error("Invalid property paths.");
+            const entries = [], errors = [];
+            for (const path of command.paths) {
+              try { entries.push(javaScript.resolve(path)); } catch (error) { errors.push({ path, message: error.message }); }
+            }
+            send({ kind: "javaScriptPathsResolved", requestId: command.requestId, instanceId: command.instanceId, entries, errors });
+            break;
+          }
+          case "getSessionState":
+            emitSession();
+            break;
+          case "setGamePaused":
+            setGamePaused(command);
+            break;
+          case "bridgeDisconnected":
+            releaseAllPauses();
+            stopAllFreezes(command);
+            break;
+          case "stopAllFreezes":
+            stopAllFreezes(command);
+            break;
+          case "restoreWrite":
+            return restoreWrite(command);
+          case "undoScan":
+            return undoScan(command);
           case "listInstances":
             send({
               kind: "instanceList",
@@ -2068,10 +2603,10 @@
             break;
           case "setFreeze":
             setFreeze(command);
+            emitSession();
             break;
           case "resetScan":
-            resetScan(command);
-            break;
+            return resetScan(command);
           default:
             throw new Error(`Unknown command: ${command?.kind || "missing"}`);
         }
@@ -2097,5 +2632,24 @@
     writable: false,
   });
 
+  window.addEventListener("pagehide", (event) => {
+    avmDetectionPaused = true;
+    releaseAllPauses();
+    for (const record of instances.values()) {
+      clearTimeout(record.avmTimer);
+      record.avmTimer = null;
+    }
+    stopAllFreezes();
+    if (event.persisted) return;
+    for (const requestId of activeScans.values()) cancelledScans.add(requestId);
+    Promise.allSettled([...ownedSnapshots].map(deleteSnapshot)).finally(() => releaseSnapshotLease?.());
+  });
+  window.addEventListener("pageshow", () => {
+    avmDetectionPaused = false;
+    for (const record of instances.values()) refreshAvm(record);
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) stopAllFreezes();
+  });
   send({ kind: "agentReady", url: location.href });
 })();
