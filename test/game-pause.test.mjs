@@ -60,7 +60,7 @@ function setup() {
       resume() { calls.push("resume"); this.suspended = false; },
     };
     return { isConnected: true, metadata: { isActionScript3: true }, matches: () => true,
-      calls, api, ruffle: () => supported ? api : {},
+      calls, api, inputState: { keyHeld: false, pointerHeld: false }, ruffle: () => supported ? api : {},
       paused: () => legacy ? !api.isPlaying : api.suspended };
   }
   const metadata = (player) => emit(documentListeners, "loadedmetadata", { target: player });
@@ -69,7 +69,27 @@ function setup() {
     instance.exports.ruffle_notify();
     return [...records.keys()].at(-1);
   }
-  return { messages, records, player, capture, metadata, command, settle,
+  function input(player, type = "click") {
+    const event = { target: player, defaultPrevented: false, propagationStopped: false,
+      composedPath: () => [{ nodeName: "BUTTON" }, player, window],
+      preventDefault() { this.defaultPrevented = true; },
+      stopImmediatePropagation() { this.propagationStopped = true; },
+    };
+    emit(listeners, type, event);
+    if (!event.propagationStopped) {
+      if (type === "keydown") player.inputState.keyHeld = true;
+      if (type === "keyup") player.inputState.keyHeld = false;
+      if (["pointerdown", "mousedown", "touchstart"].includes(type)) player.inputState.pointerHeld = true;
+      if (["pointerup", "mouseup", "touchend"].includes(type)) player.inputState.pointerHeld = false;
+      // Ruffle resumes on the Play overlay's click, not on release events.
+      if (type === "click") {
+        if ("suspended" in player.api) player.api.suspended = false;
+        else player.api.isPlaying = true;
+      }
+    }
+    return event;
+  }
+  return { messages, records, player, capture, metadata, command, settle, input,
     lifecycle: (name) => emit(listeners, name, { persisted: true }),
     async drain() {
       for (let i = 0; i < 100; i++) {
@@ -207,4 +227,65 @@ test("explicit Resume retries a failed automatic resume and releases its orphane
   await h.command({ kind: "setGamePaused", instanceId, paused: false });
   assert.equal(player.paused(), false);
   assert.equal(attempts, 3);
+});
+
+for (const legacy of [false, true]) {
+  test(`owned ${legacy ? "legacy" : "current"} pause blocks player input until Resume`, async () => {
+    const h = setup(), player = h.player({ legacy }), unrelated = h.player({ legacy });
+    const instanceId = h.capture(player);
+    await h.command({ kind: "setGamePaused", instanceId, paused: true });
+    for (const type of ["pointerdown", "mousedown", "click", "dblclick", "touchstart", "keydown", "keypress"]) {
+      const event = h.input(player, type);
+      assert.equal(event.defaultPrevented, true, type);
+      assert.equal(event.propagationStopped, true, type);
+      assert.equal(player.paused(), true, type);
+      assert.equal(h.input(unrelated, type).propagationStopped, false, `unrelated ${type}`);
+    }
+    await h.command({ kind: "setGamePaused", instanceId, paused: false });
+    assert.equal(h.input(player).propagationStopped, false);
+  });
+}
+test("scan ownership guards input and releases it after cancellation", async () => {
+  const h = setup(), player = h.player(), instanceId = h.capture(player);
+  await h.command(scan(instanceId));
+  assert.equal(h.input(player).propagationStopped, true);
+  assert.equal(player.paused(), true);
+  await h.command({ kind: "cancelScan", targetRequestId: "scan" });
+  await h.drain();
+  assert.equal(h.input(player).propagationStopped, false);
+});
+test("input guard survives a scan nested in manual pause, then clears on disconnect", async () => {
+  const h = setup(), player = h.player(), instanceId = h.capture(player);
+  await h.command({ kind: "setGamePaused", instanceId, paused: true });
+  await h.command(scan(instanceId)); await h.drain();
+  assert.equal(h.input(player).propagationStopped, true);
+  await h.command({ kind: "bridgeDisconnected" });
+  assert.equal(h.input(player).propagationStopped, false);
+});
+test("a game-owned pause is not protected after the scan lease ends", async () => {
+  const h = setup(), player = h.player({ paused: true }), instanceId = h.capture(player);
+  assert.equal(h.input(player).propagationStopped, false);
+  player.api.suspended = true;
+  await h.command(scan(instanceId));
+  assert.equal(h.input(player).propagationStopped, true);
+  await h.drain();
+  assert.equal(player.paused(), true);
+  assert.equal(h.input(player).propagationStopped, false);
+});
+
+test("keys and buttons held before Pause can release without resuming or sticking", async () => {
+  const h = setup(), player = h.player(), instanceId = h.capture(player);
+  h.input(player, "keydown"); h.input(player, "pointerdown");
+  assert.deepEqual(player.inputState, { keyHeld: true, pointerHeld: true });
+  await h.command({ kind: "setGamePaused", instanceId, paused: true });
+  for (const type of ["keyup", "pointerup", "mouseup", "touchend"]) {
+    const event = h.input(player, type);
+    assert.equal(event.defaultPrevented, false, type);
+    assert.equal(event.propagationStopped, false, type);
+    assert.equal(player.paused(), true, type);
+  }
+  assert.deepEqual(player.inputState, { keyHeld: false, pointerHeld: false });
+  assert.equal(h.input(player, "click").propagationStopped, true, "release-generated activation stays blocked");
+  await h.command({ kind: "setGamePaused", instanceId, paused: false });
+  assert.deepEqual(player.inputState, { keyHeld: false, pointerHeld: false });
 });

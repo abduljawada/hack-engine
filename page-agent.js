@@ -195,6 +195,29 @@
     };
   }
 
+  // Ruffle's public suspend() displays a Play overlay. Its click handler can
+  // resume playback even while our manual/scan pause lease remains active.
+  // Stop input before it reaches that player, including its shadow DOM; keep
+  // unrelated page controls and other players fully interactive.
+  // Release events still reach the runtime so keys/buttons held before Pause
+  // cannot remain stuck after Resume; any resulting activation click is blocked.
+  const pauseInputEvents = [
+    "pointerdown", "mousedown", "click", "dblclick",
+    "touchstart", "keydown", "keypress",
+  ];
+  function guardPausedPlayerInput(event) {
+    const path = typeof event.composedPath === "function" ? event.composedPath() : [event.target];
+    for (const [player, entry] of pausedPlayers) {
+      if (!player.isConnected || !entry.owners.size || !path.includes(player)) continue;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+  }
+  for (const type of pauseInputEvents) {
+    window.addEventListener(type, guardPausedPlayerInput, { capture: true, passive: false });
+  }
+
   function notifyPauseState() {
     for (const record of instances.values()) {
       if (record.avmPlayers?.size) send({ kind: "instanceUpdated", instance: describeInstance(record) });
