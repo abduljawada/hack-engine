@@ -351,7 +351,10 @@ export async function runGame({ session, game, asset, gamePage, controls, baseli
 
 export async function runPauseCases({ ui, read, naturalChange, target, runStep, session, gamePage }) {
   const isPlaying = () => session.evaluate(gamePage, `(() => { const player = document.querySelector('ruffle-player'); if (!player) return null; const api = typeof player.ruffle === 'function' ? player.ruffle(1) : player; return typeof api.suspended === 'boolean' ? !api.suspended : typeof api.isPlaying === 'boolean' ? api.isPlaying : null; })()`);
-  const observeScan = action => withScanPauseObservation({session,gamePage,ui},action);
+  const observeScan = async (phase, action) => {
+    try { return await withScanPauseObservation({session,gamePage,ui},action); }
+    catch (error) { error.message = `${phase}: ${error.message}`; throw error; }
+  };
 
   await runStep('pause-resume', async () => {
     await ui.wait(`!document.querySelector('#pause-game').disabled`, 'Ruffle pause available');
@@ -370,12 +373,12 @@ export async function runPauseCases({ ui, read, naturalChange, target, runStep, 
     await ui.wait(`document.querySelector('#pause-game').getAttribute('aria-pressed')==='true'`, 'Existing pause');
     await ui.reset();
     await ui.set('#advanced-type', target.scan.type);
-    const existingPause = await observeScan(observe => ui.scan('exact', 987654321, undefined, { during: observe }));
+    const existingPause = await observeScan('Existing manual pause', observe => ui.scan('exact', 987654321, undefined, { during: observe }));
     if (await isPlaying() !== false) throw new GameTestError('Scan released the existing Ruffle pause.', 'extension', 'FAIL');
     if (!await ui.evaluate(`document.querySelector('#pause-game').getAttribute('aria-pressed')==='true'`)) throw new GameTestError('Scan released a pre-existing pause.', 'extension', 'FAIL');
     await ui.click('#pause-game');
     await ui.reset();
-    const scanPause = await observeScan(observe => ui.scan('exact', 987654321, undefined, { during: observe }));
+    const scanPause = await observeScan('Scan-owned pause', observe => ui.scan('exact', 987654321, undefined, { during: observe }));
     await poll(isPlaying, value => value === true, { description: 'Public Ruffle playback resumed after scan', category: 'extension', status: 'FAIL' });
     await ui.wait(`document.querySelector('#pause-game').getAttribute('aria-pressed')==='false'`, 'Scan-owned pause released');
     return { preservedExistingPause: true, releasedScanPause: true, observations: { existing: existingPause.evidence, scan: scanPause.evidence } };
@@ -386,7 +389,7 @@ export async function runPauseCases({ ui, read, naturalChange, target, runStep, 
     // yields naturally and gives the user an actual operation to cancel.
     await ui.set('#advanced-condition', 'exact');
     await ui.set('#advanced-value', 987654321);
-    const cancelledScan = await observeScan(async observe => {
+    const cancelledScan = await observeScan('Scan cancellation', async observe => {
       await ui.click('#advanced-scan');
       try { await ui.wait(`!document.querySelector('#cancel-advanced-scan').hidden`, 'Cancellable scan', 3000); }
       catch { throw new GameTestError('Scan completed before cancellation could be exercised; cancellation coverage is incomplete.'); }
