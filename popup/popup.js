@@ -47,10 +47,8 @@
   let requestSequence = 1;
   let quickSession = null;
   let selectedCandidate = null;
-  let activeView = "simple";
   let activeWorkspace = "candidates";
   let memoryDetected = false;
-  let hasScanResults = false;
   let candidateTotal = 0;
   let diagnostics = {};
   let scanWatchdog;
@@ -69,13 +67,10 @@
     statusDot: document.querySelector("#status-dot"),
     statusTitle: document.querySelector("#status-title"),
     connectionState: document.querySelector(".header-status"),
-    viewSwitcher: document.querySelector("#view-switcher"),
     gameControls: document.querySelector("#game-controls"),
     pauseGame: document.querySelector("#pause-game"),
     pauseWhileScanning: document.querySelector("#pause-while-scanning"),
     pauseStatus: document.querySelector("#pause-status"),
-    viewButtons: [...document.querySelectorAll("#view-switcher [data-view]")],
-    quickTools: document.querySelector("#quick-tools"),
     condition: document.querySelector("#quick-condition"),
     value: document.querySelector("#quick-value"),
     valueLabel: document.querySelector("#quick-value-label"),
@@ -86,9 +81,6 @@
     cancel: document.querySelector("#cancel-quick-scan"),
     reset: document.querySelector("#reset-quick-scan"),
     quickStatus: document.querySelector("#quick-status"),
-    results: document.querySelector("#quick-results"),
-    resultCount: document.querySelector("#quick-result-count"),
-    candidates: document.querySelector("#quick-candidates"),
     broaden: document.querySelector("#broaden-search"),
     editor: document.querySelector("#quick-editor"),
     selectedAddress: document.querySelector("#selected-address"),
@@ -97,25 +89,15 @@
     quickSetMax: document.querySelector("#quick-set-max"),
     write: document.querySelector("#quick-write"),
     freeze: document.querySelector("#quick-freeze"),
-    advancedTools: document.querySelector("#advanced-tools"),
+    scanTools: document.querySelector("#scan-tools"),
     advancedAvmType: document.querySelector("#advanced-avm-type"),
     advancedRecommendedTypes: document.querySelector("#advanced-recommended-types"),
     advancedRuntimeHint: document.querySelector("#advanced-runtime-hint"),
     advancedSessionBadge: document.querySelector("#advanced-session-badge"),
-    advancedCondition: document.querySelector("#advanced-condition"),
-    advancedValue: document.querySelector("#advanced-value"),
-    advancedValueLabel: document.querySelector("#advanced-value-label"),
-    advancedValueText: document.querySelector("#advanced-value-text"),
-    advancedMaxValue: document.querySelector("#advanced-max-value"),
-    advancedMaxLabel: document.querySelector("#advanced-max-label"),
     advancedType: document.querySelector("#advanced-type"),
     advancedAlignment: document.querySelector("#advanced-alignment"),
     advancedInstance: document.querySelector("#advanced-instance"),
     advancedInstanceLabel: document.querySelector("#advanced-instance-label"),
-    advancedScan: document.querySelector("#advanced-scan"),
-    advancedCancel: document.querySelector("#cancel-advanced-scan"),
-    advancedReset: document.querySelector("#reset-advanced-scan"),
-    advancedStatus: document.querySelector("#advanced-status"),
     advancedWorkspace: document.querySelector("#advanced-workspace"),
     workspaceButtons: [...document.querySelectorAll("[data-workspace]")],
     advancedCandidatePane: document.querySelector("#advanced-candidate-pane"),
@@ -127,13 +109,6 @@
     advancedCandidates: document.querySelector("#advanced-candidates"),
     advancedWatches: document.querySelector("#advanced-watches"),
     advancedWatchEmpty: document.querySelector("#advanced-watch-empty"),
-    advancedEditor: document.querySelector("#advanced-editor"),
-    advancedSelectedAddress: document.querySelector("#advanced-selected-address"),
-    advancedWriteValue: document.querySelector("#advanced-write-value"),
-    advancedSetMin: document.querySelector("#advanced-set-min"),
-    advancedSetMax: document.querySelector("#advanced-set-max"),
-    advancedWrite: document.querySelector("#advanced-write"),
-    advancedFreeze: document.querySelector("#advanced-freeze"),
     popOut: document.querySelector("#pop-out-window"),
     howItWorks: document.querySelector("#how-it-works"),
   };
@@ -433,32 +408,26 @@
   function setQuickStatus(message, state = "") {
     elements.quickStatus.textContent = message;
     elements.quickStatus.className = `quick-status ${state}`.trim();
-    elements.advancedStatus.textContent = message;
-    elements.advancedStatus.className = `quick-status ${state}`.trim();
   }
 
   function updateViewVisibility() {
-    const persistentSurface = isSidebarPanel || isPopoutWindow;
-    elements.viewSwitcher.hidden = !persistentSurface || !memoryDetected;
     elements.gameControls.hidden = !memoryDetected;
-    elements.quickTools.hidden = !memoryDetected || activeView !== "simple";
-    elements.advancedTools.hidden = !memoryDetected || activeView !== "advanced";
-    document.body.classList.toggle("advanced-active", activeView === "advanced");
-    for (const button of elements.viewButtons) {
-      button.setAttribute("aria-pressed", String(button.dataset.view === activeView));
-    }
+    elements.scanTools.hidden = !memoryDetected;
   }
 
-  function setActiveView(view) {
-    activeView = view === "advanced" && (isSidebarPanel || isPopoutWindow)
-      ? "advanced"
-      : "simple";
-    try {
-      sessionStorage.setItem("hack-engine-view", activeView);
-    } catch {
-      // The view still works when session storage is unavailable.
-    }
-    updateViewVisibility();
+  function updateOptionsSummary() {
+    const request = quickSession?.request;
+    const locked = quickSession?.canRefine || quickSession?.status === "scanning";
+    const source = locked ? sessionInstance() : advancedSelectedInstance();
+    const type = locked ? request?.type : elements.advancedType.value;
+    const alignment = locked ? request?.alignment : elements.advancedAlignment.value;
+    const labels = [];
+    labels.push([...elements.advancedType.options].find(option => option.value === type)?.textContent || "Automatic");
+    if (source?.kind !== "javascript" && alignment === "byte") labels.push("Any byte");
+    const root = locked ? request?.rootPath : ui("javascript-root").value;
+    if (source?.kind === "javascript" && root && (!Array.isArray(root) || root.length)) labels.push("Selected object");
+    if (locked && request?.multiplier && request.multiplier !== 1) labels.push(`Scale ×${request.multiplier}`);
+    ui("scan-options-summary").textContent = labels.join(" · ");
   }
 
   function setActiveWorkspace(workspace) {
@@ -512,13 +481,6 @@
       elements.valueText,
       elements.maxLabel,
     );
-    updateConditionFields(
-      elements.advancedCondition,
-      elements.advancedValue,
-      elements.advancedValueLabel,
-      elements.advancedValueText,
-      elements.advancedMaxLabel,
-    );
   }
 
   function updateInstanceOptions() {
@@ -539,10 +501,6 @@
       elements.advancedInstance.value = preferred ? `${preferred.frameId}:${preferred.id}` : "";
     }
     elements.advancedInstanceLabel.hidden = records.length <= 1;
-    const simple = ui("quick-instance");
-    simple.replaceChildren(...[...elements.advancedInstance.options].map((option) => new Option(option.textContent, option.value)));
-    simple.value = elements.advancedInstance.value;
-    ui("quick-instance-label").hidden = records.length <= 1;
   }
 
   function updateRuntimeGuidance() {
@@ -603,27 +561,12 @@
       elements.condition.value = "changed";
     }
     elements.scan.textContent = canRefine ? "Next scan" : "First scan";
-    elements.scan.disabled = !port || scanning || !selectedInstance();
+    elements.scan.disabled = !port || scanning || !(canRefine ? sessionInstance() : advancedSelectedInstance());
     elements.cancel.hidden = !scanning;
     elements.reset.hidden = !quickSession;
-    for (const option of elements.advancedCondition.querySelectorAll("[data-refine-only]")) {
-      option.disabled = !canRefine;
-    }
-    elements.advancedCondition.querySelector('[value="unknown"]').disabled = canRefine;
-    if (!canRefine && elements.advancedCondition.selectedOptions[0]?.disabled) {
-      elements.advancedCondition.value = "exact";
-    }
-    if (canRefine && elements.advancedCondition.value === "unknown") {
-      elements.advancedCondition.value = "changed";
-    }
-    elements.advancedScan.textContent = canRefine ? "Next scan" : "First scan";
-    elements.advancedScan.disabled = !port || scanning || !(canRefine ? sessionInstance() : advancedSelectedInstance());
-    elements.advancedCancel.hidden = !scanning;
-    elements.advancedReset.hidden = !quickSession;
     elements.advancedType.disabled = canRefine || scanning;
     elements.advancedAlignment.disabled = canRefine || scanning;
     elements.advancedInstance.disabled = canRefine || scanning;
-    ui("quick-instance").disabled = canRefine || scanning;
     elements.advancedSessionBadge.textContent = scanning
       ? "Scanning"
       : canRefine
@@ -631,6 +574,7 @@
         : "New scan";
     elements.advancedSessionBadge.classList.toggle("active", scanning || canRefine);
     updateRuntimeGuidance();
+    updateOptionsSummary();
     updateConditionControls();
     updateScanWatchdog();
     updatePlaybackControls();
@@ -649,9 +593,8 @@
     updateDiagnosticUI();
     const hasSelection = Boolean(selectedCandidate);
     const liveSelection = !!port && !!selectedCandidate && instances.has(`${selectedCandidate.frameId}:${selectedCandidate.instanceId}`);
-    for (const button of [elements.write, elements.advancedWrite, elements.freeze, elements.advancedFreeze]) button.disabled = !liveSelection;
+    for (const button of [elements.write, elements.freeze]) button.disabled = !liveSelection;
     elements.editor.hidden = !hasSelection;
-    elements.advancedEditor.hidden = !hasSelection;
     if (!selectedCandidate) {
       editorSelectionKey = "";
       return;
@@ -659,15 +602,13 @@
     const address = candidateLocation(selectedCandidate);
     const value = candidateValueText(selectedCandidate);
     elements.selectedAddress.textContent = address;
-    elements.advancedSelectedAddress.textContent = address;
     // Workspace/diagnostic updates must not replace a draft used by Write/Freeze.
     if (editorSelectionKey !== selectedKey) {
       elements.writeValue.value = value;
-      elements.advancedWriteValue.value = value;
       editorSelectionKey = selectedKey;
     }
     const frozen = frozenCandidates.has(selectedKey);
-    for (const button of [elements.freeze, elements.advancedFreeze]) {
+    for (const button of [elements.freeze]) {
       button.textContent = frozen ? "Unfreeze" : "Freeze";
       button.classList.toggle("freeze-active", frozen);
     }
@@ -771,22 +712,6 @@
       left.candidate.address - right.candidate.address;
   }
 
-  function renderSimpleCandidates() {
-    elements.candidates.replaceChildren();
-    for (const [key, entry] of [...candidateRecords].sort(compareRecommendedCandidates).slice(0, 20)) {
-      const row = document.createElement("button");
-      row.type = "button";
-      row.className = "quick-candidate";
-      row.dataset.candidateKey = key;
-      const address = document.createElement("span");
-      address.className = "candidate-address";
-      address.textContent = candidateLocation(entry.candidate);
-      row.append(address, makeValueCell(entry));
-      row.addEventListener("click", () => selectCandidate(entry.candidate));
-      elements.candidates.append(row);
-    }
-  }
-
   function renderAdvancedCandidates() {
     elements.advancedCandidates.replaceChildren();
     const filter = elements.advancedFilter.value.trim().toLowerCase();
@@ -835,7 +760,6 @@
     for (const entry of candidateRecords.values()) {
       entry.valueCells.clear();
     }
-    renderSimpleCandidates();
     renderAdvancedCandidates();
   }
 
@@ -924,9 +848,6 @@
       ? payload.preview.slice(0, MAX_ADVANCED_CANDIDATES)
       : [];
     candidateTotal = Number(payload?.total || 0);
-    hasScanResults = true;
-    elements.results.hidden = false;
-    elements.resultCount.textContent = candidateTotal.toLocaleString();
     elements.advancedResultCount.textContent = candidateTotal.toLocaleString();
     clearCandidateRefreshState();
     selectedCandidate = null;
@@ -979,9 +900,6 @@
       elements.condition.value = session.request.condition || "exact";
       elements.value.value = session.request.rawValue ?? elements.value.value;
       elements.maxValue.value = session.request.rawMaxValue ?? elements.maxValue.value;
-      elements.advancedCondition.value = session.request.condition || "exact";
-      elements.advancedValue.value = session.request.rawValue ?? elements.advancedValue.value;
-      elements.advancedMaxValue.value = session.request.rawMaxValue ?? elements.advancedMaxValue.value;
       elements.advancedType.value = session.request.type || "smart";
       elements.advancedAlignment.value = session.request.alignment || "aligned";
     }
@@ -1003,13 +921,12 @@
     } else if (!session) {
       renderedResult = null;
       clearCandidateRefreshState();
-      hasScanResults = false;
       candidateTotal = 0;
       selectedCandidate = null;
-      elements.results.hidden = true;
-      elements.candidates.replaceChildren();
       elements.advancedCandidates.replaceChildren();
       elements.advancedResultCount.textContent = "0";
+      elements.broaden.hidden = true;
+      ui("advanced-preview-count").textContent = "";
       renderWatches();
       setQuickStatus("Ready to scan this source.");
     }
@@ -1033,6 +950,7 @@
         if (Array.isArray(root.path)) picker.append(new Option(root.displayPath || root.path.join("."), JSON.stringify(root.path)));
       }
       rootsRequest = null;
+      updateOptionsSummary();
       setQuickStatus(`${payload.roots?.length || 0} accessible objects available. Select one or use automatic discovery.`);
       return;
     }
@@ -1244,21 +1162,17 @@
     candidateRefreshTimer = setInterval(refreshCandidateValues, CANDIDATE_REFRESH_MS);
   }
 
+  for (const id of ["advanced-type", "advanced-alignment", "javascript-root"]) ui(id).addEventListener("change", updateOptionsSummary);
   elements.condition.addEventListener("change", updateConditionControls);
-  elements.advancedCondition.addEventListener("change", updateConditionControls);
   function sourceChanged() {
     sourceChosen = true;
-    ui("quick-instance").value = elements.advancedInstance.value;
     ui("javascript-root").replaceChildren(new Option("Automatic discovery", ""));
     rootsRequest = null;
     updateRuntimeGuidance();
     updatePlaybackControls();
+    updateOptionsSummary();
   }
   elements.advancedInstance.addEventListener("change", sourceChanged);
-  ui("quick-instance").addEventListener("change", () => {
-    elements.advancedInstance.value = ui("quick-instance").value;
-    sourceChanged();
-  });
   ui("javascript-load-roots").addEventListener("click", () => {
     const record = advancedSelectedInstance();
     if (!record || record.kind !== "javascript") return;
@@ -1267,9 +1181,6 @@
     send({ kind: "listJavaScriptRoots", requestId, instanceId: record.id }, record.frameId);
     setQuickStatus("Looking for accessible objects…");
   });
-  for (const button of elements.viewButtons) {
-    button.addEventListener("click", () => setActiveView(button.dataset.view));
-  }
   for (const button of elements.workspaceButtons) {
     button.addEventListener("click", () => setActiveWorkspace(button.dataset.workspace));
   }
@@ -1335,9 +1246,9 @@
     }
   });
 
-  function startScan({ condition, rawValue, rawMaxValue, multiplier, alignment, type, advanced }) {
+  function startScan({ condition, rawValue, rawMaxValue, multiplier, alignment, type }) {
     const refine = Boolean(quickSession?.canRefine);
-    const record = refine ? sessionInstance() : advanced ? advancedSelectedInstance() : selectedInstance();
+    const record = refine ? sessionInstance() : advancedSelectedInstance();
     if (!record) {
       setQuickStatus(
         refine ? "The memory used by this scan is no longer available. Reset and scan again." : "No inspection source is available.",
@@ -1374,7 +1285,7 @@
       type: refine ? previous?.type || "smart" : type,
       refine,
       pauseWhileScanning: Boolean(record.pauseSupported && pauseWhileScanning),
-      ...(record.kind === "javascript" ? { rootPath: refine ? previous?.rootPath : advanced && ui("javascript-root").value ? JSON.parse(ui("javascript-root").value) : undefined } : {}),
+      ...(record.kind === "javascript" ? { rootPath: refine ? previous?.rootPath : ui("javascript-root").value ? JSON.parse(ui("javascript-root").value) : undefined } : {}),
     };
     quickSession = {
       requestId,
@@ -1404,21 +1315,8 @@
       rawValue: elements.value.value,
       rawMaxValue: elements.maxValue.value,
       multiplier: 1,
-      alignment: "aligned",
-      type: "smart",
-      advanced: false,
-    });
-  });
-
-  elements.advancedScan.addEventListener("click", () => {
-    startScan({
-      condition: elements.advancedCondition.value,
-      rawValue: elements.advancedValue.value,
-      rawMaxValue: elements.advancedMaxValue.value,
-      multiplier: 1,
       alignment: elements.advancedAlignment.value,
       type: elements.advancedType.value,
-      advanced: true,
     });
   });
 
@@ -1433,7 +1331,6 @@
     }, quickSession.frameId);
   }
   elements.cancel.addEventListener("click", cancelScan);
-  elements.advancedCancel.addEventListener("click", cancelScan);
 
   function resetScan() {
     renderedResult = null;
@@ -1450,7 +1347,6 @@
     applyQuickSession(null);
   }
   elements.reset.addEventListener("click", resetScan);
-  elements.advancedReset.addEventListener("click", resetScan);
 
   elements.broaden.addEventListener("click", () => {
     const record = sessionInstance();
@@ -1487,7 +1383,6 @@
     }
     const rawValue = input.value;
     elements.writeValue.value = rawValue;
-    elements.advancedWriteValue.value = rawValue;
     send({
       kind: "writeValue",
       requestId: nextRequestId("write"),
@@ -1519,10 +1414,7 @@
 
   elements.quickSetMin.addEventListener("click", () => setSelectedLimit(elements.writeValue, "min"));
   elements.quickSetMax.addEventListener("click", () => setSelectedLimit(elements.writeValue, "max"));
-  elements.advancedSetMin.addEventListener("click", () => setSelectedLimit(elements.advancedWriteValue, "min"));
-  elements.advancedSetMax.addEventListener("click", () => setSelectedLimit(elements.advancedWriteValue, "max"));
   elements.write.addEventListener("click", () => writeSelected(elements.writeValue));
-  elements.advancedWrite.addEventListener("click", () => writeSelected(elements.advancedWriteValue));
 
   function toggleFreeze(input) {
     if (!selectedCandidate) {
@@ -1542,7 +1434,6 @@
     }, selectedCandidate.frameId);
   }
   elements.freeze.addEventListener("click", () => toggleFreeze(elements.writeValue));
-  elements.advancedFreeze.addEventListener("click", () => toggleFreeze(elements.advancedWriteValue));
 
   elements.howItWorks.addEventListener("click", async () => {
     await extensionApi.tabs.create(newTabOptions(
@@ -1566,13 +1457,6 @@
   updateConditionControls();
   updateInstanceOptions();
   setActiveWorkspace("candidates");
-  if (isSidebarPanel || isPopoutWindow) {
-    try {
-      activeView = sessionStorage.getItem("hack-engine-view") === "advanced" ? "advanced" : "simple";
-    } catch {
-      activeView = "simple";
-    }
-  }
   updateViewVisibility();
   updateScanControls();
   if (isSidebarPanel) {

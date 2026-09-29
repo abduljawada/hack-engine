@@ -19,7 +19,7 @@
   document.querySelector(".header-copy")?.append(sessionTarget);
   const action = (name) => el(`[data-action="${name}"]`);
   const undoButtons = [action("undo")];
-  const scanRows = document.querySelectorAll("#quick-tools > .scan-actions, #advanced-tools > .scan-actions");
+  const scanRows = document.querySelectorAll("#scan-tools > .scan-actions");
   if (scanRows.length) {
     const original = undoButtons.pop();
     for (const row of scanRows) {
@@ -38,7 +38,7 @@
   const stopButtons = [];
   const restoreTemplate = action("restore");
   const stopTemplate = action("stop");
-  for (const write of document.querySelectorAll("#quick-write, #advanced-write")) {
+  for (const write of document.querySelectorAll("#quick-write")) {
     const button = restoreTemplate.cloneNode(true);
     button.className = "compact-action";
     write.after(button);
@@ -53,13 +53,6 @@
     const button = stopTemplate.cloneNode(true);
     button.className = "compact-action";
     heading.append(button);
-    stopButtons.push(button);
-  }
-  const quickEditor = document.querySelector("#quick-editor");
-  if (quickEditor) {
-    const button = stopTemplate.cloneNode(true);
-    button.className = "compact-action stop-freezes";
-    quickEditor.after(button);
     stopButtons.push(button);
   }
   restoreTemplate.remove();

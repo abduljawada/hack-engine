@@ -338,7 +338,7 @@ export async function runGame({ session, game, asset, gamePage, controls, baseli
     await step('reload', async () => {
       const oldSource = (await ui.state()).source;
       await session.navigate(gamePage, gameUrl);
-      await ui.wait(`document.querySelector('#advanced-watch-count').textContent==='0' && document.querySelector('#advanced-write').disabled`, 'Reload invalidated watches and edits');
+      await ui.wait(`document.querySelector('#advanced-watch-count').textContent==='0' && document.querySelector('#quick-write').disabled`, 'Reload invalidated watches and edits');
       await ui.wait(`Array.from(document.querySelector('#advanced-instance').options).some(o=>o.value!==${JSON.stringify(oldSource)})`, 'New document source');
       await session.screenshot(gamePage, join(artifactDir, 'reloaded.png'));
       return { staleWatches: 0, staleWritesDisabled: true };
@@ -387,15 +387,15 @@ export async function runPauseCases({ ui, read, naturalChange, target, runStep, 
     await ui.reset();
     // Search real memory rather than copying a baseline: exhaustive comparison
     // yields naturally and gives the user an actual operation to cancel.
-    await ui.set('#advanced-condition', 'exact');
-    await ui.set('#advanced-value', 987654321);
+    await ui.set('#quick-condition', 'exact');
+    await ui.set('#quick-value', 987654321);
     const cancelledScan = await observeScan('Scan cancellation', async observe => {
-      const cancellation=await withProgressCancellation(ui,()=>ui.click('#advanced-scan'));
+      const cancellation=await withProgressCancellation(ui,()=>ui.click('#quick-scan'));
       await observe().catch(error=>{error.message += `; cancellation dispatch evidence: ${JSON.stringify(cancellation)}`;throw error;});
       return cancellation;
     });
-    const cancellationStatus = await poll(() => ui.evaluate(`document.querySelector('#advanced-status').textContent`), scanCancellationAcknowledged, {timeout:5000,description:'Packaged scan cancellation acknowledged',category:'extension',status:'FAIL'}).catch(error=>{error.message += `; cancellation dispatch evidence: ${JSON.stringify(cancelledScan)}`;throw error;});
-    await ui.wait(`!document.querySelector('#advanced-scan').disabled && document.querySelector('#pause-game').getAttribute('aria-pressed')==='false'`, 'Cancellation released scan-owned pause');
+    const cancellationStatus = await poll(() => ui.evaluate(`document.querySelector('#quick-status').textContent`), scanCancellationAcknowledged, {timeout:5000,description:'Packaged scan cancellation acknowledged',category:'extension',status:'FAIL'}).catch(error=>{error.message += `; cancellation dispatch evidence: ${JSON.stringify(cancelledScan)}`;throw error;});
+    await ui.wait(`!document.querySelector('#quick-scan').disabled && document.querySelector('#pause-game').getAttribute('aria-pressed')==='false'`, 'Cancellation released scan-owned pause');
     await poll(isPlaying, value => value === true, { description: 'Public Ruffle playback resumed after cancellation', category: 'extension', status: 'FAIL' });
     return { cancelled: true, cancellationStatus, resumed: true, observation: cancelledScan.evidence, cancellation: cancelledScan.result };
   });

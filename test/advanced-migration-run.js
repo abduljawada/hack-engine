@@ -12,7 +12,6 @@
   });
   try {
     await settle();
-    click('[data-view="advanced"]');
     click('[data-workspace="watches"]');
     assert(!$("#open-inspector"), "Legacy inspector launcher remains");
     assert(!$("#manual-address") && !$("#manual-add"), "Removed manual address controls remain");
@@ -27,22 +26,19 @@
     set("#advanced-filter", "");
     for (const row of document.querySelectorAll(".advanced-candidate")) { row.click(); await settle(); }
     assert(migrationState.watches.length === 3, "Individual candidate selection did not add watches");
-    for (const [view, prefix] of [["simple", "quick"], ["advanced", "advanced"]]) {
-      click(`[data-view="${view}"]`);
-      set(`#${prefix}-write-value`, "777");
-      // Background diagnostics can arrive before the write acknowledgement.
-      publishMigrationWorkspace();
-      assert($(`#${prefix}-write-value`).value === "777", `${view}: workspace update replaced the edit draft`);
-      click(`#${prefix}-write`);
-      await settle();
-      publishMigrationWorkspace();
-      click(`#${prefix}-freeze`);
-      const freeze = popupHarnessState.commands.filter((command) => command.payload?.kind === "setFreeze").at(-1);
-      assert(freeze?.payload.enabled && freeze.payload.rawValue === "777", `${view}: Write then Freeze used an old value`);
-      await settle();
-      click(`#${prefix}-freeze`);
-      await settle();
-    }
+    set("#quick-write-value", "777");
+    // Background diagnostics can arrive before the write acknowledgement.
+    publishMigrationWorkspace();
+    assert($("#quick-write-value").value === "777", "Workspace update replaced the edit draft");
+    click("#quick-write");
+    await settle();
+    publishMigrationWorkspace();
+    click("#quick-freeze");
+    const freeze = popupHarnessState.commands.filter((command) => command.payload?.kind === "setFreeze").at(-1);
+    assert(freeze?.payload.enabled && freeze.payload.rawValue === "777", "Write then Freeze used an old value");
+    await settle();
+    click("#quick-freeze");
+    await settle();
     click('[data-workspace="watches"]');
     assert(!$("#watch-select-mode") && !$("[aria-label^='Group for']"), "Removed watch selection or groups remain");
     const labelInput = $("[aria-label^='Watch label']");
@@ -81,9 +77,7 @@
     migrationState.diagnostics = { [key]: { requestId: "quick:final", state: "verified", detail: "Complete 250 ms check" } };
     migrationState.selectedKey = key;
     publishMigrationWorkspace();
-    click('[data-view="simple"]');
-    assert($("#quick-editor .selected-feedback").textContent.includes("250 ms"), "Simple selected feedback missed final diagnostic");
-    click('[data-view="advanced"]');
+    assert($("#quick-editor .selected-feedback").textContent.includes("250 ms"), "Selected feedback missed final diagnostic");
     const beforeDisconnectReads = reads().length;
     popupHarnessState.emitMessage({ kind: "frameDisconnected", frameId: 0 });
     assert($(".watch-row .candidate-value").textContent === "—" && $(".watch-state").textContent === "Unavailable", "Disconnected frame left a live watch value");
@@ -101,7 +95,7 @@
     click(".advanced-candidate");
     await settle();
     assert(migrationState.watches.length === 256, "Watch capacity exceeded");
-    assert(/limit|256|skip|full/i.test($("#advanced-status").textContent), "Watch capacity failure lacks feedback");
+    assert(/limit|256|skip|full/i.test($("#quick-status").textContent), "Watch capacity failure lacks feedback");
     click('[data-workspace="watches"]');
     const scanning = { requestId: "quick:stalled", status: "scanning", frameId: 0, instanceId: "memory-1", canRefine: true, progress: null };
     popupHarnessState.emitMessage({ kind: "quickSession", session: scanning });
@@ -109,15 +103,15 @@
     const recoveryCount = () => popupHarnessState.commands.filter((command) => command.payload?.kind === "getSessionState").length;
     const beforeRecovery = recoveryCount();
     migrationState.stalledCallbacks.at(-1)();
-    assert(/No recent progress/.test($("#advanced-status").textContent), "Stalled scan lacks progress feedback");
+    assert(/No recent progress/.test($("#quick-status").textContent), "Stalled scan lacks progress feedback");
     assert(recoveryCount() === beforeRecovery + 1, "Stalled scan did not request authoritative state once");
-    assert($("#advanced-scan").disabled && !$("#cancel-advanced-scan").hidden, "Watchdog unlocked scan or removed cancellation");
+    assert($("#quick-scan").disabled && !$("#cancel-quick-scan").hidden, "Watchdog unlocked scan or removed cancellation");
     const timerCount = migrationState.stalledCallbacks.length;
     popupHarnessState.emitMessage({ kind: "quickSession", session: { ...scanning } });
     popupHarnessState.emitPagePayload({ kind: "scanProgress", requestId: "quick:stalled", inspected: 10, total: 100 });
     assert(migrationState.stalledCallbacks.length === timerCount && recoveryCount() === beforeRecovery + 1, "Watchdog repeated recovery for same scan");
     popupHarnessState.emitPagePayload({ kind: "scanResults", requestId: "quick:stalled", instanceId: "memory-1", type: "i32", total: 1, preview: [{ address: 64, type: "i32", value: 8 }] });
-    assert(!$("#advanced-scan").disabled && $("#cancel-advanced-scan").hidden, "Delayed legitimate scan completion did not recover");
+    assert(!$("#quick-scan").disabled && $("#cancel-quick-scan").hidden, "Delayed legitimate scan completion did not recover");
     await new Promise((resolve, reject) => {
       const script = document.createElement("script"); script.src = "../workspace-controls.js";
       script.onload = resolve; script.onerror = reject; document.body.append(script);
@@ -125,12 +119,12 @@
     await settle();
     assert(!$("[data-action='save']") && !$("[data-action='import']"), "Removed saved-workspace controls remain");
     assert($("[data-action='restore']") && $("[data-action='stop']"), "Session recovery controls missing");
-    assert($("#quick-write").nextElementSibling.dataset.action === "restore" && $("#advanced-write").nextElementSibling.dataset.action === "restore", "Undo write is not beside Write");
+    assert($("#quick-write").nextElementSibling.dataset.action === "restore", "Undo write is not beside Write");
     assert($(".workspace-heading [data-action='stop']"), "Stop freezes is not beside Watches");
     popupHarnessState.emitMessage({ kind: "workspaceState", workspace: { frozenKeys: [], lastWrite: null } });
     assert([...document.querySelectorAll("[data-action='restore'], [data-action='stop']")].every((button) => button.hidden), "Unavailable recovery actions remain visible");
     popupHarnessState.emitMessage({ kind: "quickSession", session: { ...scanning, status: "complete", request: { type: "i32" }, results: { canUndo: true } } });
-    const undo = $("#advanced-tools [data-action='undo']");
+    const undo = $("#scan-tools [data-action='undo']");
     assert(!undo.hidden && !undo.disabled, "Undo unavailable after a recoverable scan");
     undo.click();
     assert(popupHarnessState.commands.at(-1).payload.kind === "undoScan", "Undo did not reach the game");
@@ -142,7 +136,7 @@
     assert(popupHarnessState.commands.at(-1).payload.kind === "restoreWrite", "Restore did not reach the game");
     click('[data-action="stop"]');
     assert(popupHarnessState.commands.at(-1).payload.kind === "stopAllFreezes", "Stop freezes did not reach the game");
-    result.textContent = "PASS: Advanced candidate selection, individual labels, diagnostics/read recovery, capacity, stalled recovery, and session controls work.";
+    result.textContent = "PASS: Unified candidate selection, individual labels, diagnostics/read recovery, capacity, stalled recovery, and session controls work.";
   } catch (error) {
     result.textContent = `FAIL: ${error.stack || error}`;
   }

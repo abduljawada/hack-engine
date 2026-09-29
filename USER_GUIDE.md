@@ -11,15 +11,15 @@ Hack Engine finds, watches, and edits accessible numeric values in WebAssembly a
 5. Select a candidate. Selection adds it to the shared watch list automatically.
 6. Enter a replacement and choose **Write value**. Use **Freeze** only when the game repeatedly restores the address.
 
-## Persistent and advanced views
+## One workflow across popup, sidebar, and pop-out
 
-The toolbar popup closes when focus returns to the page. Use the pin to open the persistent sidebar. The sidebar's **Advanced** view adds explicit number format, alignment, and inspection-source controls plus filtering, sorting, and watches.
+The toolbar popup closes when focus returns to the page. Use the pin to open the persistent sidebar. Every surface uses the same scan form, with Automatic defaults and expandable **Scan options** for number format, alignment, and the JavaScript object picker. Non-default settings remain visible in the collapsed summary. Expanding or collapsing these options preserves the current scan and results.
 
-Both views show candidates with recommended variable types first: Float64 for AVM1, or Int32, Uint32, then Float64 for AVM2. WebAssembly prioritizes Int32, Uint32, Float32, then Float64. Candidates within each priority are ordered by address; when Ruffle AVM is unknown, candidates are ordered by address. Advanced defaults to **Recommended types**, with ascending/descending Address and Value sorting and Type sorting available. Counts distinguish displayed preview rows from all scan matches. Simple always uses the recommended order.
+Candidates default to recommended variable types first: Float64 for AVM1, or Int32, Uint32, then Float64 for AVM2. WebAssembly prioritizes Int32, Uint32, Float32, then Float64. Candidates within each priority are ordered by address; when Ruffle AVM is unknown, candidates are ordered by address. The **Candidates** and **Watches** tabs, filtering, and sorting are available in the toolbar, sidebar, and pop-out. Sorting defaults to **Recommended types**, with ascending/descending Address and Value sorting and Type sorting available. Counts distinguish displayed preview rows from all scan matches; the candidate preview shows up to 200 rows. Select a candidate or watch to use the same value editor.
 
 AVM detection uses only players linked to the selected memory through Ruffle's metadata callback. Unknown types are checked once per second for up to 15 retries; detection stops early on success and updates the runtime hints automatically. A new movie's metadata event starts a fresh retry budget. Existing scan results are retained. Some Ruffle players share one memory: if that memory contains both AVM1 and AVM2, or ownership cannot be established, it stays **Unknown** and Automatic searches all numeric types.
 
-The toolbar, sidebar, and pop-out share the inspected tab's scan, candidates, watches, primary selection, and freeze state. Advanced controls provide the complete supported workflow; there is no separate inspector or DevTools entry.
+The toolbar, sidebar, and pop-out share the inspected tab's scan, candidates, watches, primary selection, and freeze state. Each surface provides the complete supported workflow; there is no separate inspector or DevTools entry.
 
 ### Known addresses and watch labels
 
@@ -30,7 +30,7 @@ A live session supports up to 256 watches. Each watch can be edited or frozen in
 
 ## Pausing the game
 
-Use **Pause game** to suspend a supported Ruffle game, then **Resume game** to continue. The controls are available in both Simple and Advanced views. If a Ruffle memory is shared by multiple associated players, pausing that source pauses all of those players.
+Use **Pause game** to suspend a supported Ruffle game, then **Resume game** to continue. The controls are available in the toolbar, sidebar, and pop-out. If a Ruffle memory is shared by multiple associated players, pausing that source pauses all of those players.
 
 Enable **Pause while scanning** to pause during first scans, refinements, and searches across all number formats. The preference is saved. A game that was running resumes when the scan completes, fails, or is cancelled; a game already paused stays paused. Manual pause remains active when you close the popup, so reopen the controls to resume. Disconnecting the page bridge or leaving the page releases pauses owned by Hack Engine.
 
@@ -38,7 +38,7 @@ Pause requires a Ruffle player linked to the selected memory with a supported pl
 
 ## Numeric formats
 
-If the Simple scan does not find the value, try **All numeric types** in Advanced. Common Ruffle representations include `Float64` for AVM1 numbers and `Int32`, `Uint32`, or `Float64` for AVM2 values. **Any byte** alignment is slower but can find unaligned values.
+If an Automatic scan does not find the value, try **Search all number formats** after an exact/range scan, or reset the scan and choose **All numeric types** in **Scan options**. Common Ruffle representations include `Float64` for AVM1 numbers and `Int32`, `Uint32`, or `Float64` for AVM2 values. **Any byte** alignment is slower but can find unaligned values.
 
 ## Why a displayed value may not appear
 
@@ -76,7 +76,7 @@ Scans are limited to captured memories of at most 256 MiB. Snapshot scans check 
 
 ## JavaScript discovery
 
-Select **JavaScript objects** for reachable numeric own properties in plain objects, arrays, and numeric typed arrays. First scan discovers available values; subsequent scans filter those same live properties. Advanced offers an object picker; it accepts selections, never executable expressions. Number format, alignment, and scaling apply only to WebAssembly.
+Select **JavaScript objects** for reachable numeric own properties in plain objects, arrays, and numeric typed arrays. First scan discovers available values; subsequent scans filter those same live properties. **Scan options** offers an object picker; it accepts selections, never executable expressions. Alignment applies only to WebAssembly.
 
 Discovery skips ordinary getters and browser/DOM internals. JavaScript Proxy inspection traps can still execute; this is not an isolated debugger. Closures, module-private state, class instances, Map/Set contents, BigInt, workers, and server state are not searched.
 
@@ -86,6 +86,6 @@ Read-only values can be watched but cannot be edited. Typed-array writes must fi
 
 ### Targeted number formats
 
-In Advanced, **Number format** controls the first scan. WebAssembly Automatic starts with Int32, Uint32, Float32 and Float64; decimal searches use Float32 and Float64. These are heuristic starting formats, not detected source-language types. Choose **All numeric types** (or **Search all number formats** after an exact/range scan) to include 8-bit and 16-bit integers. Individual formats remain selectable. Unknown Ruffle runtimes still search all formats.
+In **Scan options**, **Number format** controls the first scan. WebAssembly Automatic starts with Int32, Uint32, Float32 and Float64; decimal searches use Float32 and Float64. These are heuristic starting formats, not detected source-language types. Choose **All numeric types** (or **Search all number formats** after an exact/range scan) to include 8-bit and 16-bit integers. Individual formats remain selectable. Unknown Ruffle runtimes still search all formats.
 
 For JavaScript, Automatic and All numeric types search all reachable finite numbers. **Number properties** targets ordinary object and array properties. The typed-array choices target actual element storage, such as Float32Array or Int32Array; Uint8 also includes Uint8ClampedArray. A whole-valued ordinary JavaScript Number is still a Number property, not an Int32 element. Choose an object to narrow discovery further. Reset the scan to change formats.

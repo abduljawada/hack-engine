@@ -16,6 +16,7 @@
 [hidden] { display: none !important; }
 body {
   width: 380px;
+  max-width: 100%;
   min-height: 500px;
   max-height: 600px;
   overflow-y: auto;
@@ -230,17 +231,6 @@ select, input { font-size: 14px; }
 .preset-action:hover { border-color: rgb(130 247 197 / 28%); color: var(--accent); background: rgb(130 247 197 / 5%); }
 .compact-action.freeze-active { border-color: var(--accent); color: var(--accent); background: rgb(130 247 197 / 7%); }
 
-.view-switcher {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 3px;
-  margin-top: 11px;
-  padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--surface);
-}
-.view-switcher button,
 .workspace-tabs button {
   min-width: 0;
   min-height: 34px;
@@ -252,13 +242,11 @@ select, input { font-size: 14px; }
   font-size: 12px;
   font-weight: 700;
 }
-.view-switcher button[aria-pressed="true"],
 .workspace-tabs button[aria-selected="true"] {
   background: var(--surface-hover);
   color: var(--text);
   box-shadow: inset 0 0 0 1px rgb(130 247 197 / 18%);
 }
-.view-switcher button:focus-visible,
 .workspace-tabs button:focus-visible,
 .advanced-candidate:focus-visible,
 .watch-select:focus-visible,
@@ -392,7 +380,6 @@ select, input { font-size: 14px; }
   font-size: 17px;
 }
 .watch-remove:hover { background: rgb(255 115 115 / 10%); color: #ff9b9b; }
-body.advanced-active .secondary-actions { display: none; }
 
 @media (max-width: 330px) {
   main { padding-inline: 14px; }
@@ -445,11 +432,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .quick-form > .value-fields, .advanced-form > .value-fields { grid-column: 2; min-width: 0; }
 .quick-form input, .quick-form select, .advanced-form input, .advanced-form select { min-width: 0; }
 .quick-form:has(#quick-max-label:not([hidden])),
-.advanced-form:has(#advanced-max-label:not([hidden])) { grid-template-columns: minmax(0, 1fr); }
+.advanced-form:has(#quick-max-label:not([hidden])) { grid-template-columns: minmax(0, 1fr); }
 .quick-form:has(#quick-max-label:not([hidden])) > .value-fields,
-.advanced-form:has(#advanced-max-label:not([hidden])) > .value-fields { grid-column: 1 / -1; }
+.advanced-form:has(#quick-max-label:not([hidden])) > .value-fields { grid-column: 1 / -1; }
 .quick-form:has(#quick-value-label[hidden]) > label:first-child,
-.advanced-form:has(#advanced-value-label[hidden]) > label:first-child { grid-column: 1 / -1; }
+.advanced-form:has(#quick-value-label[hidden]) > label:first-child { grid-column: 1 / -1; }
 .value-fields:not(:has(> label:not([hidden]))) { display: none; }
 @media (max-width: 380px) {
   .watch-metadata { flex-wrap: wrap; }
@@ -459,7 +446,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 @media (max-width: 260px) {
   main { padding-inline: 8px; }
   .advanced-heading, .quick-heading { flex-wrap: wrap; }
-  .workspace-tabs, .view-switcher, .value-fields { grid-template-columns: minmax(0, 1fr); }
+  .workspace-tabs, .value-fields { grid-template-columns: minmax(0, 1fr); }
   .scan-actions, .editor-actions, .value-presets { flex-wrap: wrap; }
   .advanced-candidate, .watch-select { grid-template-columns: minmax(0, 1fr); }
   .candidate-type { justify-self: start; }
@@ -472,7 +459,7 @@ main { container-type: inline-size; }
   .quick-form, .advanced-form { grid-template-columns: minmax(0, 1fr); }
   .quick-form > .value-fields, .advanced-form > .value-fields { grid-column: 1 / -1; }
   .advanced-heading, .quick-heading { flex-wrap: wrap; }
-  .workspace-tabs, .view-switcher, .value-fields, .advanced-grid, .candidate-tools { grid-template-columns: minmax(0, 1fr); }
+  .workspace-tabs, .value-fields, .advanced-grid, .candidate-tools { grid-template-columns: minmax(0, 1fr); }
   .scan-actions, .editor-actions, .value-presets { flex-wrap: wrap; }
   .advanced-candidate, .watch-select { grid-template-columns: minmax(0, 1fr); }
   .candidate-type { justify-self: start; }
@@ -489,3 +476,11 @@ main { container-type: inline-size; }
 .workspace-heading .workspace-tabs { flex: 1 1 180px; margin-bottom: 0; }
 .stop-freezes { margin-top: 10px; }
 main > .session-tools:has(.session-feedback:empty) { display: none; }
+
+/* One scan flow; specialized configuration stays available in place. */
+.scan-options { border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; }
+.scan-options > summary { cursor: pointer; font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+#scan-options-summary { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.scan-options[open] > summary { margin-bottom: 12px; }
+.scan-options .runtime-guidance { margin: 12px 0 0; }
+.scan-options #javascript-root-controls { margin-top: 12px; }

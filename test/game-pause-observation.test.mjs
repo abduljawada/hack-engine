@@ -4,12 +4,12 @@ import vm from 'node:vm';
 import {armPlaybackObservation,armControlObservation,stopPlaybackObservation,stopControlObservation,observedScanPause,withScanPauseObservation,scanCancellationAcknowledged,armProgressCancellation,stopProgressCancellation,withProgressCancellation} from './games/pause-observation.mjs';
 
 function fixture() {
-  let time=0,tick,mutation,cleared=false,disconnected=false;
+  let time=0,tick,mutation,playbackMutation,cleared=false,disconnected=false,playbackDisconnected=false;
   const api={suspended:false},button={disabled:false};
-  const game=vm.createContext({document:{querySelector:()=>({ruffle:()=>api})},Date:{now:()=>time},setInterval:fn=>{tick=fn;return 1;},clearInterval:()=>{cleared=true;}});
-  const controls=vm.createContext({document:{querySelector:()=>button},Date:{now:()=>time},MutationObserver:class{constructor(fn){mutation=fn;}observe(){}disconnect(){disconnected=true;}}});
+  const game=vm.createContext({document:{querySelector:()=>({ruffle:()=>api,shadowRoot:{}})},performance:{timeOrigin:1000,now:()=>time},setInterval:fn=>{tick=fn;return 1;},clearInterval:()=>{cleared=true;},MutationObserver:class{constructor(fn){playbackMutation=fn;}observe(){}disconnect(){playbackDisconnected=true;}}});
+  const controls=vm.createContext({document:{querySelector:()=>button},performance:{timeOrigin:1000,now:()=>time},MutationObserver:class{constructor(fn){mutation=fn;}observe(){}disconnect(){disconnected=true;}}});
   vm.runInContext(armPlaybackObservation,game);vm.runInContext(armControlObservation,controls);
-  return {game,controls,api,button,setTime:t=>{time=t;},tick:()=>tick(),mutation:()=>mutation(),get cleaned(){return cleared&&disconnected;}};
+  return {game,controls,api,button,setTime:t=>{time=t;},tick:()=>tick(),mutation:()=>mutation(),playbackMutation:()=>playbackMutation(),get cleaned(){return cleared&&disconnected&&playbackDisconnected;}};
 }
 test('prearmed observations retain actual fast-scan overlap after the click has returned',()=>{
   const f=fixture();
@@ -71,7 +71,7 @@ test('a genuine zero-result scan can prove pause without being mistaken for a sc
 function cancellationFixture() {
   let mutation,clicks=0,disconnected=false,time=0;
   const scan={disabled:false},cancel={hidden:true,disabled:false,click(){clicks++;}},status={textContent:'Ready to scan this source.'};
-  const context=vm.createContext({document:{querySelector:s=>({'#advanced-scan':scan,'#cancel-advanced-scan':cancel,'#advanced-status':status}[s])},Date:{now:()=>time},MutationObserver:class{constructor(fn){mutation=fn;}observe(){}disconnect(){disconnected=true;}}});
+  const context=vm.createContext({document:{querySelector:s=>({'#quick-scan':scan,'#cancel-quick-scan':cancel,'#quick-status':status}[s])},performance:{timeOrigin:1000,now:()=>time},MutationObserver:class{constructor(fn){mutation=fn;}observe(){}disconnect(){disconnected=true;}}});
   vm.runInContext(armProgressCancellation,context);
   return{context,scan,cancel,status,mutate(){time++;mutation();},get clicks(){return clicks;},get disconnected(){return disconnected;}};
 }
@@ -120,4 +120,31 @@ test('partially armed cancellation observers are cleaned when setup rejects',asy
   const scripts=[];const ui={evaluate:async script=>{scripts.push(script);if(script===armProgressCancellation)throw Error('Setup interrupted');return null;}};
   await assert.rejects(withProgressCancellation(ui,async()=>{}),/Setup interrupted/);
   assert.ok(scripts.includes(stopProgressCancellation));
+});
+
+
+test('rendered-player mutations capture a sub-timer pause with strict sub-millisecond overlap',()=>{
+  const f=fixture();
+  f.setTime(0.2);f.button.disabled=true;f.mutation();
+  f.setTime(0.4);f.api.suspended=true;f.playbackMutation();
+  f.setTime(0.7);f.api.suspended=false;f.playbackMutation();
+  f.setTime(0.9);f.button.disabled=false;f.mutation();
+  f.setTime(8);f.tick();
+  assert.deepEqual(observedScanPause(f.game.__hackPauseObservation.samples,f.controls.__hackPauseObservation.samples),
+    {suspendedAt:1000.4,busyFrom:1000.2,busyUntil:1000.9});
+  vm.runInContext(stopPlaybackObservation,f.game);vm.runInContext(stopControlObservation,f.controls);
+  assert.equal(f.cleaned,true);
+  assert.equal(f.game.__hackPauseObservation,undefined);
+});
+
+test('rendered mutations during an active scan never imply suspension',()=>{
+  const f=fixture();
+  f.setTime(1);f.button.disabled=true;f.mutation();
+  f.setTime(2);f.playbackMutation();
+  f.setTime(3);f.playbackMutation();
+  f.setTime(4);f.button.disabled=false;f.mutation();
+  assert.equal(observedScanPause(f.game.__hackPauseObservation.samples,f.controls.__hackPauseObservation.samples),null);
+  assert.ok(f.game.__hackPauseObservation.samples.every(sample=>sample.playing===true));
+  vm.runInContext(stopPlaybackObservation,f.game);vm.runInContext(stopControlObservation,f.controls);
+  assert.equal(f.cleaned,true);
 });
