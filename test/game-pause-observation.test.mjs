@@ -71,7 +71,7 @@ test('a genuine zero-result scan can prove pause without being mistaken for a sc
 function cancellationFixture() {
   let mutation,clicks=0,disconnected=false,time=0;
   const scan={disabled:false},cancel={hidden:true,disabled:false,click(){clicks++;}},status={textContent:'Ready to scan this source.'};
-  const context=vm.createContext({document:{querySelector:s=>({'#advanced-scan':scan,'#cancel-advanced-scan':cancel,'#advanced-status':status}[s])},Date:{now:()=>time},MutationObserver:class{constructor(fn){mutation=fn;}observe(){}disconnect(){disconnected=true;}}});
+  const context=vm.createContext({document:{querySelector:s=>({'#quick-scan':scan,'#cancel-quick-scan':cancel,'#quick-status':status}[s])},Date:{now:()=>time},MutationObserver:class{constructor(fn){mutation=fn;}observe(){}disconnect(){disconnected=true;}}});
   vm.runInContext(armProgressCancellation,context);
   return{context,scan,cancel,status,mutate(){time++;mutation();},get clicks(){return clicks;},get disconnected(){return disconnected;}};
 }

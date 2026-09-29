@@ -4,7 +4,7 @@ import { GameTestError, poll, readRenderedValue, delay } from './observations.mj
 async function selectScore(session, controls) {
   const ui = new GameUI(session, controls);
   await ui.wait(`document.querySelector('#quick-scan') && !document.querySelector('#quick-scan').disabled`, 'Frame connection');
-  await ui.click('[data-view="advanced"]');
+  await ui.openOptions();
   const sources = await ui.evaluate(`Array.from(document.querySelector('#advanced-instance').options,o=>({value:o.value,text:o.textContent})).filter(o=>o.text.includes('JavaScript'))`);
   for (const source of sources) {
     await ui.set('#advanced-instance', source.value);

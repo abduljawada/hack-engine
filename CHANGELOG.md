@@ -2,6 +2,15 @@
 
 All notable changes to Hack Engine are documented here.
 
+## [1.3.5] - 2026-09-29
+
+- Unify Simple and Advanced into one scan workflow with expandable Scan options.
+- Keep active scan settings visible while options are collapsed.
+- Share candidate filtering, sorting, watches, and one value editor across popup, sidebar, and pop-out.
+- Preserve scan configuration during refinement and refresh the object-picker summary.
+- Prevent paused Ruffle games from resuming through player-overlay input.
+- Preserve newer scans during asynchronous reset cleanup and background state recovery.
+
 ## [1.3.0] - 2026-09-27
 
 Not published to browser stores. Game pause controls and automatic pause during scanning.

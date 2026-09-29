@@ -4,7 +4,7 @@ Hack Engine helps you find, watch, and change accessible numeric values in WebAs
 
 Everything happens locally in the inspected tab. Hack Engine has no accounts, telemetry, advertising, or remote service.
 
-> Current release: **v1.3.0 release candidate — not published**. Core workflows are tested locally on Linux Firefox and Chromium; the remaining release gates are recorded in [IMPLEMENTATION_1_0.md](IMPLEMENTATION_1_0.md).
+> Current release: **v1.3.5 release candidate — awaiting validation and store review**. The current release checks cover the controlled eight-game matrix and packaged browser regressions described in [test/GAME_TESTING.md](test/GAME_TESTING.md). Historical 1.0 qualification notes remain in [IMPLEMENTATION_1_0.md](IMPLEMENTATION_1_0.md).
 
 ## What you can do
 
@@ -13,7 +13,7 @@ Everything happens locally in the inspected tab. Hack Engine has no accounts, te
 - **Recover mistakes:** Undo one refinement, restore the last write when the game has not changed it, and stop all freezes.
 - **Edit and freeze:** Replace a discovered value or keep it fixed while the game runs.
 - **Watch values live:** Keep useful candidates visible as they change and give each watch a descriptive label.
-- **Start simple, go deeper:** Use Quick scan for the common workflow, then open Advanced controls when you need more options.
+- **Start simple, go deeper:** Scan with Automatic defaults, then expand **Scan options** when you need more control.
 - **Keep one shared workspace:** Candidates, watches, selections, and freezes stay synchronized between the toolbar, sidebar, and pop-out.
 
 ## How to use Hack Engine
@@ -24,11 +24,11 @@ Everything happens locally in the inspected tab. Hack Engine has no accounts, te
 4. Change that value in the game, enter the new value, and choose **Next scan**.
 5. Repeat until only a small number of candidates remain, then select one to watch, edit, or freeze it.
 
-If the exact value is not known, start with **Unknown initial value** and refine after the game changes. **Value range** helps with rounded or approximate values. Advanced mode also provides explicit number-format, alignment, multiplier, and inspection-source controls. Add known addresses, select individual candidates to watch, edit each watch's label, and sort addresses or values in either direction. Write feedback follows verification through 250 ms; expandable details distinguish verification from game restoration or failed reads.
+If the exact value is not known, start with **Unknown initial value** and refine after the game changes. **Value range** helps with rounded or approximate values. Expand **Scan options** to choose a number format, alignment, or JavaScript object. Non-default settings remain visible in the collapsed summary. The toolbar, sidebar, and pop-out all provide **Candidates** and **Watches**, filtering, sorting, and one selected-value editor. Select individual candidates to watch, edit each watch's label, and sort addresses or values in either direction. Write feedback follows verification through 250 ms; expandable details distinguish verification from game restoration or failed reads.
 
 ## JavaScript games
 
-Choose **JavaScript objects** as the source and scan normally. Advanced controls offer an object picker to narrow discovery. Results show property paths instead of memory addresses. If discovery reaches a limit, the panel reports partial coverage; choose a narrower object and scan again. A replaced object makes its old watches unavailable rather than redirecting writes.
+Choose **JavaScript objects** as the source and scan normally. Expand **Scan options** to use the object picker and narrow discovery. Results show property paths instead of memory addresses. If discovery reaches a limit, the panel reports partial coverage; choose a narrower object and scan again. A replaced object makes its old watches unavailable rather than redirecting writes.
 
 ## Browser support
 
@@ -62,7 +62,7 @@ Reload the game page after loading the extension so Hack Engine can detect the p
 ## Good to know
 
 - Hack Engine searches captured WebAssembly memory and reachable JavaScript object properties. Private variables, worker state, encoded values, and server-controlled state are outside this release. See [compatibility](COMPATIBILITY.md) for tested coverage and limits.
-- A displayed number may be rounded, scaled, copied, or recalculated by the game. Range scans, comparison scans, and Advanced mode can help identify the useful value.
+- A displayed number may be rounded, scaled, copied, or recalculated by the game. Range scans, comparison scans, and additional scan options can help identify the useful value.
 - Editing the wrong address can reset or crash the embedded player. Use Hack Engine only with games and software you own or are authorized to inspect.
 
 ## Planned features

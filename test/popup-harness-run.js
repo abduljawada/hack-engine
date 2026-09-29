@@ -12,9 +12,8 @@ function checkRecommendedSorting() {
   const expectOrder = (label, selector, expected) => {
     if (JSON.stringify(order(selector)) !== JSON.stringify(expected)) failures.push(label);
   };
-  const bothOrders = (label, expected) => {
-    expectOrder(`${label} Simple`, ".quick-candidate", expected);
-    expectOrder(`${label} Advanced`, ".advanced-candidate", expected);
+  const candidateOrder = (label, expected) => {
+    expectOrder(label, ".advanced-candidate", expected);
   };
   const setInstances = (avmKind, additional = []) => popupHarnessState.emitPagePayload({
     kind: "instanceList",
@@ -38,15 +37,15 @@ function checkRecommendedSorting() {
     { address: 50, type: "i32", value: 4 },
     { address: 20, type: "f64", value: 3 },
   ];
-  if (sort.value !== "recommended") failures.push("Advanced defaults to recommended");
+  if (sort.value !== "recommended") failures.push("Results default to recommended");
   setInstances("avm1");
   showResults(preview);
-  bothOrders("AVM1", ["f64:20", "f64:40", "u8:10", "u32:30", "i32:50"]);
+  candidateOrder("AVM1", ["f64:20", "f64:40", "u8:10", "u32:30", "i32:50"]);
   setInstances("avm2");
   const avm2Order = ["i32:50", "u32:30", "f64:20", "f64:40", "u8:10"];
-  bothOrders("Updated runtime metadata", avm2Order);
+  candidateOrder("Updated runtime metadata", avm2Order);
   showResults(preview);
-  bothOrders("AVM2", avm2Order);
+  candidateOrder("AVM2", avm2Order);
   for (const [mode, expected] of [
     ["address", ["u8:10", "f64:20", "u32:30", "f64:40", "i32:50"]],
     ["value", ["u8:10", "f64:40", "f64:20", "i32:50", "u32:30"]],
@@ -57,39 +56,81 @@ function checkRecommendedSorting() {
     sort.value = mode;
     sort.dispatchEvent(new Event("change"));
     expectOrder(`${mode} override`, ".advanced-candidate", expected);
-    expectOrder(`${mode} leaves Simple recommended`, ".quick-candidate", avm2Order);
   }
   sort.value = "recommended";
   sort.dispatchEvent(new Event("change"));
   setInstances("unknown");
   showResults(preview);
-  bothOrders("Unknown", ["u8:10", "f64:20", "u32:30", "f64:40", "i32:50"]);
+  candidateOrder("Unknown", ["u8:10", "f64:20", "u32:30", "f64:40", "i32:50"]);
   setInstances("avm1", [{ id: "memory-2", memoryBytes: 4096, looksLikeRuffle: true, avmKind: "avm2" }]);
   showResults(preview, "memory-2");
-  bothOrders("Scan instance metadata", avm2Order);
+  candidateOrder("Scan instance metadata", avm2Order);
   setInstances("avm1");
   showResults(preview, "memory-1", "avm2");
-  bothOrders("Live source metadata supersedes old scan metadata", ["f64:20", "f64:40", "u8:10", "u32:30", "i32:50"]);
+  candidateOrder("Live source metadata supersedes old scan metadata", ["f64:20", "f64:40", "u8:10", "u32:30", "i32:50"]);
   setInstances("unknown");
   showResults(preview, "memory-1", "unknown");
   popupHarnessState.emitPagePayload({ kind: "instanceUpdated", instance: {
     id: "memory-1", memoryBytes: 4096, looksLikeRuffle: true, avmKind: "avm2",
   } });
-  bothOrders("Delayed source metadata supersedes unknown scan metadata", avm2Order);
+  candidateOrder("Delayed source metadata supersedes unknown scan metadata", avm2Order);
   if (document.querySelector("#advanced-avm-type").textContent !== "AVM2") failures.push("Delayed AVM guidance updates");
   setInstances("avm1");
   showResults([
     ...Array.from({ length: 21 }, (_, index) => ({ address: index, type: "i32", value: index })),
     { address: 100, type: "f64", value: 100 },
   ]);
-  expectOrder("Sort before Simple cap", ".quick-candidate", [
-    "f64:100", ...Array.from({ length: 19 }, (_, index) => `i32:${index}`),
+  expectOrder("Sort retains full preview", ".advanced-candidate", [
+    "f64:100", ...Array.from({ length: 21 }, (_, index) => `i32:${index}`),
   ]);
-  if (document.querySelectorAll(".advanced-candidate").length !== 22) failures.push("Advanced retains all candidates");
+  if (document.querySelectorAll(".advanced-candidate").length !== 22) failures.push("Results retain all candidates");
   document.querySelector("#reset-quick-scan").click();
   popupHarnessState.resetInstances();
   popupHarnessState.sortingFailures = failures;
   return failures.length === 0;
+}
+
+function checkNarrowLayout() {
+  const options = document.querySelector("#scan-options");
+  const previous = options.open;
+  for (const open of [false, true]) {
+    options.open = open;
+    if (document.documentElement.scrollWidth > document.documentElement.clientWidth) {
+      const overflowing = [...document.querySelectorAll("body *")].filter(element => element.getBoundingClientRect().right > document.documentElement.clientWidth + 1).map(element => `${element.tagName}#${element.id}.${element.className}:${Math.round(element.getBoundingClientRect().right)}`).slice(0, 12);
+      throw new Error(`Horizontal overflow at ${innerWidth}px with options ${open ? "open" : "closed"}: ${overflowing.join(", ")}`);
+    }
+  }
+  options.open = previous;
+}
+
+async function checkUnifiedOptions() {
+  const ui = (id) => document.getElementById(id);
+  const assert = (ok, message) => { if (!ok) throw new Error(message); };
+  const count = (kind) => popupHarnessState.commands.filter(({ payload }) => payload?.kind === kind).length;
+  assert(!ui("view-switcher") && !document.querySelector("[data-view]"), "Legacy modes remain");
+  assert(!ui("scan-options").open, "Specialized options should start collapsed");
+  assert(document.querySelectorAll("#quick-scan, #advanced-scan").length === 1, "Duplicate scan controls remain");
+  assert(document.querySelectorAll("#quick-editor, #advanced-editor").length === 1, "Duplicate selected editors remain");
+  ui("scan-options").open = true;
+  ui("advanced-type").value = "f64";
+  ui("advanced-type").dispatchEvent(new Event("change"));
+  ui("advanced-alignment").value = "byte";
+  ui("advanced-alignment").dispatchEvent(new Event("change"));
+  ui("scan-options").open = false;
+  assert(/Float64/.test(ui("scan-options-summary").textContent) && /byte/i.test(ui("scan-options-summary").textContent), "Collapsed options hide active overrides");
+  ui("quick-value").value = "8";
+  const before = count("memoryScan");
+  ui("quick-scan").click();
+  await delay(); await delay();
+  const scan = popupHarnessState.commands.filter(({ payload }) => payload?.kind === "memoryScan").at(-1).payload;
+  assert(count("memoryScan") === before + 1 && scan.type === "f64" && scan.alignment === "byte", "Unified scan must dispatch once using collapsed options");
+  assert(!ui("scan-options").open && ui("advanced-type").value === "f64", "Scan changed option disclosure or configuration");
+  ui("reset-quick-scan").click();
+  await delay();
+  ui("advanced-type").value = "smart";
+  ui("advanced-type").dispatchEvent(new Event("change"));
+  ui("advanced-alignment").value = "aligned";
+  ui("advanced-alignment").dispatchEvent(new Event("change"));
 }
 
 async function checkPlaybackControls() {
@@ -97,7 +138,7 @@ async function checkPlaybackControls() {
   const assert = (ok, message) => { if (!ok) throw new Error(message); };
   popupHarnessState.emitMessage({ kind: "quickSession", session: null });
   popupHarnessState.resetInstances();
-  assert(!ui("game-controls").hidden, "Playback controls are visible in both views");
+  assert(!ui("game-controls").hidden, "Playback controls are visible");
   assert(ui("pause-while-scanning").checked, "Saved scan pause preference is restored");
   assert(!ui("pause-game").disabled && ui("pause-game").textContent === "Pause game", "Supported games expose pause");
   ui("pause-game").click();
@@ -128,6 +169,9 @@ async function checkPlaybackControls() {
 }
 
 async function checkJavaScriptSources() {
+  document.querySelector("#advanced-filter").value = "";
+  document.querySelector("#advanced-filter").dispatchEvent(new Event("input"));
+  document.querySelector('[data-workspace="candidates"]').click();
   await checkPlaybackControls();
   const ui = (id) => document.getElementById(id);
   const assert = (ok, message) => { if (!ok) throw new Error(message); };
@@ -136,11 +180,11 @@ async function checkJavaScriptSources() {
     { id: "js-1", kind: "javascript", displayName: "JavaScript objects", memoryBytes: 0 },
     { id: "memory-1", kind: "wasm", memoryBytes: 4096 },
   ] });
-  ui("quick-instance").value = "0:js-1";
-  ui("quick-instance").dispatchEvent(new Event("change"));
+  ui("advanced-instance").value = "0:js-1";
+  ui("advanced-instance").dispatchEvent(new Event("change"));
   assert(ui("pause-game").disabled && ui("pause-while-scanning").disabled && ui("pause-while-scanning").checked, "Unsupported sources disable pause without clearing the saved preference");
   assert(ui("pause-status").textContent === "Pause is available for supported Ruffle games.", "Unsupported pause explains its scope");
-  assert(ui("advanced-instance").value === "0:js-1", "Source selectors must agree");
+  assert(ui("advanced-instance").value === "0:js-1", "Selected source is retained");
   assert(!ui("advanced-type").closest("label").hidden, "JavaScript exposes targeted number formats");
   assert(!ui("advanced-type").querySelector('[value="number"]').disabled, "JavaScript allows Number properties");
   ui("advanced-type").value = "number";
@@ -160,16 +204,23 @@ async function checkJavaScriptSources() {
   ui("javascript-load-roots").click();
   assert(ui("javascript-root").options.length === 2, "Object picker lists accessible roots");
   ui("javascript-root").value = '["game"]';
-  ui("advanced-scan").click();
+  ui("javascript-root").dispatchEvent(new Event("change"));
+  assert(ui("scan-options-summary").textContent.includes("Selected object"), "Selected object is missing from collapsed summary");
+  ui("javascript-load-roots").click();
+  assert(!ui("scan-options-summary").textContent.includes("Selected object"), "Refreshed root picker left a stale selected-object summary");
+  ui("javascript-root").value = '["game"]';
+  ui("javascript-root").dispatchEvent(new Event("change"));
+  ui("quick-scan").click();
   await delay();
   const scan = popupHarnessState.commands.filter(({ payload }) => payload.kind === "memoryScan").at(-1).payload;
   assert(scan.instanceId === "js-1" && scan.type === "number" && scan.multiplier === 1 && JSON.stringify(scan.rootPath) === '["game"]', "JavaScript scan uses selected object and no multiplier");
   assert(scan.pauseWhileScanning === false, "Unsupported scans never request pausing");
   assert(ui("quick-status").textContent.includes("incomplete"), "Partial discovery must be visible");
   assert(ui("broaden-search").hidden, "JavaScript does not offer byte formats");
-  const row = document.querySelector(".quick-candidate");
+  const row = document.querySelector(".advanced-candidate");
   assert(row.querySelector(".candidate-address").textContent === "game.score", "JavaScript candidates show paths");
   row.click();
+  checkNarrowLayout();
   const watch = popupHarnessState.commands.filter((command) => command.action === "upsertWatch").at(-1)?.watch;
   assert(watch?.kind === "javascript" && watch.displayPath === "game.score" && watch.path[0] === "game", "Shared watch retains JavaScript identity metadata");
   popupHarnessState.emitPagePayload({ kind: "scanResults", requestId: "quick:empty-js", instanceId: "js-1", total: 0, preview: [], coverage: { complete: true, numbers: 0 } });
@@ -191,31 +242,32 @@ setTimeout(async () => {
     document.querySelector(".popup-header #status-title")?.textContent === "Game inspection available" &&
     !document.querySelector(".connection-state") &&
     !document.querySelector("#memory-summary") &&
-    !document.querySelector("#quick-tools").hidden &&
+    !document.querySelector("#scan-tools").hidden &&
     getComputedStyle(document.querySelector("#quick-max-label")).display === "none" &&
     getComputedStyle(document.querySelector("#quick-editor")).display === "none" &&
     !document.querySelector("#scan-strategy") &&
     !document.querySelector("#open-inspector") &&
     !document.querySelector("#type");
   const recommendedSorting = checkRecommendedSorting();
+  await checkUnifiedOptions();
 
   if (sidebarMode) {
     const pin = document.querySelector("#pin-popup");
-    const viewSwitcher = document.querySelector("#view-switcher");
+    const scanOptions = document.querySelector("#scan-options");
     const boundToOriginalTab =
       document.body.classList.contains("sidebar-panel") &&
-      !viewSwitcher.hidden &&
+      !scanOptions.open &&
       pin.classList.contains("active") &&
       pin.getAttribute("aria-label").includes("Close Hack Engine sidebar") &&
       popupHarnessState.retrievedTabs.length === 1 &&
       popupHarnessState.retrievedTabs[0] === 77 &&
       popupHarnessState.queriedTabs === 0;
 
-    viewSwitcher.querySelector('[data-view="advanced"]').click();
+    scanOptions.open = true;
     document.querySelector("#advanced-type").value = "f64";
     document.querySelector("#advanced-alignment").value = "byte";
-    document.querySelector("#advanced-value").value = "8";
-    document.querySelector("#advanced-scan").click();
+    document.querySelector("#quick-value").value = "8";
+    document.querySelector("#quick-scan").click();
     await delay();
     await delay();
     const advancedCommand = popupHarnessState.commands.find(({ payload }) =>
@@ -224,43 +276,42 @@ setTimeout(async () => {
     await delay(280);
     const advancedRow = document.querySelector(".advanced-candidate");
     const advancedScanWorked =
-      document.body.classList.contains("advanced-active") &&
-      document.querySelector("#quick-tools").hidden &&
-      !document.querySelector("#advanced-tools").hidden &&
+      !document.querySelector("#scan-tools").hidden &&
       advancedCommand?.payload.alignment === "byte" &&
       advancedCommand.payload.multiplier === 1 &&
       advancedRow?.querySelector(".candidate-value")?.textContent === "9" &&
       advancedRow?.querySelector(".candidate-type")?.textContent === "f64" &&
-      document.querySelector("#advanced-scan").textContent === "Next scan";
+      document.querySelector("#quick-scan").textContent === "Next scan";
     advancedRow?.click();
-    document.querySelector("#advanced-set-min").click();
-    const advancedMinPreset = Number(document.querySelector("#advanced-write-value").value) === -Number.MAX_VALUE;
-    document.querySelector("#advanced-set-max").click();
-    const advancedMaxPreset = Number(document.querySelector("#advanced-write-value").value) === Number.MAX_VALUE;
+    checkNarrowLayout();
+    document.querySelector("#quick-set-min").click();
+    const advancedMinPreset = Number(document.querySelector("#quick-write-value").value) === -Number.MAX_VALUE;
+    document.querySelector("#quick-set-max").click();
+    const advancedMaxPreset = Number(document.querySelector("#quick-write-value").value) === Number.MAX_VALUE;
     const watchAdded =
       document.querySelector("#advanced-watch-count").textContent === "1" &&
       document.querySelectorAll(".watch-row").length === 1 &&
-      !document.querySelector("#advanced-editor").hidden;
+      !document.querySelector("#quick-editor").hidden;
     document.querySelector("#advanced-filter").value = "missing";
     document.querySelector("#advanced-filter").dispatchEvent(new Event("input"));
     const filterWorked = document.querySelectorAll(".advanced-candidate").length === 0;
-    viewSwitcher.querySelector('[data-view="simple"]').click();
+    scanOptions.open = false;
     const sharedSession =
-      !document.querySelector("#quick-tools").hidden &&
+      !document.querySelector("#scan-tools").hidden &&
       document.querySelector("#quick-scan").textContent === "Next scan" &&
-      document.querySelector("#quick-result-count").textContent === "1";
-    viewSwitcher.querySelector('[data-view="advanced"]').click();
+      document.querySelector("#advanced-result-count").textContent === "1";
+    scanOptions.open = true;
     document.querySelector('[data-workspace="watches"]').click();
     const watchWorkspace =
       !document.querySelector("#advanced-watch-pane").hidden &&
       document.querySelector("#advanced-candidate-pane").hidden;
-    document.querySelector("#reset-advanced-scan").click();
+    document.querySelector("#reset-quick-scan").click();
     await delay();
     const watchSurvivedReset =
       document.querySelector("#advanced-watch-count").textContent === "1" &&
       document.querySelectorAll(".watch-row").length === 1 &&
       document.querySelectorAll(".advanced-candidate").length === 0 &&
-      document.querySelector("#advanced-scan").textContent === "First scan";
+      document.querySelector("#quick-scan").textContent === "First scan";
 
     document.querySelector("#how-it-works").click();
     await delay();
@@ -273,8 +324,8 @@ setTimeout(async () => {
     const sidebarClosed = popupHarnessState.sidebarCloseCount === 1 && !popupHarnessState.closed;
     const javascriptSources = await checkJavaScriptSources();
     popupHarnessResult.textContent = javascriptSources && rendered && recommendedSorting && boundToOriginalTab && advancedScanWorked && advancedMinPreset && advancedMaxPreset && watchAdded && filterWorked && sharedSession && watchWorkspace && watchSurvivedReset && openedInOriginalWindow && sidebarClosed
-      ? "PASS: Firefox sidebar shares Simple and Advanced scans, live candidates, watches, and tab-bound docking."
-      : "FAIL: Firefox sidebar Advanced mode did not preserve its scan, candidates, watches, or docked state.";
+      ? "PASS: Firefox sidebar exposes unified scans, live candidates, watches, and tab-bound docking."
+      : "FAIL: Firefox sidebar unified controls did not preserve its scan, candidates, watches, or docked state.";
     return;
   }
 
@@ -282,7 +333,7 @@ setTimeout(async () => {
     const pin = document.querySelector("#pin-popup");
     const boundToOriginalTab =
       document.body.classList.contains("popout-window") &&
-      !document.querySelector("#view-switcher").hidden &&
+      !document.querySelector("#view-switcher") &&
       !pin.classList.contains("active") &&
       pin.getAttribute("aria-label").includes("Dock Hack Engine") &&
       document.querySelector("#pop-out-window").hidden &&
@@ -306,7 +357,7 @@ setTimeout(async () => {
   }
 
   const pin = document.querySelector("#pin-popup");
-  const nativePopupStayedSimple = document.querySelector("#view-switcher").hidden;
+  const nativePopupUnified = !document.querySelector("#view-switcher") && !document.querySelector("#scan-options").open;
   pin.click();
   await delay();
   const sidebarUrl = new URL(popupHarnessState.sidebarPanels[0]?.panel || location.href);
@@ -349,12 +400,12 @@ setTimeout(async () => {
   document.querySelector("#quick-scan").click();
   await delay();
   await delay();
-  const scanCommand = popupHarnessState.commands.find(({ payload }) => payload.kind === "memoryScan");
+  const scanCommand = popupHarnessState.commands.filter(({ payload }) => payload.kind === "memoryScan").at(-1);
   const automaticScan =
     scanCommand?.payload.type === "smart" &&
     scanCommand.payload.rawValue === "8" &&
-    document.querySelector("#quick-result-count").textContent === "1" &&
-    document.querySelectorAll(".quick-candidate").length === 1 &&
+    document.querySelector("#advanced-result-count").textContent === "1" &&
+    document.querySelectorAll(".advanced-candidate").length === 1 &&
     document.querySelector("#quick-scan").textContent === "Next scan";
   await delay();
   const liveCandidateRefresh =
@@ -362,18 +413,23 @@ setTimeout(async () => {
     popupHarnessState.commands.some(({ payload }) => payload.kind === "readValues") &&
     document.querySelector(".candidate-value").textContent === "9";
 
-  document.querySelector(".quick-candidate").click();
+  document.querySelector(".advanced-candidate").click();
+  checkNarrowLayout();
   document.querySelector("#quick-set-min").click();
   const quickMinPreset = document.querySelector("#quick-write-value").value === "-2147483648";
   document.querySelector("#quick-set-max").click();
   const quickMaxPreset = document.querySelector("#quick-write-value").value === "2147483647";
   document.querySelector("#quick-write-value").value = "999";
+  const writesBefore = popupHarnessState.commands.filter(({ payload }) => payload?.kind === "writeValue").length;
+  const freezesBefore = popupHarnessState.commands.filter(({ payload }) => payload?.kind === "setFreeze").length;
   document.querySelector("#quick-write").click();
   document.querySelector("#quick-freeze").click();
   await delay();
   const writeCommand = popupHarnessState.commands.find(({ payload }) => payload.kind === "writeValue");
   const freezeCommand = popupHarnessState.commands.find(({ payload }) => payload.kind === "setFreeze");
   const typedActions =
+    popupHarnessState.commands.filter(({ payload }) => payload?.kind === "writeValue").length === writesBefore + 1 &&
+    popupHarnessState.commands.filter(({ payload }) => payload?.kind === "setFreeze").length === freezesBefore + 1 &&
     writeCommand?.payload.type === "i32" &&
     writeCommand.payload.address === 4096 &&
     writeCommand.payload.rawValue === "999" &&
@@ -389,7 +445,7 @@ setTimeout(async () => {
 
   const javascriptSources = await checkJavaScriptSources();
   popupHarnessResult.textContent =
-    javascriptSources && rendered && recommendedSorting && nativePopupStayedSimple && pinDocked && firstPopoutOpened && secondPopoutReused && automaticScan && liveCandidateRefresh && quickMinPreset && quickMaxPreset && typedActions && helpOpened
+    javascriptSources && rendered && recommendedSorting && nativePopupUnified && pinDocked && firstPopoutOpened && secondPopoutReused && automaticScan && liveCandidateRefresh && quickMinPreset && quickMaxPreset && typedActions && helpOpened
       ? "PASS: compact toolbar popup, live candidates, Firefox sidebar docking, pop-out reuse, and typed quick-scan actions work."
       : "FAIL: toolbar quick-scan behavior did not match the active Ruffle state.";
   } catch (error) { popupHarnessResult.textContent = `FAIL: ${error.stack || error}`; }

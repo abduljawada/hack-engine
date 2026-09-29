@@ -46,7 +46,7 @@ export async function runFixtureHarness({ browser, url, noSandbox = true, headed
         const deadline = Date.now() + 15000;
         while (Date.now() < deadline) {
           const session = await chrome.runtime.sendMessage({ kind: 'getQuickSession', tabId: ${controls.gameTabId} });
-          if (session?.status === 'complete' && session.results?.total === 1 && !document.querySelector('#advanced-scan').disabled) return true;
+          if (session?.status === 'complete' && session.results?.total === 1 && !document.querySelector('#quick-scan').disabled) return true;
           await new Promise(resolve => setTimeout(resolve, 100));
         }
         throw new Error('Scan session failed to recover after worker termination');

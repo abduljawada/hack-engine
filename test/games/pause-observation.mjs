@@ -15,7 +15,7 @@ export const armPlaybackObservation = `(() => {
   globalThis.__hackPauseObservation = {samples,timer:setInterval(sample,8)};
 })()`;
 export const armControlObservation = `(() => {
-  const button = document.querySelector('#advanced-scan');
+  const button = document.querySelector('#quick-scan');
   const samples = [{time:Date.now(),busy:button.disabled}];
   const observer = new MutationObserver(() => samples.push({time:Date.now(),busy:button.disabled}));
   observer.observe(button,{attributes:true,attributeFilter:['disabled']});
@@ -27,9 +27,9 @@ export const stopControlObservation = `(() => { globalThis.__hackPauseObservatio
 // React in the controls document, not after multiple automation round trips.
 // This is only a public DOM click after the real scan reports partial progress.
 export const armProgressCancellation = String.raw`(() => {
-  const scan=document.querySelector('#advanced-scan');
-  const cancel=document.querySelector('#cancel-advanced-scan');
-  const status=document.querySelector('#advanced-status');
+  const scan=document.querySelector('#quick-scan');
+  const cancel=document.querySelector('#cancel-quick-scan');
+  const status=document.querySelector('#quick-status');
   const state={clicked:null};
   const observer=new MutationObserver(() => {
     if(state.clicked || !scan.disabled || cancel.hidden || cancel.disabled)return;
@@ -60,7 +60,7 @@ export async function withProgressCancellation(ui, action) {
       {timeout:5000,description:'Public Cancel clicked during real partial scan progress',category:'extension',status:'FAIL'});
   } catch(error) {
     primaryError=error;
-    const state=await ui.evaluate(`({clicked:globalThis.__hackProgressCancellation?.clicked,status:document.querySelector('#advanced-status').textContent,busy:document.querySelector('#advanced-scan').disabled})`).catch(()=>null);
+    const state=await ui.evaluate(`({clicked:globalThis.__hackProgressCancellation?.clicked,status:document.querySelector('#quick-status').textContent,busy:document.querySelector('#quick-scan').disabled})`).catch(()=>null);
     error.message += `; cancellation dispatch evidence: ${JSON.stringify(state)}`;
     throw error;
   } finally {
@@ -98,7 +98,7 @@ export async function withScanPauseObservation({session,gamePage,ui}, action) {
       try { evidence=await poll(async()=>{
         const [playback,control]=await Promise.all([
           session.evaluate(gamePage,'globalThis.__hackPauseObservation.samples'),
-          ui.evaluate(`({samples:globalThis.__hackPauseObservation.samples,busy:document.querySelector('#advanced-scan').disabled,error:document.querySelector('#advanced-status').classList.contains('error'),status:document.querySelector('#advanced-status').textContent})`),
+          ui.evaluate(`({samples:globalThis.__hackPauseObservation.samples,busy:document.querySelector('#quick-scan').disabled,error:document.querySelector('#quick-status').classList.contains('error'),status:document.querySelector('#quick-status').textContent})`),
         ]);
         lastObservation={playback,control};
         if (!control.busy && control.error && !control.status.startsWith('No matching values.')) throw new GameTestError(`Packaged scan failed before pause could be observed: ${control.status}`,'extension','FAIL');

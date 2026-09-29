@@ -29,11 +29,6 @@
         </button>
       </header>
 
-      <nav id="view-switcher" class="view-switcher" aria-label="Controls view" hidden>
-        <button type="button" data-view="simple" aria-pressed="true">Simple</button>
-        <button type="button" data-view="advanced" aria-pressed="false">Advanced</button>
-      </nav>
-
       <section id="game-controls" class="game-controls" aria-label="Game playback" hidden>
         <div class="game-controls-row">
           <button id="pause-game" class="compact-action" type="button" aria-pressed="false" aria-describedby="pause-status" disabled>Pause game</button>
@@ -45,17 +40,16 @@
         <p id="pause-status" class="pause-status" role="status">Pause is available for supported Ruffle games.</p>
       </section>
 
-      <section id="quick-tools" class="quick-tools" hidden>
-        <div class="quick-heading">
+      <section id="scan-tools" class="advanced-tools" hidden>
+        <div class="advanced-heading">
           <div>
-            <span class="context-label">Simple view</span>
-            <h2>Quick scan</h2>
+            <h2>Scan values</h2>
           </div>
-          <span id="automatic-badge" class="automatic-badge">Automatic</span>
+          <span id="advanced-session-badge" class="session-badge">New scan</span>
         </div>
 
-        <label id="quick-instance-label" hidden>Inspection source<select id="quick-instance"></select></label>
-        <div class="quick-form">
+        <label id="advanced-instance-label" hidden>Inspection source<select id="advanced-instance"></select></label>
+        <div class="advanced-form">
           <label>
             Condition
             <select id="quick-condition">
@@ -80,6 +74,46 @@
               <input id="quick-max-value" type="number" step="any" value="200" />
             </label>
           </div>
+          <details id="scan-options" class="scan-options">
+            <summary>Scan options <span id="scan-options-summary">Automatic</span></summary>
+            <div class="advanced-grid">
+              <label>
+                Number format
+                <select id="advanced-type" aria-describedby="advanced-recommended-types advanced-runtime-hint">
+                  <option value="smart">Automatic</option>
+                  <option value="auto">All numeric types</option>
+                  <option value="number" hidden disabled>Number properties</option>
+                  <option value="i8">Int8</option>
+                  <option value="u8">Uint8</option>
+                  <option value="i16">Int16</option>
+                  <option value="u16">Uint16</option>
+                  <option value="i32">Int32</option>
+                  <option value="u32">Uint32</option>
+                  <option value="f32">Float32</option>
+                  <option value="f64">Float64</option>
+                </select>
+              </label>
+              <label>
+                Alignment
+                <select id="advanced-alignment">
+                  <option value="aligned">Aligned</option>
+                  <option value="byte">Any byte</option>
+                </select>
+              </label>
+            </div>
+            <div id="javascript-root-controls" hidden>
+              <label>Object to inspect<select id="javascript-root"><option value="">Automatic discovery</option></select></label>
+              <button id="javascript-load-roots" type="button">Find accessible objects</button>
+              <p class="preview-count">Discovery stops at eight levels, 20,000 objects, or 100,000 properties. A narrower object can reveal values beyond those limits.</p>
+            </div>
+          <details class="runtime-guidance">
+            <summary>Runtime and number format guidance</summary>
+            <div><span>Runtime</span><strong id="advanced-avm-type">Unknown</strong></div>
+            <div><span>Recommended variable types</span><strong id="advanced-recommended-types">All numeric types</strong></div>
+            <p id="advanced-runtime-hint">AVM could not be determined. Automatic searches all numeric types.</p>
+          </details>
+
+          </details>
         </div>
 
         <div class="scan-actions">
@@ -87,21 +121,40 @@
           <button id="cancel-quick-scan" class="compact-action danger" type="button" hidden>Cancel</button>
           <button id="reset-quick-scan" class="compact-action" type="button" hidden>Reset</button>
         </div>
+        <div id="quick-status" class="quick-status" aria-live="polite">Ready to configure a scan.</div>
 
-        <div id="quick-status" class="quick-status" aria-live="polite">Ready to scan this source.</div>
-
-        <section id="quick-results" class="quick-results" hidden>
-          <div class="results-heading">
-            <strong>Candidates</strong>
-            <span id="quick-result-count">0</span>
+        <section id="advanced-workspace" class="advanced-workspace">
+          <div class="workspace-tabs" role="tablist" aria-label="Scan results">
+            <button type="button" data-workspace="candidates" role="tab" aria-selected="true">
+              Candidates <span id="advanced-result-count">0</span>
+            </button>
+            <button type="button" data-workspace="watches" role="tab" aria-selected="false">
+              Watches <span id="advanced-watch-count">0</span>
+            </button>
           </div>
-          <div id="quick-candidates" class="quick-candidates"></div>
-          <button id="broaden-search" class="text-action" type="button" hidden>
-            Search all number formats
-          </button>
+
+          <section id="advanced-candidate-pane" class="workspace-pane">
+            <div class="candidate-tools">
+              <input id="advanced-filter" type="search" placeholder="Filter path, address, value, or type" aria-label="Filter candidates" />
+              <select id="advanced-sort" aria-label="Sort candidates">
+                <option value="recommended">Recommended types</option>
+                <option value="address">Address ↑</option><option value="addressDesc">Address ↓</option>
+                <option value="value">Value ↑</option><option value="valueDesc">Value ↓</option>
+                <option value="type">Type</option>
+              </select>
+            </div>
+            <p id="advanced-preview-count" class="preview-count" aria-live="polite"></p>
+            <button id="broaden-search" class="text-action" type="button" hidden>Search all number formats</button>
+            <div id="advanced-candidates" class="advanced-candidates"></div>
+          </section>
+
+          <section id="advanced-watch-pane" class="workspace-pane" hidden>
+            <p id="advanced-watch-empty" class="empty-state">Select a candidate to add it here automatically.</p>
+            <div id="advanced-watches" class="advanced-watches"></div>
+          </section>
         </section>
 
-        <section id="quick-editor" class="quick-editor" hidden>
+        <section id="quick-editor" class="quick-editor advanced-editor" hidden>
           <div>
             <span class="context-label">Selected value</span>
             <strong id="selected-address">0x00000000</strong>
@@ -122,138 +175,6 @@
         </section>
       </section>
 
-      <section id="advanced-tools" class="advanced-tools" hidden>
-        <div class="advanced-heading">
-          <div>
-            <span class="context-label">Advanced view</span>
-            <h2>Value scan</h2>
-          </div>
-          <span id="advanced-session-badge" class="session-badge">New scan</span>
-        </div>
-
-        <details class="runtime-guidance">
-          <summary>Runtime and number format guidance</summary>
-          <div><span>Runtime</span><strong id="advanced-avm-type">Unknown</strong></div>
-          <div><span>Recommended variable types</span><strong id="advanced-recommended-types">All numeric types</strong></div>
-          <p id="advanced-runtime-hint">AVM could not be determined. Automatic searches all numeric types.</p>
-        </details>
-
-        <label id="advanced-instance-label" hidden>Inspection source<select id="advanced-instance"></select></label>
-        <div class="advanced-form">
-          <label>
-            Condition
-            <select id="advanced-condition">
-              <option value="exact">Exact value</option>
-              <option value="range">Value range</option>
-              <option value="unknown">Unknown initial value</option>
-              <option value="changed" data-refine-only>Changed</option>
-              <option value="unchanged" data-refine-only>Unchanged</option>
-              <option value="increased" data-refine-only>Increased</option>
-              <option value="decreased" data-refine-only>Decreased</option>
-              <option value="increasedBy" data-refine-only>Increased by</option>
-              <option value="decreasedBy" data-refine-only>Decreased by</option>
-            </select>
-          </label>
-          <div class="value-fields">
-            <label id="advanced-value-label">
-              <span id="advanced-value-text">Value</span>
-              <input id="advanced-value" type="number" step="any" value="100" />
-            </label>
-            <label id="advanced-max-label" hidden>
-              Maximum
-              <input id="advanced-max-value" type="number" step="any" value="200" />
-            </label>
-          </div>
-          <div class="advanced-grid">
-            <label>
-              Number format
-              <select id="advanced-type" aria-describedby="advanced-recommended-types advanced-runtime-hint">
-                <option value="smart">Automatic</option>
-                <option value="auto">All numeric types</option>
-                <option value="number" hidden disabled>Number properties</option>
-                <option value="i8">Int8</option>
-                <option value="u8">Uint8</option>
-                <option value="i16">Int16</option>
-                <option value="u16">Uint16</option>
-                <option value="i32">Int32</option>
-                <option value="u32">Uint32</option>
-                <option value="f32">Float32</option>
-                <option value="f64">Float64</option>
-              </select>
-            </label>
-            <label>
-              Alignment
-              <select id="advanced-alignment">
-                <option value="aligned">Aligned</option>
-                <option value="byte">Any byte</option>
-              </select>
-            </label>
-          </div>
-          <div id="javascript-root-controls" hidden>
-            <label>Object to inspect<select id="javascript-root"><option value="">Automatic discovery</option></select></label>
-            <button id="javascript-load-roots" type="button">Find accessible objects</button>
-            <p class="preview-count">Discovery stops at eight levels, 20,000 objects, or 100,000 properties. A narrower object can reveal values beyond those limits.</p>
-          </div>
-        </div>
-
-        <div class="scan-actions">
-          <button id="advanced-scan" class="primary-action" type="button">First scan</button>
-          <button id="cancel-advanced-scan" class="compact-action danger" type="button" hidden>Cancel</button>
-          <button id="reset-advanced-scan" class="compact-action" type="button" hidden>Reset</button>
-        </div>
-        <div id="advanced-status" class="quick-status" aria-live="polite">Ready to configure a scan.</div>
-
-        <section id="advanced-workspace" class="advanced-workspace">
-          <div class="workspace-tabs" role="tablist" aria-label="Advanced workspace">
-            <button type="button" data-workspace="candidates" role="tab" aria-selected="true">
-              Candidates <span id="advanced-result-count">0</span>
-            </button>
-            <button type="button" data-workspace="watches" role="tab" aria-selected="false">
-              Watches <span id="advanced-watch-count">0</span>
-            </button>
-          </div>
-
-          <section id="advanced-candidate-pane" class="workspace-pane">
-            <div class="candidate-tools">
-              <input id="advanced-filter" type="search" placeholder="Filter path, address, value, or type" aria-label="Filter candidates" />
-              <select id="advanced-sort" aria-label="Sort candidates">
-                <option value="recommended">Recommended types</option>
-                <option value="address">Address ↑</option><option value="addressDesc">Address ↓</option>
-                <option value="value">Value ↑</option><option value="valueDesc">Value ↓</option>
-                <option value="type">Type</option>
-              </select>
-            </div>
-            <p id="advanced-preview-count" class="preview-count" aria-live="polite"></p>
-            <div id="advanced-candidates" class="advanced-candidates"></div>
-          </section>
-
-          <section id="advanced-watch-pane" class="workspace-pane" hidden>
-            <p id="advanced-watch-empty" class="empty-state">Select a candidate to add it here automatically.</p>
-            <div id="advanced-watches" class="advanced-watches"></div>
-          </section>
-        </section>
-
-        <section id="advanced-editor" class="quick-editor advanced-editor" hidden>
-          <div>
-            <span class="context-label">Selected value</span>
-            <strong id="advanced-selected-address">0x00000000</strong>
-          </div>
-          <p class="selected-feedback" role="status"></p>
-          <label>
-            New value
-            <input id="advanced-write-value" type="number" step="any" />
-          </label>
-          <div class="value-presets" aria-label="Numeric limits">
-            <button id="advanced-set-min" class="preset-action" type="button">Set to min</button>
-            <button id="advanced-set-max" class="preset-action" type="button">Set to max</button>
-          </div>
-          <div class="editor-actions">
-            <button id="advanced-write" class="compact-action danger" type="button">Write value</button>
-            <button id="advanced-freeze" class="compact-action" type="button">Freeze</button>
-          </div>
-        </section>
-      </section>
-
       <div class="secondary-actions">
         <button id="pop-out-window" type="button">
           <img class="ui-icon" src="../assets/ui-icons/pop-out.svg" alt="" />
@@ -267,7 +188,7 @@
         </button>
       </div>
 
-      <footer>v1.3.0</footer>
+      <footer>v1.3.5</footer>
     </main>
     <script src="popup.js"></script>
   <script src="../workspace-controls.js"></script>

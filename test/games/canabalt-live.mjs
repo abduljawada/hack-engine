@@ -113,7 +113,7 @@ export async function runCanabaltLive({session,gamePage,site,controls,baseline,a
             finding.changed=await ui.scan('changed');
             finding.changedCandidates=await ui.candidates();
           }
-          findings.push(finding);if(await ui.evaluate(`!document.querySelector('#reset-advanced-scan').disabled`))await ui.reset();
+          findings.push(finding);if(await ui.evaluate(`!document.querySelector('#reset-quick-scan').disabled`))await ui.reset();
         }
       }
       await session.screenshot(controls,join(artifactDir,'canabalt-javascript-roots.png')).catch(error => writeFile(join(artifactDir,'canabalt-controls-screenshot-unavailable.json'),JSON.stringify({browser:session.browser,reason:error.message,evidence:'Packaged source and root DOM observations remain in canabalt-javascript-roots.json.'},null,2)));
