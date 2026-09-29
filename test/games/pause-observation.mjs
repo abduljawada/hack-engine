@@ -8,20 +8,26 @@ export const armPlaybackObservation = `(() => {
     const player = document.querySelector('ruffle-player');
     const api = typeof player?.ruffle === 'function' ? player.ruffle(1) : player;
     const playing = typeof api?.suspended === 'boolean' ? !api.suspended : typeof api?.isPlaying === 'boolean' ? api.isPlaying : null;
-    samples.push({time:Date.now(),playing});
+    samples.push({time:performance.timeOrigin + performance.now(),playing});
     if (samples.length > 4096) samples.shift();
   };
   sample();
-  globalThis.__hackPauseObservation = {samples,timer:setInterval(sample,8)};
+  // Ruffle's visible Play overlay changes when public suspension changes.
+  // Mutation delivery can observe a pause shorter than the timer interval;
+  // only the actual public getter supplies the recorded playback state.
+  const observer = new MutationObserver(sample);
+  globalThis.__hackPauseObservation = {samples,timer:setInterval(sample,8),observer};
+  const player = document.querySelector('ruffle-player');
+  if (player?.shadowRoot) observer.observe(player.shadowRoot,{attributes:true,childList:true,subtree:true,characterData:true});
 })()`;
 export const armControlObservation = `(() => {
   const button = document.querySelector('#quick-scan');
-  const samples = [{time:Date.now(),busy:button.disabled}];
-  const observer = new MutationObserver(() => samples.push({time:Date.now(),busy:button.disabled}));
+  const samples = [{time:performance.timeOrigin + performance.now(),busy:button.disabled}];
+  const observer = new MutationObserver(() => samples.push({time:performance.timeOrigin + performance.now(),busy:button.disabled}));
   observer.observe(button,{attributes:true,attributeFilter:['disabled']});
   globalThis.__hackPauseObservation = {samples,observer};
 })()`;
-export const stopPlaybackObservation = `(() => { const state=globalThis.__hackPauseObservation; if(state) clearInterval(state.timer); delete globalThis.__hackPauseObservation; })()`;
+export const stopPlaybackObservation = `(() => { const state=globalThis.__hackPauseObservation; if(state) { clearInterval(state.timer); state.observer.disconnect(); } delete globalThis.__hackPauseObservation; })()`;
 export const stopControlObservation = `(() => { globalThis.__hackPauseObservation?.observer.disconnect(); delete globalThis.__hackPauseObservation; })()`;
 
 // React in the controls document, not after multiple automation round trips.
@@ -39,7 +45,7 @@ export const armProgressCancellation = String.raw`(() => {
     const inspected=Number(match[1].replaceAll(',',''));
     const total=Number(match[2].replaceAll(',',''));
     if(!(inspected>0 && inspected<total))return;
-    state.clicked={time:Date.now(),status:text,busy:scan.disabled,cancelHidden:cancel.hidden,cancelDisabled:cancel.disabled,inspected,total};
+    state.clicked={time:performance.timeOrigin + performance.now(),status:text,busy:scan.disabled,cancelHidden:cancel.hidden,cancelDisabled:cancel.disabled,inspected,total};
     observer.disconnect();
     cancel.click();
   });
