@@ -87,7 +87,7 @@ Reload the game page after loading the extension so Hack Engine can detect the p
 - [Reviewer build instructions](SOURCE_BUILD.md)
 - [Issue tracker](https://github.com/abduljawada/hack-engine/issues)
 
-Hack Engine is released under the [MIT License](LICENSE). Questions can also be sent to [a.abduljawad@outlook.com](mailto:a.abduljawad@outlook.com).
+Hack Engine is released under the [MIT License](LICENSE).
 
 ## Development checks
 
