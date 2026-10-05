@@ -2,8 +2,9 @@
 
 The **Store release** GitHub Actions workflow submits stable `vX.Y.Z` tags from
 `main`. Ordinary pushes and prerelease tags do not publish. Firefox uses the
-existing `hack-engine@abduljawada.github.io` listing; Chrome stays disabled until
-explicitly enabled. Installing this workflow does not publish the current candidate.
+existing `hack-engine@abduljawada.github.io` listing and Chrome uses the existing
+`jlnajpkijkcedkgbjmmdeajdpolgpmdp` Chrome Web Store item. Installing this workflow
+does not publish the current candidate.
 
 ## One-time Firefox setup
 
@@ -71,8 +72,7 @@ regression results. Neither workflow bypasses challenges or certificate checks.
 
 Only the required **Extension and real-game tests / test** core check should be
 configured as the game qualification branch-protection requirement; compatibility
-is separately reviewed and remains visible. Chrome store publishing stays disabled
-regardless of which browser runs the tests.
+is separately reviewed and remains visible.
 
 Submission jobs consume the exact validated build artifacts and recheck commit
 identity and archive checksums. Mozilla's official `web-ext` then packages the
@@ -86,7 +86,7 @@ In **Actions → Store release → Run workflow**, select the workflow from `mai
 enter the existing release tag, choose a store, and choose:
 
 - **status** (default): read authenticated store status; no build, upload, publish,
-  or attempt record. Chrome is skipped while disabled.
+  or attempt record. Chrome is skipped if `CHROME_PUBLISH_ENABLED` is not `true`.
 - **submit**: rerun all release checks, then check each selected store before
   attempting submission. Existing published or pending versions are not uploaded
   again. Rejected, disabled, conflicting, or ambiguous states require attention.
@@ -127,29 +127,28 @@ archive, commit/tag/version metadata, test evidence, and store results. Download
 and archive them before expiry if long-term retention is needed. The workflow does
 not publish unsigned Firefox ZIPs as installable GitHub release assets.
 
-## Enable Chrome later
+## Chrome setup
 
-Complete the initial Chrome Web Store publication manually, including listing,
-privacy declarations, verification, and visibility. Then enable the Chrome Web
-Store API in a Google Cloud project and authorize an OAuth client for the owning
-publisher with `https://www.googleapis.com/auth/chromewebstore` access.
-Use a refresh token suitable for ongoing automation; OAuth consent projects left
-in external Testing can issue short-lived refresh tokens.
+Chrome publishing is enabled. The initial Chrome Web Store publication was
+completed manually, and a manual Chrome `status` check passed on October 5, 2026.
+The workflow uses the Chrome Web Store API through an OAuth client for the owning
+publisher with `https://www.googleapis.com/auth/chromewebstore` access. If Chrome
+authentication starts failing, check whether the refresh token expired: OAuth
+consent projects left in external Testing issue short-lived refresh tokens.
 
-Add these GitHub Actions **secrets**:
+Configured GitHub Actions **secrets**:
 
 - `CHROME_CLIENT_ID`
 - `CHROME_CLIENT_SECRET`
 - `CHROME_REFRESH_TOKEN`
 
-Add these GitHub Actions **variables**:
+Configured GitHub Actions **variables**:
 
 - `CHROME_PUBLISHER_ID`
 - `CHROME_EXTENSION_ID` (the existing published item)
-- `CHROME_PUBLISH_ENABLED`: set to exactly `true` only when ready.
+- `CHROME_PUBLISH_ENABLED`: `true`. Set it to `false` to pause Chrome submissions.
 
-Run a manual Chrome `status` check first. Subsequent stable tags submit Chrome
-updates through API V2 with normal review and automatic publication after approval.
+Stable tags submit Chrome updates through API V2 with normal review and automatic publication after approval.
 Firefox and Chrome submit independently after shared validation; a Chrome failure
 does not roll back a successful Firefox submission. Leaving the switch unset or
 `false` requires no Chrome credentials and has no effect on Firefox.
