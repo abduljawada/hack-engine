@@ -272,16 +272,6 @@ main, footer { width: min(calc(100% - 2rem), var(--max)); margin: 0 auto; }
 pre { margin: 1.5rem 0; padding: 1rem; overflow-x: auto; border: 1px solid var(--line); border-radius: 0.6rem; background: #0d1016; color: var(--accent); font-size: 0.82rem; }
 .browser-name { display: block; margin-bottom: 1rem; font-size: 1.2rem; font-weight: 800; letter-spacing: -0.025em; }
 
-.planned-section {
-  display: grid;
-  grid-template-columns: 0.7fr 1.3fr;
-  gap: 5rem;
-  align-items: start;
-}
-.planned-section ul { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
-.planned-section li { display: grid; grid-template-columns: 0.65fr 1.35fr; gap: 1rem; padding: 1.1rem 0; border-bottom: 1px solid var(--line); }
-.planned-section li span { color: var(--muted); }
-
 .note-section {
   display: grid;
   grid-template-columns: 0.8fr 1.2fr;
@@ -323,7 +313,7 @@ footer p { margin: 0; }
   .benefit-strip article:nth-child(2) { border-right: 0; }
   .benefit-strip article:nth-child(-n + 2) { border-bottom: 1px solid var(--line); }
   .feature-grid { grid-template-columns: 1fr 1fr; }
-  .workflow-section, .install-section, .planned-section, .note-section { grid-template-columns: 1fr; gap: 2rem; }
+  .workflow-section, .install-section, .note-section { grid-template-columns: 1fr; gap: 2rem; }
   .mode-grid { grid-template-columns: 1fr; }
   .mode-grid article > span { margin-bottom: 1.5rem; }
 }
@@ -338,7 +328,6 @@ footer p { margin: 0; }
   .benefit-strip article:last-child { border-bottom: 0; }
   .demo-header { align-items: flex-start; gap: 1rem; }
   .demo-status { text-align: right; }
-  .planned-section li { grid-template-columns: 1fr; gap: 0.25rem; }
   .note-section { padding: 1.5rem; }
   .store-cards { grid-template-columns: 1fr; }
   .store-card { min-height: 245px; }

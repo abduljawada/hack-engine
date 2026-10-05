@@ -1,6 +1,6 @@
 # Product website
 
-GitHub Pages serves this directory. Keep the product overview, feature summary, setup instructions, and short planned-features section aligned with the main repository README.
+GitHub Pages serves this directory. Keep the product overview, feature summary, and install links aligned with the main repository README.
 
 The deployment workflow publishes `docs/` after a push to `main`. In the GitHub repository settings, set **Pages → Build and deployment → Source** to **GitHub Actions** once.
 
