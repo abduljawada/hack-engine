@@ -36,10 +36,11 @@
             Hack Engine lets you search, watch, edit, and freeze numeric values in browser games—right beside the page you are playing.
           </p>
           <div class="hero-actions">
-            <a class="button primary" href="#install">Try Hack Engine</a>
+            <a class="button primary" href="https://addons.mozilla.org/en-US/firefox/addon/hack-engine/">Install for Firefox</a>
+            <a class="button secondary" href="https://chromewebstore.google.com/detail/hack-engine/jlnajpkijkcedkgbjmmdeajdpolgpmdp">Install for Chrome</a>
             <a class="button secondary" href="#how-it-works">See how it works</a>
           </div>
-          <p class="hero-note">Runs locally. No accounts, telemetry, native debugger, or system security changes.</p>
+          <p class="hero-note">Available from the official Firefox and Chrome extension stores. Runs locally with no accounts or telemetry.</p>
         </div>
 
         <aside class="product-demo" aria-label="Example Hack Engine scan">
@@ -92,7 +93,7 @@
           <article class="feature-card">
             <span class="feature-icon" aria-hidden="true">03</span>
             <h3>Live watches</h3>
-            <p>Follow useful values in real time and organize them with labels and groups.</p>
+            <p>Follow useful values in real time and give them labels.</p>
           </article>
           <article class="feature-card">
             <span class="feature-icon" aria-hidden="true">04</span>
@@ -101,8 +102,8 @@
           </article>
           <article class="feature-card">
             <span class="feature-icon" aria-hidden="true">05</span>
-            <h3>Simple and Advanced</h3>
-            <p>Use the streamlined workflow first, then reveal deeper controls only when you need them.</p>
+            <h3>Pause the game</h3>
+            <p>Pause supported Ruffle games manually or automatically while a scan runs, then resume where you left off.</p>
           </article>
           <article class="feature-card">
             <span class="feature-icon" aria-hidden="true">06</span>
@@ -143,39 +144,34 @@
             <p>Pin the controls beside the page so candidates and watches stay visible during interaction.</p>
           </article>
           <article>
-            <span>Advanced mode</span>
+            <span>Scan options</span>
             <h3>Handle trickier values</h3>
-            <p>Use ranges, unknown values, multipliers, alignment choices, and explicit number formats when necessary.</p>
+            <p>Expand Scan options for ranges, unknown values, alignment choices, and explicit number formats when necessary.</p>
           </article>
         </div>
       </section>
 
       <section id="install" class="section-block install-section">
         <div class="install-copy">
-          <p class="eyebrow">Try the development build</p>
-          <h2>Load Hack Engine in your browser</h2>
-          <p>Store packages are being prepared. Until then, build and load the extension locally from the public repository.</p>
-          <pre><code>npm ci --ignore-scripts
-npm run build</code></pre>
-          <a class="button primary" href="https://github.com/abduljawada/hack-engine">View on GitHub</a>
+          <p class="eyebrow">Available now</p>
+          <h2>Install from your browser’s store</h2>
+          <p>Choose your browser to install the signed release. Updates are delivered automatically through the browser’s extension store.</p>
+          <p class="install-note">Hack Engine requests access to browser tabs and website data so it can inspect the game you choose. Scan data stays local to your browser.</p>
+          <a class="text-link" href="https://github.com/abduljawada/hack-engine">View the source on GitHub <span aria-hidden="true">→</span></a>
         </div>
-        <div class="browser-cards">
-          <article>
-            <span class="browser-name">Firefox</span>
-            <ol>
-              <li>Open <code>about:debugging</code>.</li>
-              <li>Choose <strong>This Firefox</strong>, then <strong>Load Temporary Add-on</strong>.</li>
-              <li>Select <code>dist/firefox/manifest.json</code>.</li>
-            </ol>
-          </article>
-          <article>
-            <span class="browser-name">Chrome and Chromium</span>
-            <ol>
-              <li>Open <code>chrome://extensions</code>.</li>
-              <li>Enable <strong>Developer mode</strong>, then choose <strong>Load unpacked</strong>.</li>
-              <li>Select <code>dist/chrome</code>.</li>
-            </ol>
-          </article>
+        <div class="store-cards">
+          <a class="store-card" href="https://addons.mozilla.org/en-US/firefox/addon/hack-engine/">
+            <span class="store-card-top"><span class="browser-badge" aria-hidden="true">Fx</span><span class="availability">Available now</span></span>
+            <span class="browser-name">Firefox Add-ons</span>
+            <span class="store-copy">Install the signed Firefox release from Mozilla’s official add-on marketplace.</span>
+            <span class="store-cta">Add to Firefox <span aria-hidden="true">→</span></span>
+          </a>
+          <a class="store-card" href="https://chromewebstore.google.com/detail/hack-engine/jlnajpkijkcedkgbjmmdeajdpolgpmdp">
+            <span class="store-card-top"><span class="browser-badge chrome" aria-hidden="true">Ch</span><span class="availability">Available now</span></span>
+            <span class="browser-name">Chrome Web Store</span>
+            <span class="store-copy">Install Hack Engine for Chrome from Google’s official extension marketplace.</span>
+            <span class="store-cta">Add to Chrome <span aria-hidden="true">→</span></span>
+          </a>
         </div>
       </section>
 
@@ -185,7 +181,7 @@ npm run build</code></pre>
           <h2>A small look ahead</h2>
         </div>
         <ul>
-          <li><strong>Store release</strong><span>A signed, documented, and supportable v1.0.</span></li>
+          <li><strong>Store updates</strong><span>Keep the signed Firefox and Chrome releases current and dependable.</span></li>
           <li><strong>Reusable workflows</strong><span>Scan profiles, value history, and address notes.</span></li>
           <li><strong>Broader compatibility</strong><span>More game coverage, recovery tools, and browser hardening.</span></li>
         </ul>

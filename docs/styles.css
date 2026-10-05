@@ -229,13 +229,48 @@ main, footer { width: min(calc(100% - 2rem), var(--max)); margin: 0 auto; }
   align-items: start;
 }
 .install-copy > p:not(.eyebrow) { color: var(--muted); }
+.install-note {
+  margin: 1.5rem 0;
+  padding-left: 1rem;
+  border-left: 2px solid var(--accent);
+  font-size: 0.88rem;
+}
+.text-link { color: var(--accent); font-weight: 750; text-underline-offset: 0.2em; }
+.store-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.store-card {
+  min-height: 290px;
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  background: var(--surface);
+  text-decoration: none;
+  transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
+}
+.store-card:hover, .store-card:focus-visible {
+  border-color: rgb(130 247 197 / 65%);
+  background: var(--surface-raised);
+  transform: translateY(-2px);
+}
+.store-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.store-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 3.5rem; }
+.browser-badge {
+  display: grid;
+  width: 2.4rem;
+  height: 2.4rem;
+  place-items: center;
+  border-radius: 50%;
+  background: #5b5bf7;
+  color: white;
+  font: 800 0.7rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.browser-badge.chrome { background: #27864a; }
+.availability { color: var(--accent); font: 700 0.66rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; }
+.store-copy { color: var(--muted); font-size: 0.88rem; }
+.store-cta { margin-top: auto; padding-top: 2rem; color: var(--accent); font-size: 0.85rem; font-weight: 800; }
 pre { margin: 1.5rem 0; padding: 1rem; overflow-x: auto; border: 1px solid var(--line); border-radius: 0.6rem; background: #0d1016; color: var(--accent); font-size: 0.82rem; }
-.browser-cards { display: grid; gap: 1rem; }
-.browser-cards article { padding: 1.5rem; border: 1px solid var(--line); border-radius: 0.8rem; background: var(--surface); }
 .browser-name { display: block; margin-bottom: 1rem; font-size: 1.2rem; font-weight: 800; letter-spacing: -0.025em; }
-.browser-cards ol { margin: 0; padding-left: 1.25rem; color: var(--muted); font-size: 0.9rem; }
-.browser-cards li + li { margin-top: 0.55rem; }
-.browser-cards code { color: var(--text); }
 
 .planned-section {
   display: grid;
@@ -305,6 +340,8 @@ footer p { margin: 0; }
   .demo-status { text-align: right; }
   .planned-section li { grid-template-columns: 1fr; gap: 0.25rem; }
   .note-section { padding: 1.5rem; }
+  .store-cards { grid-template-columns: 1fr; }
+  .store-card { min-height: 245px; }
   footer { flex-direction: column; }
 }
 
