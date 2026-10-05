@@ -165,7 +165,7 @@ Official references: [submitting an add-on](https://extensionworkshop.com/docume
 Stable-tag publishing and retry/status instructions are in [STORE_AUTOMATION.md](STORE_AUTOMATION.md). Firefox updates target the existing listing; Chrome remains disabled until its initial publication and explicit activation. Manual release gates below still apply.
 
 - [ ] Publish only after both signed store builds pass the same release smoke tests.
-- [ ] Add the final Chrome and Firefox listing links to the README and GitHub Pages site.
+- [x] Add the final Chrome and Firefox listing links to the README and GitHub Pages site.
 - [ ] Archive the submitted ZIPs, signed Firefox XPI, checksums, listing copy, screenshots, privacy answers, permission justifications, and reviewer notes for each version.
 - [ ] Keep a store-release matrix recording version, commit, tag, package hash, store item ID, submission date, approval date, and listing status.
 - [ ] Monitor support channels, crash reports supplied voluntarily by users, store reviews, and policy emails.

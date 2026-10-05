@@ -4,7 +4,7 @@ Hack Engine helps you find, watch, and change accessible numeric values in WebAs
 
 Everything happens locally in the inspected tab. Hack Engine has no accounts, telemetry, advertising, or remote service.
 
-> Current release: **v1.3.5 release candidate — awaiting validation and store review**. The current release checks cover the controlled eight-game matrix and packaged browser regressions described in [test/GAME_TESTING.md](test/GAME_TESTING.md). Historical 1.0 qualification notes remain in [IMPLEMENTATION_1_0.md](IMPLEMENTATION_1_0.md).
+> Current release: **v1.3.5**, available from [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/hack-engine/) and the [Chrome Web Store](https://chromewebstore.google.com/detail/hack-engine/jlnajpkijkcedkgbjmmdeajdpolgpmdp). The current release checks cover the controlled eight-game matrix and packaged browser regressions described in [test/GAME_TESTING.md](test/GAME_TESTING.md). Historical 1.0 qualification notes remain in [IMPLEMENTATION_1_0.md](IMPLEMENTATION_1_0.md).
 
 ## What you can do
 
@@ -34,9 +34,16 @@ Choose **JavaScript objects** as the source and scan normally. Expand **Scan opt
 
 Hack Engine provides packages for Firefox and Chromium-based browsers. The persistent controls use each browser's native sidebar or side-panel experience, so the placement can differ slightly while the scanning workflow remains the same.
 
+## Install
+
+- **Firefox:** [Hack Engine on Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/hack-engine/)
+- **Chrome and other Chromium browsers:** [Hack Engine on the Chrome Web Store](https://chromewebstore.google.com/detail/hack-engine/jlnajpkijkcedkgbjmmdeajdpolgpmdp)
+
+Reload any open game page after installing so Hack Engine can detect the player's WebAssembly memory from the beginning.
+
 ## Install a development build
 
-Build the browser packages:
+To test unreleased changes, build the browser packages:
 
 ```sh
 npm ci --ignore-scripts
@@ -67,7 +74,7 @@ Reload the game page after loading the extension so Hack Engine can detect the p
 
 ## Planned features
 
-- Complete the remaining compatibility matrix and signed-store qualification for v1.0.
+- Complete the remaining compatibility matrix and keep the signed Firefox and Chrome releases current.
 - Reusable scan profiles, value history, address notes, and pointer research.
 - Worker inspection and broader runtime compatibility.
 
