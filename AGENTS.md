@@ -7,3 +7,7 @@ Whenever a version release receives a Git tag (for example, `v1.2.0`), push both
 - Verify that the remote tag resolves to the intended release commit before reporting completion.
 - If a push fails, resolve the problem where possible and clearly report any remaining blocker.
 - Never force-push or replace an existing release tag without explicit user approval.
+
+## Store publishing
+
+Before any release or store task, read `STORE_AUTOMATION.md`.
