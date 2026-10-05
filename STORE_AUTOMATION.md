@@ -28,8 +28,7 @@ so pending and rejected versions are not mistaken for missing versions.
 
 ## Release a version
 
-Complete the manual qualification gates in `IMPLEMENTATION_1_0.md` and
-`STORE_PUBLISHING_CHECKLIST.md` first. Resolve the candidate's release notes in
+Complete the manual qualification gates in `IMPLEMENTATION_1_0.md` first. Resolve the candidate's release notes in
 `CHANGELOG.md`, including outdated “not published” wording, and align
 `manifest.json`, `package.json`, and both root versions in `package-lock.json`.
 The workflow submits that version's changelog section as Firefox release notes.

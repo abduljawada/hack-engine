@@ -83,7 +83,6 @@ Reload the game page after loading the extension so Hack Engine can detect the p
 - [User guide](USER_GUIDE.md)
 - [Privacy policy](PRIVACY.md)
 - [Security policy](SECURITY.md)
-- [Store publishing checklist](STORE_PUBLISHING_CHECKLIST.md)
 - [Reviewer build instructions](SOURCE_BUILD.md)
 - [Issue tracker](https://github.com/abduljawada/hack-engine/issues)
 

@@ -18,7 +18,6 @@ const sourceEntries = [
   "README.md",
   "SECURITY.md",
   "SOURCE_BUILD.md",
-  "STORE_PUBLISHING_CHECKLIST.md",
   "USER_GUIDE.md",
   "assets",
   "background.js",

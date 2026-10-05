@@ -38,7 +38,7 @@ The external checks inject the production `javascript-source.js` and `page-agent
 
 For this implementation, 22 unit checks and 20 page/browser fixture checks passed, and installed Firefox and Chromium extension scenarios passed. Those installed scenarios exercise a local test-only game fixture, including mixed-source scan/refine/undo, watches, edits, and freeze. These results do not extend the external-game qualification to Firefox.
 
-Installed Firefox and Chromium qualification uses the repository's extension/practice scenario, including mixed JavaScript/WebAssembly sources. Popup harnesses separately test toolbar, sidebar and pop-out controls. Consult `STORE_PUBLISHING_CHECKLIST.md` and the actual release verification output for installation status; external game results are not a substitute for those checks.
+Installed Firefox and Chromium qualification uses the repository's extension/practice scenario, including mixed JavaScript/WebAssembly sources. Popup harnesses separately test toolbar, sidebar and pop-out controls. Consult the actual release verification output for installation status; external game results are not a substitute for those checks.
 
 ## Reproduce the external checks
 
