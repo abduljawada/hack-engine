@@ -12,3 +12,6 @@ artifacts/game-tests/
 
 # Store automation metadata and submission results.
 artifacts/store-release/
+
+# Local-only version snapshots.
+local-releases/
